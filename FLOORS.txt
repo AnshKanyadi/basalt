@@ -1,0 +1,43 @@
+# A FLOOR UNDER EVERY PLANTED FLAW CLASS.
+#
+# Track A built this after discovering a harness defect that quietly cut
+# detection to a sixth with every lane green, and a drop from 504 of 1000 to 82
+# must break the build rather than appear in a report nobody diffs. This is that
+# construct with KILL POINTS substituted for seeds.
+#
+# BOTH BOUNDS, BECAUSE THEY DEGRADE INDEPENDENTLY. Track A lost M19 to a
+# count-based floor that could not see a seeds-to-detection regression: a class
+# can hold its RATE while its first detection moves far later in the space, and
+# how early is what decides whether a cheaper sweep would ever reach it.
+#
+# FLOORS WITH MARGIN, NEVER EXACT VALUES. The sweep is deterministic, so exact
+# assertions are possible and are deliberately not used: they fail on any benign
+# change -- one more Env call, one more key in the workload -- and a lane that
+# cries wolf is a lane people delete. A floor passes drift and fails a collapse.
+#
+# Format:
+#   <class> | <rate floor, per mille> | <kill-point ceiling> | <measurement> | <reasoning>
+#
+# A class the sweep cannot reach carries a SPLIT LABEL in the rate column --
+# covered-by: <instrument> -- naming what catches it instead. Not a silent zero.
+# An exempt class is still listed: a class missing from this file is a class
+# with no standing measurement, which is how a bug class drifts back into being
+# uncatchable one flaw at a time.
+
+# ---- reached by the sweep
+
+BM2-accept-torn-tail | 90 | 40 | measured 194 per mille (34/175), first at kill point 14 | Floored at roughly half. The number that matters is the SUPPRESSED one: before the sweep gained its post-reopen continuation this class measured ZERO, because recovery applied uncommitted records above the recovered watermark where the snapshot hid them. A regression of that kind -- the continuation removed, the workload shortened past the torn points -- must fail loudly, and 90 does that while surviving an extra key or an extra Env call.
+
+BM4-missing-dir-sync | 250 | 40 | measured 500 per mille (80/160), first at kill point 17 | Floored at half its measured rate. It is the strongest class here because every kill after the WAL is created and before its name is durable loses the whole file, and that is most of the sweep. The ceiling is well above 17 so that reordering Open's calls does not redden the lane.
+
+BM5-swallow-sync-error | 20 | 40 | measured 62 per mille (11/175), first at kill point 19 | Floored at roughly a third rather than a half: 11 detections is few enough that the rate is sensitive to workload shape, and a floor set close to the measurement would assert noise. What must not silently change is that a swallowed fsync error stays reachable at all, and 20 per mille is comfortably above one detection.
+
+# ---- not reached by the sweep, and named rather than left at zero
+
+BM1-ack-before-sync | covered-by: Oracle.AFailedFsyncMustNotAdvanceTheWatermark | 0 | measured 0/175 | The premature watermark exists only INSIDE Wal::Sync, and the sweep's caller is blocked in that call when the kill lands -- so the value dies with the process and no reader ever sees it. It is reachable only through an fsync that ERRORS rather than one that kills, which leaves the process alive to be asked.
+BM3-silent-interior-truncate | covered-by: WalReaderSixCases.AValidRecordAfterGarbageIsInteriorCorruption | 0 | measured 0/175 | The sweep injects no media corruption, so no run ever contains a structurally valid record after a failure point. Reaching it needs planted bytes, which is B4's crash rig rather than this sweep.
+BM11-accept-illegal-chain | covered-by: WalReaderSixCases.FirstFollowedByFirstIsInteriorCorruption | 0 | measured 0/175 | Same reason: no crash produces an illegal fragment transition, which is exactly why one is interior corruption. Only a hand-built image contains one.
+GAPLESS-ignored | covered-by: Recovery.ADeletedWalMakesTheOpenFail | 0 | measured 0/175 | The sweep never deletes a WAL. A lost directory entry is B4's kill-point sweep over DeleteFile, not this one.
+HEADER-conditional | covered-by: Recovery.AFileWhoseHeaderDisagreesWithItsNameIsRefused | 0 | measured 0/175 | Every WAL this sweep writes has a name matching its header, so the check never has a disagreement to catch.
+WATERMARK-inferred | covered-by: Recovery.TheWatermarkIsTheRecordedFieldAndNotTheHighestSequenceSeen | 0 | measured 0/175 | GROUP_END.high_seq equals the highest batch sequence in every log this engine writes, so the recorded and the inferred value are identical in all real data. Only a probe image in which they deliberately differ can tell them apart.
+BM15-widen-the-set | covered-by: Oracle.AnIntermediateBatchBoundaryInsideTheGroupIsRejected | 0 | measured 0/175 | It blinds the ORACLE, not the engine. A widened oracle still passes every correct run; it only stops rejecting incorrect ones, so a sweep over a correct engine cannot see it.

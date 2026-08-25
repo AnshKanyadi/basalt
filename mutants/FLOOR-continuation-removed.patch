@@ -1,0 +1,59 @@
+# id: FLOOR-continuation-removed
+# blinds: the sweep's detection power, not any engine behaviour
+# covering-lane: cpp-campaign
+# expect: killed
+# control-lane: cpp-sweep
+# expect-control: alive
+#
+# THE HARNESS-POWER REGRESSION, INDUCED. Nothing about the engine changes and
+# nothing goes red: the sweep still visits 175 kill points, still reports 175
+# passes, still observes both elements of the recovery set. It has simply
+# stopped being able to see one class of defect.
+#
+# BM2 measured 194 per mille with the continuation and ZERO without it, because
+# recovery applies uncommitted records ABOVE the recovered watermark, where the
+# snapshot hides them until a reopened database resumes service. A drop from 194
+# to 0 must break the build rather than appear in a report nobody diffs.
+#
+# The control is cpp-sweep staying GREEN, and that is the whole demonstration:
+# the lane whose job is to find defects is perfectly healthy, and its power has
+# collapsed. That is the exact shape Track A lost five checklist steps to.
+--- a/engine-cpp/rig/sweep.cc	2026-08-25 00:42:54
++++ b/engine-cpp/rig/sweep.cc	2026-08-25 00:42:54
+@@ -224,35 +224,7 @@
+       p.matched = v.matched;
+       p.why = v.why;
+ 
+-      // THE CONTINUATION, and it closes a blind spot the sweep had.
+-      //
+-      // A reopened database keeps serving. Comparing only the state visible
+-      // immediately after recovery misses an engine that applied records it
+-      // never committed, because those land ABOVE the recovered watermark and
+-      // the snapshot hides them -- the data is in the memtable and simply
+-      // unreadable. That is not a defence, it is an accident of the read path:
+-      // at B2 the flush writes the memtable out and the uncommitted records
+-      // become durable, visible, and permanent.
+-      //
+-      // One write after reopening exposes it. The new write takes the sequence
+-      // the hidden records already occupy, so they become visible at exactly
+-      // the moment a real database would have resumed service.
+-      if (p.outcome == RunOutcome::kContractPass) {
+-        WriteBatch cont;
+-        cont.Set(Slice("zz"), Slice("9"));
+-        wal::SeqNum cs = 0;
+-        if (db->Write(cont, &cs).ok()) {
+-          std::map<std::string, std::string> expected = log.StateAt(v.seq);
+-          expected["zz"] = "9";
+-          const std::map<std::string, std::string> after = ExtractState(*db);
+-          if (after != expected) {
+-            p.outcome = RunOutcome::kContractViolation;
+-            p.why = "after reopening and resuming service the state diverged: "
+-                    "recovery applied records it never committed, which the "
+-                    "recovered watermark was hiding";
+-          }
+-        }
+-      }
++      // FLOOR: the post-reopen continuation is gone.
+ 
+       switch (p.outcome) {  // NO default: arm
+         case RunOutcome::kContractPass:         r.pass++; break;

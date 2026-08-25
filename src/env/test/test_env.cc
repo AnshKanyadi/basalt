@@ -135,6 +135,9 @@ class TestEnvironment::Impl {
     }
 
     const std::string path = PathOf(handle);
+    uint64_t durable_before = 0;
+    uint64_t durable_after = 0;
+    bool break_after_ledger = false;
     switch (f.injection) {  // NO default: arm
       case Injection::kNone:
         break;
@@ -157,12 +160,16 @@ class TestEnvironment::Impl {
         d.kill = true;
         break;
       case Injection::kTornSync:
+        durable_before = DurableSizeOf(path);
         TornSync(path, f.prefix_bytes);
-        d.kill = true;
+        durable_after = DurableSizeOf(path);
+        break_after_ledger = true;
         break;
       case Injection::kSectorSubsetTornSync:
+        durable_before = DurableSizeOf(path);
         SectorSubsetTornSync(path, f.prefix_bytes);
-        d.kill = true;
+        durable_after = DurableSizeOf(path);
+        break_after_ledger = true;
         break;
       case Injection::kKill:
         d.kill = true;
@@ -179,7 +186,24 @@ class TestEnvironment::Impl {
     e.site = site;
     e.path = path;
     e.injection = f.injection;
+    // A TORN Sync PROMOTES SOMETHING, AND THE LEDGER HAS TO SAY WHAT.
+    //
+    // It was first recorded as promoted=false, because DoSync never runs and
+    // RecordPromotion is what sets the flag. But a torn Sync whose prefix
+    // happens to cover the whole newly covered extent DID advance the durable
+    // image -- and an oracle reading `promoted=false` then refuses to offer the
+    // in-flight element of the recovery set, and reports the engine for landing
+    // exactly where the ledger's own bytes say it should.
+    //
+    // The sweep found this on its first run with torn modes enabled. A harness
+    // record that UNDER-reports is as damaging as an engine that over-reports:
+    // both make the oracle wrong, and this one blames the engine for it.
+    if (durable_after > durable_before) {
+      e.promoted = true;
+      e.durable_bytes_after = durable_after;
+    }
     ledger_.push_back(e);
+    if (break_after_ledger) d.kill = true;
 
     if (d.kill) {
       DoKill();
@@ -290,6 +314,11 @@ class TestEnvironment::Impl {
   // left as it was before the Sync. The result is not a prefix, so a GROUP_END
   // can be durable while an earlier record in its group is not -- which is the
   // shape no correct device produces and the reason this injector suspends.
+  uint64_t DurableSizeOf(const std::string& path) const {
+    const FileState* f = FindConst(path);
+    return f == nullptr ? 0 : static_cast<uint64_t>(f->durable.size());
+  }
+
   void SectorSubsetTornSync(const std::string& path, uint64_t sector_index) {
     FileState* f = Find(path);
     if (f == nullptr) return;
