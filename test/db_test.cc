@@ -445,8 +445,7 @@ TEST(DBDeleteRange, AnOverCapExpansionIsRefusedAndAppliesNothing) {
   small.wal_buffer_bytes = 100000;
   ASSERT_TRUE(small.Ordered());
   rig::RunRecord record;
-  record.max_record_bytes = small.max_record_bytes;
-  record.wal_buffer_bytes = small.wal_buffer_bytes;
+  record.caps = small;
   ASSERT_EQ(record.regime(), rig::Regime::kNonDefault)
       << "this run must be mechanically marked as a different regime, or its "
          "result can be banked with numbers it says nothing about";

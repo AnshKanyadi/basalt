@@ -11,6 +11,7 @@
 
 #include <cstdio>
 #include <memory>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -327,6 +328,148 @@ TEST(Flush, ApplyStillMakesNoEnvCallWhenDeleteRangeReadsTables) {
   EXPECT_EQ(before, t.ordinal()) << "Write made an Env call";
   EXPECT_EQ(0u, Scan(*db).size());
   ASSERT_TRUE(db->Close().ok());
+}
+
+
+TEST(Flush, AnOrphanTableIsRemovedAtTheNextOpen) {
+  // A table is created, synced, dirsynced and only THEN named, so an unnamed
+  // .sst is one a crash caught before its manifest edit. Nothing refers to it
+  // and nothing can, so leaving it would be a leak that grows with every crash.
+  TestEnvironment t;
+  {
+    std::unique_ptr<DB> db;
+    ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+    FillAndFlush(db.get(), 0, 200);
+    ASSERT_TRUE(db->Close().ok());
+  }
+  ASSERT_EQ(1u, Children(&t, ".sst").size());
+  // A table nobody named, at a number the manifest does not know.
+  {
+    WritableFilePtr f;
+    ASSERT_TRUE(t.env()->NewWritableFile(kDir + "/000099.sst", &f).ok());
+    const std::string junk(64, 'z');
+    ASSERT_TRUE(f->Append(Slice(junk)).ok());
+    ASSERT_TRUE(f->Sync().ok());
+    ASSERT_TRUE(f->Close().ok());
+  }
+  ASSERT_EQ(2u, Children(&t, ".sst").size());
+  {
+    std::unique_ptr<DB> db;
+    ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+    ASSERT_TRUE(db->Close().ok());
+  }
+  const std::vector<std::string> left = Children(&t, ".sst");
+  ASSERT_EQ(1u, left.size()) << "the orphan survived an Open";
+  EXPECT_NE("000099.sst", left[0]);
+}
+
+// ------------------------------------------------- B2-D8: recovery equivalence
+
+// THE OBVIOUS WAY TO ASSERT THIS IS WRONG, and B2-D8 says so before the code
+// exists. Running both paths and comparing them is AGREEMENT BETWEEN TWO PATHS,
+// and section 13.4b is exactly that: agreement is not either path being right,
+// and two paths that share an assumption agree most confidently where they are
+// both wrong. These two share the memtable, the comparator and the internal key
+// encoding, so they would agree for reasons unrelated to either being correct.
+//
+// So each path is compared against THE HARNESS'S OWN REFERENCE first -- a map
+// the test builds as it writes, which asks the engine nothing -- and only then
+// are the two compared with each other. THEIR AGREEMENT IS A THIRD CHECK, NOT
+// THE CHECK.
+//
+// This is section 13.4b arriving in C++ before it could cost anything. Track A
+// paid for that lesson; it was inherited as a design constraint rather than as
+// a postmortem.
+struct EquivalenceRun {
+  std::map<std::string, std::string> recovered;
+  SeqNum watermark = 0;
+  std::size_t tables = 0;
+};
+
+// Runs one fixed workload under the given caps, kills, reopens, and reports what
+// recovery produced. The workload is IDENTICAL in both regimes; only the flush
+// threshold differs, which is the whole point.
+EquivalenceRun RunOneWorkload(uint64_t flush_bytes,
+                              std::map<std::string, std::string>* reference,
+                              SeqNum* reference_watermark) {
+  Caps caps;
+  caps.flush_bytes = flush_bytes;
+  TestEnvironment t;
+  EquivalenceRun out;
+  {
+    std::unique_ptr<DB> db;
+    EXPECT_TRUE(DB::Open(t.env(), kDir, caps, &db).ok());
+    SeqNum mark = 0;
+    for (int round = 0; round < 5; ++round) {
+      for (int i = 0; i < 60; ++i) {
+        const std::string k = KeyAt(round * 37 + i);
+        const std::string v = Value(round * 1000 + i, 256);
+        Put(db.get(), k, v);
+        if (reference != nullptr) (*reference)[k] = v;
+      }
+      // A delete and a range delete each round, so the two paths have to agree
+      // about tombstones and not merely about values.
+      const std::string gone = KeyAt(round * 37 + 3);
+      WriteBatch d;
+      d.Delete(Slice(gone));
+      SeqNum s = 0;
+      EXPECT_TRUE(db->Write(d, &s).ok());
+      if (reference != nullptr) reference->erase(gone);
+
+      EXPECT_TRUE(db->Sync(&mark).ok());
+      if (reference_watermark != nullptr) *reference_watermark = mark;
+    }
+    out.watermark = db->DurableSeq();
+  }
+  t.Kill();
+
+  std::unique_ptr<TestEnvironment> re =
+      TestEnvironment::FromImage(t.Image(), FaultPlan());
+  std::unique_ptr<DB> db;
+  EXPECT_TRUE(DB::Open(re->env(), kDir, caps, &db).ok());
+  std::unique_ptr<Iterator> it = db->NewIter(IterOptions());
+  for (bool ok = it->First(); ok; ok = it->Next()) {
+    out.recovered[it->Key().ToString()] = it->Value().ToString();
+  }
+  EXPECT_TRUE(it->Close().ok());
+  out.tables = Children(re.get(), ".sst").size();
+  EXPECT_TRUE(db->Close().ok());
+  return out;
+}
+
+TEST(Flush, RecoveryFromWalPlusTablesEqualsRecoveryFromWalAlone) {
+  std::map<std::string, std::string> reference;
+  SeqNum reference_watermark = 0;
+  // WAL ALONE: a threshold this workload cannot reach, so no flush ever runs.
+  const EquivalenceRun wal_only =
+      RunOneWorkload(64u << 20, &reference, &reference_watermark);
+  // WAL PLUS TABLES: the same writes, the same syncs, a threshold it crosses
+  // repeatedly.
+  const EquivalenceRun with_tables = RunOneWorkload(16u * 1024, nullptr, nullptr);
+
+  // GF-1: A LANE VERIFYING AN EQUIVALENCE MUST RUN WHERE THE TWO SIDES DIFFER.
+  // Without these the test compares two runs that took the same path and calls
+  // the result equivalence.
+  ASSERT_EQ(0u, wal_only.tables) << "the WAL-only path flushed after all";
+  ASSERT_GT(with_tables.tables, 1u) << "the table path never flushed";
+
+  // (1) EACH PATH AGAINST THE HARNESS'S OWN REFERENCE. This is the check.
+  EXPECT_EQ(reference, wal_only.recovered)
+      << "recovery from the WAL alone does not match what the harness wrote";
+  EXPECT_EQ(reference, with_tables.recovered)
+      << "recovery from the WAL plus SSTables does not match what the harness "
+         "wrote";
+
+  // (2) AT THE SAME WATERMARK. Comparing states recovered at different
+  // watermarks would be comparing two different questions.
+  EXPECT_EQ(reference_watermark, wal_only.watermark);
+  EXPECT_EQ(reference_watermark, with_tables.watermark);
+
+  // (3) AND THE TWO AGAINST EACH OTHER -- a THIRD check, not the check. It can
+  // only fail if one of the two above already has, and it is here because
+  // B2-D8's exit criterion is stated as an equivalence and the artifact should
+  // say the sentence it claims.
+  EXPECT_EQ(wal_only.recovered, with_tables.recovered);
 }
 
 }  // namespace

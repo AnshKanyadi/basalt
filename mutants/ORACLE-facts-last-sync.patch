@@ -1,0 +1,34 @@
+# id: ORACLE-facts-last-sync
+# blinds: the harness fact "did THIS Sync make THE WAL's group durable"
+# covering-lane: cpp-sweep
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# HARNESS-012, restored: the one-line version that asked for the promoted flag
+# of the LAST kWritableFileSync in the whole ledger. Every clause of it was true
+# only because the WAL was once the only file this engine synced.
+#
+# IT BLINDS THE ORACLE, NOT THE ENGINE, so it fails in the direction that is
+# hardest to read: a correct engine is REPORTED FOR A VIOLATION it did not
+# commit, at a kill point whose message names the engine. BM15 is the same shape
+# in the widening direction -- an oracle that stops rejecting -- and this is the
+# narrowing one, which is worse to debug precisely because the lane goes red and
+# points somewhere else.
+--- a/engine-cpp/rig/sweep.cc	2026-08-25 03:17:47
++++ b/engine-cpp/rig/sweep.cc	2026-08-25 03:17:47
+@@ -132,11 +132,10 @@
+   // for the harness. Scoping to THIS Sync is what makes "any" safe: without it
+   // one successful Sync answers for every group after it -- which is precisely
+   // how the first two stayed invisible through all of B1.
++  // ORACLE-facts-last-sync: the last Sync in the whole ledger, whatever file.
++  (void)sync_start_ordinal;
+   for (const testenv::LedgerEntry& e : t.ledger()) {
+-    if (e.ordinal <= sync_start_ordinal) continue;
+-    if (!e.promoted) continue;
+-    if (e.path.size() < 4 || e.path.compare(e.path.size() - 4, 4, ".log") != 0) continue;
+-    f.in_flight_durability_applied = true;
++    if (e.site == CallSite::kWritableFileSync) f.in_flight_durability_applied = e.promoted;
+   }
+   return f;
+ }

@@ -98,14 +98,39 @@ TEST(CapAdjudication, BothDivergencesFailTheRunAndNeitherVoidsIt) {
 
 // ------------------------------------------------------------- the regime
 
+// EVERY CAP, AND THAT IS THE POINT OF THE LOOP RATHER THAN THREE LINES. This
+// test named two fields while there were two; B2 added a third and the test
+// would have kept passing while a whole regime aggregated with the wrong one.
+// A field added to Caps without a line here fails at the count below.
 TEST(Regime, IsComputedFromTheActualCapValues) {
   RunRecord r;
   EXPECT_EQ(r.regime(), Regime::kDefault);
-  r.max_record_bytes = 1024;
-  EXPECT_EQ(r.regime(), Regime::kNonDefault);
-  r.max_record_bytes = wal::kMaxRecordBytes;
-  r.wal_buffer_bytes = 4096;
-  EXPECT_EQ(r.regime(), Regime::kNonDefault);
+
+  int fields = 0;
+  {
+    RunRecord x;
+    x.caps.max_record_bytes = 1024;
+    EXPECT_EQ(x.regime(), Regime::kNonDefault) << "max_record_bytes";
+    ++fields;
+  }
+  {
+    RunRecord x;
+    x.caps.wal_buffer_bytes = 4096;
+    EXPECT_EQ(x.regime(), Regime::kNonDefault) << "wal_buffer_bytes";
+    ++fields;
+  }
+  {
+    RunRecord x;
+    x.caps.flush_bytes = 8192;
+    EXPECT_EQ(x.regime(), Regime::kNonDefault) << "flush_bytes";
+    ++fields;
+  }
+  // sizeof is the crudest possible proxy and it is deliberate: it is the one
+  // thing that changes when a field is added and cannot be kept in step by
+  // accident. A new cap makes this fail, and the failure names the reason.
+  EXPECT_EQ(sizeof(wal::Caps), static_cast<std::size_t>(fields) * sizeof(uint64_t))
+      << "a cap was added to wal::Caps and this test still checks " << fields
+      << " of them; a regime that ignores a cap aggregates two regimes silently";
 }
 
 TEST(Regime, RunsOfOneRegimeAggregate) {
@@ -126,8 +151,8 @@ TEST(Regime, RunsOfOneRegimeAggregate) {
 // and its run may not be banked with runs that are.
 TEST(Regime, RunsOfDifferentRegimesRefuseToAggregate) {
   std::vector<RunRecord> rows(2);
-  rows[1].max_record_bytes = 1024;
-  rows[1].wal_buffer_bytes = 4096;
+  rows[1].caps.max_record_bytes = 1024;
+  rows[1].caps.wal_buffer_bytes = 4096;
   ASSERT_EQ(rows[0].regime(), Regime::kDefault);
   ASSERT_EQ(rows[1].regime(), Regime::kNonDefault);
   Tally t;

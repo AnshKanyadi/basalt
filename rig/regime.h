@@ -36,8 +36,17 @@ const char* RegimeName(Regime r);
 // Every run record carries THE ACTUAL CAP VALUES, not a flag someone set. The
 // regime is computed from them, so a run cannot be mislabelled by forgetting.
 struct RunRecord {
-  uint64_t max_record_bytes = wal::kMaxRecordBytes;
-  uint64_t wal_buffer_bytes = wal::kWalBufferBytes;
+  // THE CAPS THEMSELVES, NOT A COPY OF THE ONES THAT EXISTED WHEN THIS WAS
+  // WRITTEN. This held two uint64_ts and compared them against the two named
+  // constants -- a SECOND definition of "default" beside Caps::IsDefault, which
+  // agreed with it only for as long as there were exactly two caps.
+  //
+  // B2 added a third. `Caps` learned about it; this did not; and a run at a
+  // non-default FLUSH threshold would have been aggregated with default-cap
+  // runs -- silently, because the aggregation key would have said they were the
+  // same regime. Section 7.5's one mechanism, two users, applied to a
+  // predicate: the regime now asks Caps rather than reimplementing it.
+  wal::Caps caps;
   RunOutcome outcome = RunOutcome::kContractPass;
 
   Regime regime() const;

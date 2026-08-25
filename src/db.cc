@@ -789,6 +789,31 @@ Status DB::Open(Env* env, const std::string& dir, const wal::Caps& caps,
     mstate.wals.insert(fresh_wal);
   }
 
+  // ORPHAN FILES, REMOVED. A table is created, synced, dirsynced and only then
+  // named, so an unnamed .sst is one a crash caught before its manifest edit --
+  // nothing refers to it and nothing can. Deleting it at Open is B2-D5
+  // candidate (c) folded in, and it is the same argument the retired manifests
+  // and the obsolete WALs get: a crash leaks a file the NEXT Open removes,
+  // rather than one nothing removes.
+  {
+    std::vector<std::string> children;
+    if (env->GetChildren(dir, &children).ok()) {
+      std::sort(children.begin(), children.end());  // never iterate unsorted
+      for (const std::string& name : children) {
+        if (name.size() < 5 || name.compare(name.size() - 4, 4, ".sst") != 0) continue;
+        uint64_t n = 0;
+        bool digits = !name.empty();
+        for (std::size_t i = 0; i + 4 < name.size(); ++i) {
+          if (name[i] < '0' || name[i] > '9') { digits = false; break; }
+          n = n * 10 + static_cast<uint64_t>(name[i] - '0');
+        }
+        if (!digits) continue;
+        if (mstate.tables.find(n) != mstate.tables.end()) continue;
+        (void)env->DeleteFile(dir + "/" + name);
+      }
+    }
+  }
+
   out->reset(new DBImpl(env, dir, caps,
                         std::shared_ptr<MemTable>(std::move(r.table)),
                         std::move(r.wal), r.recovered_seq, std::move(manifest),

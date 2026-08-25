@@ -327,12 +327,76 @@ SweepResult RunSweep(SweepRegime regime) {
         if (db->Write(cont, &cs).ok()) {
           std::map<std::string, std::string> expected = log.StateAt(v.seq);
           expected["zz"] = "9";
+          // ENOUGH TO CROSS THE FLUSH THRESHOLD, in the regime that has one.
+          //
+          // A continuation of one small key never flushes: at a mid-workload
+          // kill point the recovered memtable is far under the threshold, so
+          // the Sync below writes no table and CF-1's mechanism is not exercised
+          // at all. The filler is what makes "resuming service" include the
+          // thing B2 added to service.
+          //
+          // It is regime-guarded because the default regime's threshold is four
+          // megabytes: writing that at each of 300 kill points would make the
+          // lane cost minutes to measure nothing, since by construction no flush
+          // can occur there.
+          if (regime == SweepRegime::kFlush) {
+            const std::string filler(512, 'q');
+            for (int i = 0; i < 40; ++i) {
+              char key[24];
+              std::snprintf(key, sizeof key, "zz-fill-%03d", i);
+              const std::string k(key);
+              WriteBatch fb;
+              fb.Set(Slice(k), Slice(filler));
+              wal::SeqNum fs = 0;
+              if (!db->Write(fb, &fs).ok()) break;
+              expected[k] = filler;
+            }
+          }
+          wal::SeqNum cont_mark = 0;
+          (void)db->Sync(&cont_mark);
           const std::map<std::string, std::string> after = ExtractState(*db);
           if (after != expected) {
             p.outcome = RunOutcome::kContractViolation;
             p.why = "after reopening and resuming service the state diverged: "
                     "recovery applied records it never committed, which the "
                     "recovered watermark was hiding";
+          }
+
+          // AND THEN A SECOND RECOVERY, WHICH IS CF-1's MECHANISM AND WAS NOT
+          // BEING MEASURED.
+          //
+          // The continuation write above exposes hidden records ONE SEQUENCE AT
+          // A TIME: it takes the sequence immediately above the watermark, so
+          // anything higher stays under the snapshot. B1 accepted that because
+          // it was all a WAL-only engine could show.
+          //
+          // The flush changes the mechanism entirely. Records recovery applied
+          // but never committed are written out to a TABLE, and a table's
+          // largest sequence is what the NEXT open takes its watermark from --
+          // so on the second recovery they are not hidden at all, they are
+          // promoted. That is CF-1's "durable, visible and permanent", and
+          // observing it needs a second reopen rather than a second write.
+          //
+          // Measuring this is the whole of CF-1's obligation: without it the
+          // sweep measures the continuation trick twice and reports that the
+          // accidental defence has not expired, when what has not happened is
+          // the measurement.
+          if (p.outcome == RunOutcome::kContractPass) {
+            const testenv::DurableImage second_image = re->Image();
+            std::unique_ptr<TestEnvironment> re2 =
+                TestEnvironment::FromImage(second_image, testenv::FaultPlan());
+            std::unique_ptr<DB> db2;
+            const Status reopen2 = DB::Open(re2->env(), kDir, caps, &db2);
+            if (!reopen2.ok()) {
+              p.outcome = RunOutcome::kContractViolation;
+              p.why = "the second reopen failed: " + reopen2.ToString();
+            } else if (ExtractState(*db2) != expected) {
+              p.outcome = RunOutcome::kContractViolation;
+              p.why = "after a flush and a second recovery the state diverged: "
+                      "records recovery never committed were written to a table, "
+                      "and the table's own sequence promoted them past the "
+                      "watermark that was hiding them";
+            }
           }
         }
       }

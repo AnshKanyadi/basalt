@@ -14,9 +14,7 @@ const char* RegimeName(Regime r) {
 }
 
 Regime RunRecord::regime() const {
-  const bool is_default = max_record_bytes == wal::kMaxRecordBytes &&
-                          wal_buffer_bytes == wal::kWalBufferBytes;
-  return is_default ? Regime::kDefault : Regime::kNonDefault;
+  return caps.IsDefault() ? Regime::kDefault : Regime::kNonDefault;
 }
 
 bool AggregateRuns(const std::vector<RunRecord>& rows, Tally* out) {
