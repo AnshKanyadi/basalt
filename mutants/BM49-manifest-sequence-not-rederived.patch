@@ -1,0 +1,32 @@
+# id: BM49-manifest-sequence-not-rederived
+# blinds: every sequence the manifest records being verified against the file that justifies it
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# D4 SECTION 5.1 POINT 2, REMOVED. The manifest becomes the sole authority for
+# a number that decides which WAL records recovery may skip -- so a manifest
+# that says a table holds sequences up to 500 when it holds up to 300 makes
+# recovery skip two hundred committed writes, and every checksum in the database
+# still verifies.
+#
+# The check costs a full validation of every table at every open, which is
+# recorded at the code as a cost with a retiring measurement. This patch is what
+# says the cost is buying something.
+--- a/engine-cpp/src/sst/manifest.cc	2026-08-25 02:31:27
++++ b/engine-cpp/src/sst/manifest.cc	2026-08-25 02:31:27
+@@ -286,12 +286,7 @@
+     if (v.largest_key != meta.largest || v.smallest_key != meta.smallest) {
+       return Status::Corruption(path + ": key bounds disagree with the manifest");
+     }
+-    if (v.largest_seq != meta.largest_seq) {
+-      return Status::Corruption(
+-          path + ": manifest records largest sequence " +
+-          std::to_string(meta.largest_seq) + "; the table's own keys say " +
+-          std::to_string(v.largest_seq));
+-    }
++    // BM49: the manifest's number is taken on trust.
+   }
+   return Status::Ok();
+ }

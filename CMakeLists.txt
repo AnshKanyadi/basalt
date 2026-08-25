@@ -100,6 +100,7 @@ add_library(rift_engine STATIC
   src/env/fault_controller.cc
   src/env/env.cc
   src/env/env_guard.cc
+  src/env/read_whole_file.cc
   src/env/posix/posix_raw.cc
   src/env/posix/posix_env.cc
   src/memtable/arena.cc
@@ -115,6 +116,7 @@ add_library(rift_engine STATIC
   src/sst/bloom.cc
   src/sst/table_format.cc
   src/sst/table_builder.cc
+  src/sst/manifest.cc
   src/sst/table_check.cc
   src/db.cc
 )
@@ -164,6 +166,7 @@ add_executable(rift_engine_test
   test/db_test.cc
   test/sst_bloom_test.cc
   test/sst_format_test.cc
+  test/sst_manifest_test.cc
   test/sst_writer_test.cc
   test/oracle_test.cc
 )

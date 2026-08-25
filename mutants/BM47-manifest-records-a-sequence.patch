@@ -1,0 +1,32 @@
+# id: BM47-manifest-records-a-sequence
+# blinds: D7's forward binding at the one field in the manifest shaped like a watermark
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The manifest reuses the WAL's GROUP_END, and GROUP_END carries a `high_seq`.
+# D7's mechanism 1 -- "there is nothing to write it into" -- is therefore NOT
+# literally true of this file, and the design records that divergence rather
+# than adapting it. What replaces it is this refusal: the writer writes zero and
+# the reader refuses anything else, so no number can enter the manifest's state
+# through the one field with a watermark's shape.
+#
+# Delete the refusal and the binding is back to being a promise about how
+# somebody writes code.
+--- a/engine-cpp/src/sst/manifest.cc	2026-08-25 02:31:27
++++ b/engine-cpp/src/sst/manifest.cc	2026-08-25 02:31:27
+@@ -219,12 +219,7 @@
+         // has a sequence field; a manifest writes zero into it and a manifest
+         // reader refuses anything else, so no number can enter this file's
+         // state through the one field that has the shape of a watermark.
+-        if (g.high_seq != 0) {
+-          return Status::Corruption(
+-              path + ": a manifest group terminator carries sequence " +
+-              std::to_string(g.high_seq) +
+-              "; the manifest may not record a durable sequence");
+-        }
++        // BM47: any sequence is accepted in a manifest terminator.
+         break;
+       }
+       case wal::RecordKind::kManifestEdit: {

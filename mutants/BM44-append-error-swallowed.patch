@@ -10,19 +10,28 @@
 # table, sync, dirsync, manifest, dirsync, only then delete the WAL -- delivers
 # its guarantee about a table that was never fully written.
 #
+# NOTE THE `(void)`, AND WHY IT IS THE HONEST FORM OF THIS MUTANT. Status is
+# [[nodiscard]], so the naive version of this patch -- just calling Append and
+# dropping the result -- DOES NOT COMPILE, and its direction control reported
+# BROKEN rather than a kill. B1's own hardening had already made the careless
+# form of this defect impossible, so the patch has to be written the way a
+# person would actually have to write it: by silencing the warning on purpose.
+# That is a stronger statement about the defence than a kill on the careless
+# form would have been.
+#
 # BM5 is this defect one layer down, at Sync. That it needs its own patch here
 # is the point: swallowing an error is a per-call-site defect, and a rig that
 # catches it in one place has said nothing about the others.
---- a/engine-cpp/src/sst/table_builder.cc	2026-08-25 02:14:45
-+++ b/engine-cpp/src/sst/table_builder.cc	2026-08-25 02:14:45
+--- a/engine-cpp/src/sst/table_builder.cc	2026-08-25 02:23:42
++++ b/engine-cpp/src/sst/table_builder.cc	2026-08-25 02:23:42
 @@ -7,8 +7,9 @@
  
  Status TableBuilder::Append(Slice bytes) {
    if (!status_.ok()) return status_;
 -  status_ = file_->Append(bytes);
 -  if (status_.ok()) offset_ += bytes.size();
-+  // BM44: the append's status is discarded.
-+  file_->Append(bytes);
++  // BM44: the append's status is discarded on purpose.
++  (void)file_->Append(bytes);
 +  offset_ += bytes.size();
    return status_;
  }

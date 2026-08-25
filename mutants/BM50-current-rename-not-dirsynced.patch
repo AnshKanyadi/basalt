@@ -1,0 +1,34 @@
+# id: BM50-current-rename-not-dirsynced
+# blinds: the directory sync that makes an atomic rename durable
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# THE INJECTOR SECTION 3.3 EXISTS FOR, finally with a call site to find. A
+# rename is atomic with respect to readers and says NOTHING about durability:
+# without the directory sync it lives in the page cache, and after a power cut
+# CURRENT names a manifest that was never installed -- or, worse, still names
+# one that was deleted.
+#
+# Nothing in the process's own lifetime can see this. Only the harness's ledger,
+# which records the Env calls that were issued rather than the state they
+# produced, can say that the pair was not there.
+--- a/engine-cpp/src/sst/manifest.cc	2026-08-25 02:31:27
++++ b/engine-cpp/src/sst/manifest.cc	2026-08-25 02:31:27
+@@ -372,13 +372,9 @@
+   if (!s.ok()) return s;
+   if (!closed.ok()) return closed;
+   s = env->RenameFile(tmp, CurrentPath(dir));
+-  if (!s.ok()) return s;
+-  DirectoryPtr d;
+-  s = env->NewDirectory(dir, &d);
+   if (!s.ok()) return s;
+-  s = d->Sync();
+-  const Status dclosed = d->Close();
+-  return s.ok() ? dclosed : s;
++  // BM50: the rename is left in the page cache.
++  return Status::Ok();
+ }
+ 
+ }  // namespace

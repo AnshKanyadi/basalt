@@ -66,6 +66,16 @@ enum class RecordKind : uint8_t {
   kBatch = 1,
   kGroupEnd = 2,
   kFileHeader = 3,
+  // B2-D4(c): THE MANIFEST IS A WAL-FRAMED LOG. It rides the same blocks, the
+  // same fragment chain, the same CRC coverage and the same section 5.4
+  // torn-tail rule, so that B2 freezes ONE new format and not two.
+  //
+  // NO WAL WRITES THIS AND NO WAL EVER HAS. Every byte of every existing WAL
+  // decodes identically; what this adds is a value that lets the two logs be
+  // told apart by the kinds they hold rather than by a second magic. WAL
+  // recovery refuses it and manifest replay refuses kBatch -- both directions,
+  // both asserted.
+  kManifestEdit = 4,
 };
 
 enum class OpKind : uint8_t {

@@ -153,6 +153,14 @@ TableCheck ValidateTable(Slice image) {
                   footer.index.offset + ie.offset,
                   "index names a key that is not the block's last");
     }
+    if (ok.data_blocks == 0) {
+      ok.smallest_key.assign(entries.front().key.data(), entries.front().key.size());
+    }
+    ok.largest_key.assign(entries.back().key.data(), entries.back().key.size());
+    for (const BlockEntry& e : entries) {
+      const uint64_t seq = SeqOfTag(ExtractTag(e.key));
+      if (seq > ok.largest_seq) ok.largest_seq = seq;
+    }
     ok.data_blocks++;
     ok.entries += entries.size();
   }

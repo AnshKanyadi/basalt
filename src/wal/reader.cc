@@ -83,6 +83,22 @@ bool IsResyncCandidate(Slice image, uint64_t offset, SeqNum committed) {
   RecordKind kind;
   SeqNum seq;
   if (!PeekKindAndSeq(f.payload, &kind, &seq)) return false;
+  // A MANIFEST EDIT COUNTS WITHOUT A SEQUENCE TEST, and without it the
+  // manifest's torn-tail rule would be unsound in a way nothing would report.
+  //
+  // The `seq > committed` test exists so that a stale batch left over from an
+  // earlier file cannot masquerade as valid data after a corruption point. A
+  // manifest edit has no sequence at all, and a manifest GROUP_END carries
+  // zero, so under the WAL's predicate NOTHING in a manifest can ever be
+  // recognised as structurally valid -- which would classify every interior
+  // corruption in a manifest as a torn tail and SILENTLY DISCARD committed
+  // state. Section 5.4's whole discriminator would be answered "no" by
+  // construction.
+  //
+  // It costs the WAL nothing: no WAL contains a manifest edit, so one appearing
+  // after a corruption point is genuine interior corruption and refusing the
+  // open is the right answer there too.
+  if (kind == RecordKind::kManifestEdit) return true;
   if (kind != RecordKind::kBatch && kind != RecordKind::kGroupEnd) return false;
   return seq > committed;
 }

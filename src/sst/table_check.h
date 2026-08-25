@@ -79,8 +79,17 @@ struct TableCheck {
   bool ok() const { return fault == TableFault::kNone; }
   // Filled in on success, so a caller that validates does not have to parse
   // again to find out what it validated.
+  //
+  // `largest_seq` is the number D4 section 5.1 point 2 holds the manifest to:
+  // it is a fact about the bytes on disk, derived by the classifier the
+  // manifest cannot influence, and an Open fails if the manifest disagrees with
+  // it. THE MAXIMUM OVER ALL ENTRIES, not the sequence of the largest key --
+  // the two are unrelated, and BM46 is the mutant that says so.
   uint64_t data_blocks = 0;
   uint64_t entries = 0;
+  std::string smallest_key;
+  std::string largest_key;
+  uint64_t largest_seq = 0;
 };
 
 // Validates a whole table image. Pure: bytes in, verdict out, no Env, no

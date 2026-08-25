@@ -219,7 +219,11 @@ bool PeekKindAndSeq(Slice payload, RecordKind* kind, SeqNum* seq) {
       *seq = GetU64(payload.data() + 1);
       return true;
     case RecordKind::kFileHeader:
-      *kind = RecordKind::kFileHeader;
+    case RecordKind::kManifestEdit:
+      // NEITHER CARRIES A SEQUENCE. For the manifest that is not an omission:
+      // D7's forward binding says the manifest may never record a durable
+      // sequence, so there is nothing here to peek at.
+      *kind = static_cast<RecordKind>(k);
       *seq = 0;
       return true;
   }

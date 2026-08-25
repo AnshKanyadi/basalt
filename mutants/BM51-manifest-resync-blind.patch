@@ -1,0 +1,32 @@
+# id: BM51-manifest-resync-blind
+# blinds: a manifest edit counting as a structurally valid record after a failure
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# THE SUBTLEST PATCH IN THIS CATALOGUE, and it is a REVERSION rather than a
+# break: it restores the WAL's own predicate exactly. Under it, nothing in a
+# manifest can ever be recognised as structurally valid -- edits carry no
+# sequence and manifest terminators carry zero, so `seq > committed` is false
+# for everything a manifest contains.
+#
+# Section 5.4's discriminator then answers "no" BY CONSTRUCTION, every interior
+# corruption in a manifest classifies as a torn tail, and committed manifest
+# state is SILENTLY DISCARDED. A database opens cleanly having forgotten
+# SSTables that are still sitting in its directory.
+#
+# This is the cost of reusing a reader across two file kinds, and it is the one
+# thing the reuse does not give for free. It was found by asking what the shared
+# predicate means for a log whose records have no sequences.
+--- a/engine-cpp/src/wal/reader.cc	2026-08-25 02:31:27
++++ b/engine-cpp/src/wal/reader.cc	2026-08-25 02:31:27
+@@ -98,7 +98,7 @@
+   // It costs the WAL nothing: no WAL contains a manifest edit, so one appearing
+   // after a corruption point is genuine interior corruption and refusing the
+   // open is the right answer there too.
+-  if (kind == RecordKind::kManifestEdit) return true;
++  // BM51: the WAL's predicate, unchanged, applied to both logs.
+   if (kind != RecordKind::kBatch && kind != RecordKind::kGroupEnd) return false;
+   return seq > committed;
+ }

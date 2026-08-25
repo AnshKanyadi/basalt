@@ -1,5 +1,7 @@
 #include "recovery.h"
 
+#include "read_whole_file.h"
+
 #include <algorithm>
 #include <utility>
 
@@ -31,22 +33,6 @@ std::string LogPath(const std::string& dir, uint64_t number) {
   std::string n = std::to_string(number);
   while (n.size() < 6) n.insert(n.begin(), '0');
   return dir + "/" + n + ".log";
-}
-
-Status ReadWholeFile(Env* env, const std::string& path, std::string* out) {
-  SequentialFilePtr f;
-  Status s = env->NewSequentialFile(path, &f);
-  if (!s.ok()) return s;
-  out->clear();
-  char scratch[16384];
-  while (true) {
-    Slice chunk;
-    s = f->Read(sizeof scratch, &chunk, scratch);
-    if (!s.ok()) { (void)f->Close(); return s; }
-    if (chunk.empty()) break;
-    out->append(chunk.data(), chunk.size());
-  }
-  return f->Close();
 }
 
 }  // namespace
@@ -199,6 +185,11 @@ Status Recover(Env* env, const std::string& dir, const Caps& caps,
           ++out->committed_batches;
           break;
         }
+        case RecordKind::kManifestEdit:
+          // The other half of the pair: a manifest presented as a WAL. The two
+          // logs share a physical format deliberately and are distinguished by
+          // the kinds they hold, so each must refuse the other's.
+          return Status::Corruption(path + ": a manifest edit in a WAL");
         case RecordKind::kGroupEnd: {
           DecodedGroupEnd g;
           if (!DecodeGroupEnd(Slice(rec.payload), &g)) {
