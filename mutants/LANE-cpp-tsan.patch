@@ -19,6 +19,13 @@
 # green for a subject it had stopped watching. Track A lost five checklist steps
 # to exactly that shape.
 #
+# THIS IS THE ALIVE-CANARY ARGUMENT, one level up. blind-analyzer.sh carries a
+# canary declared against a test that does not cover it, because without one a
+# lane that reports only kills cannot distinguish a rule under test from a check
+# that fails regardless. Same structure here: BM14 reports on the ENGINE, this
+# reports on the LANE, and a lane that can only report on its subject cannot
+# tell "the subject is healthy" from "I stopped watching".
+#
 # The control works because cpp-test BUILDS the harness and does not RUN it, so
 # the patch is shown to compile and cpp-tsan's red is the race.
 --- a/engine-cpp/test/tsan_harness_test.cc	2026-08-24 19:58:14
