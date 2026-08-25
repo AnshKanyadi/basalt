@@ -33,6 +33,18 @@ enum class RunOutcome : uint8_t {
 // the thing being claimed.
 bool CountsAsRecoveryEvidence(RunOutcome outcome);
 
+// THE MECHANICAL LINK between an enabled exactness-suspending injector and the
+// outcome it forces (DESIGN-B1 section 7.5).
+//
+// TestEnv records the FACT -- that a registry member was enabled, at the point
+// of enabling. This function is where that fact becomes a policy, and it is a
+// FLOOR: the rig may narrow the outcome further, to a violation or to
+// inconclusive, but it may never widen it back to kContractPass. Without this
+// function the suppression would be a thing somebody remembers to do, and the
+// run it would be forgotten on is the one where assertion (ii) was suspended
+// and the recovery contract was therefore not under test at all.
+RunOutcome OutcomeFloor(bool exactness_suspended);
+
 // Total over RunOutcome. Same closed-switch discipline as CodeName.
 const char* RunOutcomeName(RunOutcome outcome);
 

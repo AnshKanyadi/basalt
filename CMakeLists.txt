@@ -106,10 +106,22 @@ target_compile_options(rift_engine PRIVATE ${RIFT_CXX_FLAGS})
 
 # Harness-side types. A SEPARATE archive, deliberately: it is what the rig uses
 # to decide what a run may be counted as, and it never links into Go.
+# TestEnv lives under src/ so the A5 scope scan covers it -- it executes during
+# a run and its fault schedules must be as deterministic as the engine's -- but
+# it is a SEPARATE archive and never links into rift_engine or into Go.
+add_library(rift_testenv STATIC
+  src/env/test/test_env.cc
+)
+target_include_directories(rift_testenv PUBLIC src src/env src/env/test)
+target_link_libraries(rift_testenv PUBLIC rift_engine)
+target_compile_options(rift_testenv PRIVATE ${RIFT_CXX_FLAGS})
+
 add_library(rift_rig STATIC
   rig/run_outcome.cc
+  rig/durable_mirror.cc
 )
-target_include_directories(rift_rig PUBLIC rig src)
+target_include_directories(rift_rig PUBLIC rig src src/env src/env/test)
+target_link_libraries(rift_rig PUBLIC rift_testenv)
 target_compile_options(rift_rig PRIVATE ${RIFT_CXX_FLAGS})
 
 # ----------------------------------------------------------------- binaries
@@ -120,8 +132,12 @@ add_executable(rift_engine_test
   test/run_outcome_test.cc
   test/env_surface_test.cc
   test/posix_raw_test.cc
+  test/test_env_test.cc
+  test/real_exit_kill_test.cc
 )
-target_link_libraries(rift_engine_test PRIVATE rift_engine rift_rig gtest_main)
+# rift_rig carries rift_testenv which carries rift_engine, both PUBLIC-ly;
+# naming any of them again makes the linker warn about a duplicate archive.
+target_link_libraries(rift_engine_test PRIVATE rift_rig gtest_main)
 target_compile_options(rift_engine_test PRIVATE ${RIFT_CXX_FLAGS})
 target_compile_definitions(rift_engine_test PRIVATE ${RIFT_SANITIZER_DEFINE})
 

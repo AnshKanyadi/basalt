@@ -1,0 +1,24 @@
+# id: MODEL-append-reaches-content
+# blinds: Append being buffered rather than written
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# Section 3.3's matrix says of Append: "buffered; nothing has reached the
+# device". PosixWritableFile is written to agree, deliberately and with the
+# reasoning at the code. If TestEnv disagrees, the two Env implementations
+# differ about WHICH CALL reaches the device, and B4's differential rig compares
+# the wrong thing -- quietly, and in a direction where the model is more
+# permissive than production.
+--- a/engine-cpp/src/env/test/test_env.cc	2026-08-24 17:35:57
++++ b/engine-cpp/src/env/test/test_env.cc	2026-08-24 17:35:57
+@@ -367,7 +367,7 @@
+   Status DoAppend(Slice data) override {
+     FileState* f = impl_->Find(path_);
+     if (f == nullptr) return Status::IoError("appending to a vanished file: " + path_);
+-    f->buf.append(data.data(), data.size());
++    f->content.append(data.data(), data.size());  // MODEL: Append reaches the device
+     return Status::Ok();
+   }
+   Status DoFlush() override { impl_->Flush(path_); return Status::Ok(); }

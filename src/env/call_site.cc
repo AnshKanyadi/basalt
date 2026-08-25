@@ -1,5 +1,7 @@
 #include "call_site.h"
 
+#include <vector>
+
 #include "check.h"
 
 namespace rift {
@@ -32,6 +34,36 @@ const char* CallSiteName(CallSite site) {
     case CallSite::kDirectoryClose:            return "kDirectoryClose";
   }
   RIFT_UNREACHABLE("CallSite holds a value no enumerator names");
+}
+
+const std::vector<CallSite>& AllCallSites() {
+  static const std::vector<CallSite>* const kAll = new std::vector<CallSite>{
+      // RIFT-CALL-SITE-LIST-BEGIN
+    CallSite::kEnvNewWritableFile,
+    CallSite::kEnvNewSequentialFile,
+    CallSite::kEnvNewRandomAccessFile,
+    CallSite::kEnvNewDirectory,
+    CallSite::kEnvGetChildren,
+    CallSite::kEnvGetFileSize,
+    CallSite::kEnvFileExists,
+    CallSite::kEnvDeleteFile,
+    CallSite::kEnvRenameFile,
+    CallSite::kEnvCreateDir,
+    CallSite::kEnvLockFile,
+    CallSite::kEnvUnlockFile,
+    CallSite::kWritableFileAppend,
+    CallSite::kWritableFileFlush,
+    CallSite::kWritableFileSync,
+    CallSite::kWritableFileClose,
+    CallSite::kSequentialFileRead,
+    CallSite::kSequentialFileClose,
+    CallSite::kRandomAccessFileRead,
+    CallSite::kRandomAccessFileClose,
+    CallSite::kDirectorySync,
+    CallSite::kDirectoryClose,
+      // RIFT-CALL-SITE-LIST-END
+  };
+  return *kAll;
 }
 
 }  // namespace rift

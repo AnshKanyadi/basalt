@@ -1,0 +1,29 @@
+# id: REGISTRY-lying-sync-not-suspending
+# blinds: the exactness-suspending injector registry
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# kLyingSync drops out of the registry. A run in which the device returned
+# success and promoted nothing would then be reportable as kContractPass and
+# banked as evidence for the recovery contract -- a contract that run did not
+# test, because assertion (ii) should have been suspended for it.
+#
+# This is BM13's failure arriving from the other end: BM13 breaks the policy
+# site that decides what may be banked; this breaks the FACT that site consumes.
+# Both have to be closed or the suppression is only as good as whichever half
+# nobody edited.
+--- a/engine-cpp/src/env/test/test_env.cc	2026-08-24 17:39:55
++++ b/engine-cpp/src/env/test/test_env.cc	2026-08-24 17:39:55
+@@ -35,9 +35,9 @@
+   // narrower and still real: DETECT AND REFUSE, which section 5.4(d) already
+   // does.
+   switch (injection) {  // NO default: arm -- a new injector must be classified
+-    case Injection::kSyncLoss:
+     case Injection::kTornSync:
+       return true;
++    case Injection::kSyncLoss:  // REGISTRY: no longer suspends
+     case Injection::kNone:
+     case Injection::kIoError:
+     case Injection::kDiskFull:

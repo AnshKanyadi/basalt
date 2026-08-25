@@ -1,0 +1,24 @@
+# id: MODEL-kill-keeps-content
+# blinds: content reverting to durable on a kill
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The other half of B1-D2's kill row. This one is only catchable because
+# TestEnvironment::ContentNow exists: after a kill the Env is dead and cannot be
+# read through, so without a harness-side view of the model this line would be
+# unreachable by any test -- and an unreachable line of a model is a line that
+# rots. The accessor was added for exactly this reason and this patch is the
+# proof it was needed.
+--- a/engine-cpp/src/env/test/test_env.cc	2026-08-24 17:39:55
++++ b/engine-cpp/src/env/test/test_env.cc	2026-08-24 17:39:55
+@@ -275,7 +275,7 @@
+       if (!f.entry_durable) { vanished.push_back(kv.first); continue; }
+       f.present = true;         // an unlink that was never synced is undone
+       f.buf.clear();
+-      f.content = f.durable;    // content = durable, exactly
++      // MODEL: content survives the kill
+     }
+     for (const std::string& p : vanished) files_.erase(p);
+     if (plan_.kill_mode == KillMode::kRealExit) {

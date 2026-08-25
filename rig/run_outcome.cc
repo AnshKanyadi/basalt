@@ -19,6 +19,11 @@ bool CountsAsRecoveryEvidence(RunOutcome outcome) {
   RIFT_UNREACHABLE("RunOutcome holds a value no enumerator names");
 }
 
+RunOutcome OutcomeFloor(bool exactness_suspended) {
+  return exactness_suspended ? RunOutcome::kCharacterizationOnly
+                             : RunOutcome::kContractPass;
+}
+
 const char* RunOutcomeName(RunOutcome outcome) {
   switch (outcome) {
     case RunOutcome::kContractPass:         return "kContractPass";

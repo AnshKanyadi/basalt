@@ -1,0 +1,28 @@
+# id: BM17d-callsite-missing-from-list
+# blinds: the fourth artifact of the correspondence, AllCallSites()
+# covering-lane: cpp-scan
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# An enumerator drops out of the list the census iterates. Everything still
+# compiles, every existing Env call still works, and the reachability census
+# quietly stops looking for one call site -- so a genuinely unreachable Env call
+# would be reported as fully covered. The failure the census exists to catch,
+# arriving inside the census itself.
+#
+# NOT IN THE CATALOGUE. AllCallSites() was added at B1.3 because the census
+# needs to iterate the enum, and a hand-written array beside a hand-written enum
+# is a drift waiting to happen. Amendment A2 requires the mutant in the same
+# change as the mechanism, so the list became the fourth thing cpp-scan binds by
+# name and this is the patch that proves it is bound.
+--- a/engine-cpp/src/env/call_site.cc	2026-08-24 17:51:25
++++ b/engine-cpp/src/env/call_site.cc	2026-08-24 17:51:25
+@@ -47,7 +47,6 @@
+     CallSite::kEnvGetFileSize,
+     CallSite::kEnvFileExists,
+     CallSite::kEnvDeleteFile,
+-    CallSite::kEnvRenameFile,
+     CallSite::kEnvCreateDir,
+     CallSite::kEnvLockFile,
+     CallSite::kEnvUnlockFile,

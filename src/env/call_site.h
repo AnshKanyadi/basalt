@@ -15,6 +15,7 @@
 #define RIFT_ENV_CALL_SITE_H_
 
 #include <cstdint>
+#include <vector>
 
 namespace rift {
 
@@ -54,6 +55,15 @@ enum class CallSite : uint8_t {
 // "kill 47 failed" is not a bug report; "kill 47 = Sync(000001.log)" is
 // (section 9.5), and that starts here.
 const char* CallSiteName(CallSite site);
+
+// Every enumerator, in declaration order.
+//
+// The census must iterate the call sites, and an array that had drifted from
+// the enum would make the census report on a different set than exists -- which
+// is the failure the census is FOR, arriving inside the census itself. So the
+// list in call_site.cc is a fourth artifact bound by scripts/cpp-scan.sh's set
+// equality, alongside the wrapper, the Do* and the enumerator.
+const std::vector<CallSite>& AllCallSites();
 
 }  // namespace rift
 
