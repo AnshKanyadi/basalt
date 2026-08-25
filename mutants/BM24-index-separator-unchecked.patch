@@ -15,9 +15,9 @@
 # seek that lands in the wrong place. With the separator merely SEPARATING, that
 # is undetectable by construction -- which is the argument for the decision, and
 # the reason this mutant exists to defend it.
---- a/engine-cpp/src/sst/table_check.cc	2026-08-25 01:47:26
-+++ b/engine-cpp/src/sst/table_check.cc	2026-08-25 01:47:26
-@@ -130,11 +130,7 @@
+--- a/engine-cpp/src/sst/table_check.cc	2026-08-25 03:07:35
++++ b/engine-cpp/src/sst/table_check.cc	2026-08-25 03:07:35
+@@ -148,11 +148,7 @@
      // there is something in the table to compare it against. A shortened
      // separator -- LevelDB's -- would leave this assertion impossible to write,
      // which is the argument for the decision rather than a consequence of it.
@@ -27,6 +27,6 @@
 -                  "index names a key that is not the block's last");
 -    }
 +    // BM24: the separator is not compared against the block it names.
-     ok.data_blocks++;
-     ok.entries += entries.size();
-   }
+     if (ok.data_blocks == 0) {
+       ok.smallest_key.assign(entries.front().key.data(), entries.front().key.size());
+     }

@@ -16,7 +16,14 @@
 # cries wolf is a lane people delete. A floor passes drift and fails a collapse.
 #
 # Format:
-#   <class> | <rate floor, per mille> | <kill-point ceiling> | <measurement> | <reasoning>
+#   <class> | <rate floor, per mille> | <kill-point ceiling> | <measurement> | <reasoning> | <regime>
+#
+# THE REGIME COLUMN IS NOT OPTIONAL DECORATION. Section 8.4: a number measured
+# at non-default caps never aggregates with a default-cap number. `default` is
+# the caps as shipped -- no flush occurs, so it is the direct successor of the
+# sweep B1's floors were measured against. `flush` sets a low threshold and adds
+# a workload tail that crosses it, and is the only regime in which the flush
+# path has kill points at all. An absent column means default.
 #
 # A class the sweep cannot reach carries a SPLIT LABEL in the rate column --
 # covered-by: <instrument> -- naming what catches it instead. Not a silent zero.

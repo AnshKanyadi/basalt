@@ -133,12 +133,26 @@ struct ManifestState {
   // inversion section 5.4 rejected candidate (a) for.
   //
   // A LOST FILE IS A QUESTION ABOUT FILES, so it is answered with file
-  // identities. Every WAL this engine creates is NAMED IN THE MANIFEST BEFORE
-  // THE FILE IS CREATED, which is what closes the crash window: an absent named
-  // WAL is legal for THE HIGHEST NAMED NUMBER ONLY -- that is the one being
-  // created, and it holds nothing -- and is a lost directory entry for any
-  // other. A present WAL that is not named cannot arise, because naming comes
-  // first, so one is a refused open too.
+  // identities:
+  //
+  //   EVERY NAMED WAL MUST EXIST. No exception. One that does not is a lost
+  //   directory entry, and recovery cannot replay a prefix it cannot prove is
+  //   complete.
+  //
+  //   A PRESENT WAL THAT IS NOT NAMED MUST HOLD NO COMMITTED BATCHES. It is
+  //   ignored and deleted.
+  //
+  // THE ORDER IS WHAT MAKES BOTH HALVES TRUE, AND THE FIRST ATTEMPT HAD IT
+  // BACKWARDS. Naming a WAL before creating it looks like the safe order and is
+  // not: a crash in between leaves a name with no file, and that name PERSISTS
+  // -- so "named and absent" stops meaning "lost" forever after, and the only
+  // repair is an exception that then has to be justified at every later Open.
+  // The kill-point sweep found it as 41 violations on the first run.
+  //
+  // Creating first inverts it into a window that closes itself. A WAL is
+  // created, named, and only THEN written to, so a crash between creation and
+  // naming leaves an EMPTY unnamed file -- which carries nothing, is provably
+  // empty, and is deleted. Neither half needs an exception.
   //
   // The lowest named number is also the oldest WAL recovery must read: a flush
   // removes the names it has covered in the same manifest group that adds the

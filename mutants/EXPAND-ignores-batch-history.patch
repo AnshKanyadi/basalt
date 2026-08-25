@@ -18,9 +18,9 @@
 # It is also the half that CANNOT be fixed at replay: the WAL records the
 # expansion, so an expansion that missed a key records a log that is faithfully
 # replayed into the wrong state forever.
---- a/engine-cpp/src/db.cc	2026-08-24 23:08:55
-+++ b/engine-cpp/src/db.cc	2026-08-24 23:08:55
-@@ -85,12 +85,7 @@
+--- a/engine-cpp/src/db.cc	2026-08-25 03:07:35
++++ b/engine-cpp/src/db.cc	2026-08-25 03:07:35
+@@ -122,12 +122,7 @@
        case wal::OpKind::kDeleteRange: {
          const Bound start =
              e.value.empty() ? Bound::Unbounded() : Bound::At(Slice(e.key));
@@ -30,7 +30,7 @@
 -            it->second = {wal::OpKind::kDelete, std::string()};
 -          }
 -        }
-+        // EXPAND: earlier writes in the same batch are not covered.
-         // And everything live in the memtable. Reads memory, not Env: this is
-         // the operation most likely to violate "Apply performs no I/O", which
-         // is why that assertion is re-made against this path.
++        // EXPAND: earlier ops in the same batch are not covered.
+         // And everything live in THE MERGED VIEW -- the memtable, the memtable
+         // being flushed, and every SSTable. B2-D7 section 8: at B1 this read
+         // the memtable, and reading only the memtable now would make a

@@ -1,0 +1,34 @@
+# id: BM62-unnamed-wal-unchecked
+# blinds: an unnamed WAL being proven to hold nothing uncovered
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# A WAL nobody names is ignored, and this removes the check that ignoring it is
+# safe. The rule is that nothing in it may be above what the SSTables cover --
+# because a record with no durable home is a record ignoring the file DISCARDS.
+#
+# The state is reachable: a crash between the manifest edit that drops a WAL's
+# name and the deletion of the file leaves exactly one. That case is legal and
+# tolerated; the check is what tells it apart from a manifest that lost an edit
+# it wrote.
+--- a/engine-cpp/src/wal/recovery.cc	2026-08-25 03:10:38
++++ b/engine-cpp/src/wal/recovery.cc	2026-08-25 03:10:38
+@@ -117,14 +117,8 @@
+       if (!DecodeBatch(Slice(scan.records[i].payload), &b)) {
+         return Status::Corruption(path + ": malformed BATCH in an unnamed WAL");
+       }
+-      if (b.seq > options.covered_through) {
+-        return Status::Corruption(
+-            path + ": present, not named by the manifest, and holding a batch "
+-            "at sequence " + std::to_string(b.seq) +
+-            " above what the SSTables cover (" +
+-            std::to_string(options.covered_through) +
+-            "). A record with no durable home would be lost by ignoring it");
+-      }
++      // BM62: whatever is in an unnamed WAL is assumed covered.
++      (void)b;
+     }
+   }
+ 

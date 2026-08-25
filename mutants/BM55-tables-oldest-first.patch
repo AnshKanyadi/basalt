@@ -1,0 +1,27 @@
+# id: BM55-tables-oldest-first
+# blinds: the merge order over SSTables
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# NEWEST FIRST IS NOT COSMETIC. A deletion in a newer table must hide a value
+# in an older one, and an overwrite must hide the value it replaced. Reverse the
+# order and the database returns the FIRST value a key ever had, forever, with
+# every checksum verifying and every table individually perfect.
+#
+# One line, and it reads as a tidy-up: `tables` is a std::map iterated in
+# ascending file number, and assigning it straight through looks more natural
+# than reversing it.
+--- a/engine-cpp/src/db.cc	2026-08-25 03:10:38
++++ b/engine-cpp/src/db.cc	2026-08-25 03:10:38
+@@ -74,7 +74,8 @@
+   void Build(MergedIter* out) const {
+     out->AddMemTable(mem.get());
+     if (imm != nullptr) out->AddMemTable(imm.get());
+-    for (const auto& t : tables) out->AddTable(t.get());
++    // BM55: oldest first.
++    for (auto it = tables.rbegin(); it != tables.rend(); ++it) out->AddTable(it->get());
+   }
+ };
+ 

@@ -3,10 +3,12 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <cstdio>
 #include <memory>
 #include <utility>
 
 #include "call_site.h"
+#include "check.h"
 #include "db.h"
 #include "durable_mirror.h"
 #include "test_env.h"
@@ -28,6 +30,10 @@ struct Driver {
   DB* db;
   SubmissionLog log;
   bool alive = true;
+  // The Env ordinal at which the current Sync began, so the harness can ask
+  // about the calls THIS Sync made rather than about every call in the run.
+  const TestEnvironment* env = nullptr;
+  uint64_t sync_start_ordinal = 0;
 
   void Put(const std::string& k, const std::string& v) {
     if (!alive) return;
@@ -44,6 +50,7 @@ struct Driver {
   }
   void Sync() {
     if (!alive) return;
+    if (env != nullptr) sync_start_ordinal = env->ordinal();
     log.NoteSyncStart();
     wal::SeqNum mark = 0;
     const Status s = db->Sync(&mark);
@@ -54,7 +61,18 @@ struct Driver {
   }
 };
 
-void Workload(Driver* d) {
+// THE WORKLOAD, AND THE ONE THING B2 BROUGHT FORWARD (B2-Q3).
+//
+// The six-key prefix is B1's, unchanged, and it is what the default regime
+// runs. The tail after it exists ONLY so the flush regime crosses its
+// threshold: B2's gates on the flush path cannot be induced by a workload that
+// never flushes, and that was the whole of the borrow list.
+//
+// It is guarded by the regime rather than always present, so the default
+// regime's numbers stay comparable to the ones B1's floors were measured
+// against. A longer workload in both regimes would have moved every floor for
+// a reason unrelated to any defect.
+void Workload(Driver* d, SweepRegime regime) {
   d->Put("a", "1");
   d->Put("b", "2");
   d->Sync();
@@ -63,6 +81,18 @@ void Workload(Driver* d) {
   d->Put("e", "5");
   d->Sync();
   d->Put("f", "6");
+  d->Sync();
+  if (regime != SweepRegime::kFlush) return;
+  // Enough to cross kFlushBytes at the flush regime's setting, so that the
+  // Sync below runs a flush and every Env call it makes becomes a kill point.
+  const std::string filler(256, 'x');
+  for (int i = 0; i < 40; ++i) {
+    char key[16];
+    std::snprintf(key, sizeof key, "k%03d", i);
+    d->Put(key, filler);
+  }
+  d->Sync();
+  d->Put("after-the-flush", "1");
   d->Sync();
 }
 
@@ -76,11 +106,37 @@ std::map<std::string, std::string> ExtractState(const DB& db) {
   return out;
 }
 
-LedgerFacts FactsFrom(const TestEnvironment& t, bool in_flight) {
+LedgerFacts FactsFrom(const TestEnvironment& t, bool in_flight,
+                      uint64_t sync_start_ordinal) {
   LedgerFacts f;
   f.sync_in_flight = in_flight;
+  // THE FACT IS "DID THIS Sync MAKE THE IN-FLIGHT GROUP DURABLE", and B2 broke
+  // three assumptions the old one-line version rested on.
+  //
+  //   THE WAL, NOT THE LAST FILE. A group lives in the WAL. Until B2 the WAL
+  //   was the only file this engine ever synced, so "the last Sync in the
+  //   ledger" and "the WAL's Sync" were the same entry -- true by accident of
+  //   there being one file. The flush syncs three.
+  //
+  //   ANY CALL THAT PROMOTED, NOT ONLY A Sync. A torn injection at a FLUSH
+  //   promotes a prefix, and the promotion is recorded on the FLUSH entry. A
+  //   filter that looked only at Sync calls missed it and reported "not
+  //   durable" about bytes that were.
+  //
+  //   ANY PROMOTION IN THIS Sync, NOT THE LAST ONE. Durability is not undone.
+  //   The flush creates a second WAL inside the same Sync and that empty file
+  //   promotes nothing, so reading the LAST entry reports "not durable" about a
+  //   group made durable moments earlier.
+  //
+  // All three were found by the kill-point sweep, where each blamed the engine
+  // for the harness. Scoping to THIS Sync is what makes "any" safe: without it
+  // one successful Sync answers for every group after it -- which is precisely
+  // how the first two stayed invisible through all of B1.
   for (const testenv::LedgerEntry& e : t.ledger()) {
-    if (e.site == CallSite::kWritableFileSync) f.in_flight_durability_applied = e.promoted;
+    if (e.ordinal <= sync_start_ordinal) continue;
+    if (!e.promoted) continue;
+    if (e.path.size() < 4 || e.path.compare(e.path.size() - 4, 4, ".log") != 0) continue;
+    f.in_flight_durability_applied = true;
   }
   return f;
 }
@@ -111,18 +167,42 @@ bool PredicateSatisfied(Status::Code code, const TestEnvironment& t) {
 
 }  // namespace
 
-uint64_t WorkloadOrdinalCount() {
+const char* SweepRegimeName(SweepRegime r) {
+  switch (r) {  // NO default: arm
+    case SweepRegime::kDefault: return "default";
+    case SweepRegime::kFlush:   return "flush";
+  }
+  RIFT_UNREACHABLE("SweepRegime holds a value no enumerator names");
+}
+
+wal::Caps CapsFor(SweepRegime r) {
+  wal::Caps c;
+  switch (r) {  // NO default: arm
+    case SweepRegime::kDefault:
+      return c;
+    case SweepRegime::kFlush:
+      // Low enough that the workload's tail crosses it, high enough that a
+      // single batch does not: the regime is about flushing, not about the
+      // batch that happened to trip the threshold.
+      c.flush_bytes = 8u * 1024;
+      return c;
+  }
+  RIFT_UNREACHABLE("SweepRegime holds a value no enumerator names");
+}
+
+uint64_t WorkloadOrdinalCount(SweepRegime regime) {
   TestEnvironment probe;
   std::unique_ptr<DB> db;
-  if (!DB::Open(probe.env(), kDir, wal::Caps(), &db).ok()) return 0;
-  Driver d{db.get(), {}, true};
-  Workload(&d);
+  if (!DB::Open(probe.env(), kDir, CapsFor(regime), &db).ok()) return 0;
+  Driver d{db.get(), {}, true, &probe, 0};
+  Workload(&d, regime);
   return probe.ordinal();
 }
 
-SweepResult RunSweep() {
+SweepResult RunSweep(SweepRegime regime) {
   SweepResult r;
-  const uint64_t n = WorkloadOrdinalCount();
+  const wal::Caps caps = CapsFor(regime);
+  const uint64_t n = WorkloadOrdinalCount(regime);
 
   // THREE MODES AT EVERY POINT, and the third was added because measuring the
   // sweep's power showed it was missing.
@@ -159,15 +239,17 @@ SweepResult RunSweep() {
       }
       TestEnvironment t(plan);
       SubmissionLog log;
+      uint64_t sync_start_ordinal = 0;
       bool opened = false;
       {
         std::unique_ptr<DB> db;
-        const Status open = DB::Open(t.env(), kDir, wal::Caps(), &db);
+        const Status open = DB::Open(t.env(), kDir, caps, &db);
         if (open.ok()) {
           opened = true;
-          Driver d{db.get(), {}, true};
-          Workload(&d);
+          Driver d{db.get(), {}, true, &t, 0};
+          Workload(&d, regime);
           log = d.log;
+          sync_start_ordinal = d.sync_start_ordinal;
         } else if (!PredicateSatisfied(open.code(), t)) {
           p.outcome = RunOutcome::kContractViolation;
           p.why = "Open returned " + std::string(CodeName(open.code())) +
@@ -205,7 +287,7 @@ SweepResult RunSweep() {
       std::unique_ptr<TestEnvironment> re =
           TestEnvironment::FromImage(t.Image(), testenv::FaultPlan());
       std::unique_ptr<DB> db;
-      const Status reopen = DB::Open(re->env(), kDir, wal::Caps(), &db);
+      const Status reopen = DB::Open(re->env(), kDir, caps, &db);
       if (!reopen.ok()) {
         p.outcome = RunOutcome::kContractViolation;
         p.why = "reopen failed: " + reopen.ToString();
@@ -215,7 +297,8 @@ SweepResult RunSweep() {
       }
 
       const RecoveryVerdict v =
-          Adjudicate(log, FactsFrom(t, log.sync_in_flight()), ExtractState(*db));
+          Adjudicate(log, FactsFrom(t, log.sync_in_flight(), sync_start_ordinal),
+                     ExtractState(*db));
       // SECTION 7.5's SUPPRESSION, MECHANICAL. A run with a registry injector
       // enabled cannot be reported as anything but characterization, whatever
       // the verdict says.

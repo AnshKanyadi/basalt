@@ -550,11 +550,14 @@ class DBImpl final : public DB {
       new_wal_number = table_number + 1;
       mstate_.next_file_number = table_number + 2;
     }
-    // THE NEW WAL IS NAMED BEFORE THE FILE EXISTS, which is what closes the
-    // crash window: an absent named WAL is legal for the HIGHEST named number
-    // only, and this is that number. Creating first and naming second would put
-    // a file on disk the manifest has not heard of, which is indistinguishable
-    // from the manifest having lost an edit.
+    // CREATE THE FILE, THEN NAME IT, AND ONLY THEN WRITE TO IT. The window
+    // between creation and naming leaves an EMPTY unnamed WAL, which recovery
+    // proves empty and deletes. The other order leaves a NAME WITH NO FILE,
+    // which persists and destroys the meaning of "named and absent" forever
+    // after -- see manifest.h, and the 41 sweep violations that found it.
+    std::unique_ptr<wal::Wal> fresh;
+    Status s = wal::Wal::Open(env_, dir_, new_wal_number, caps_, &fresh);
+    if (!s.ok()) return s;
     {
       sst::ManifestEdit bump;
       bump.kind = sst::EditKind::kNextFileNumber;
@@ -562,15 +565,11 @@ class DBImpl final : public DB {
       sst::ManifestEdit add_wal;
       add_wal.kind = sst::EditKind::kAddWal;
       add_wal.number = new_wal_number;
-      const Status s = manifest_->AppendGroup({bump, add_wal});
+      s = manifest_->AppendGroup({bump, add_wal});
       if (!s.ok()) return s;
       wal::DbLock lock(mu_);
       mstate_.wals.insert(new_wal_number);
     }
-
-    std::unique_ptr<wal::Wal> fresh;
-    Status s = wal::Wal::Open(env_, dir_, new_wal_number, caps_, &fresh);
-    if (!s.ok()) return s;
 
     // THE ROLL IS ONE LOCKED STEP. A Write must land in the old memtable AND
     // the old WAL, or in the new memtable AND the new WAL -- never one of each.
@@ -763,11 +762,20 @@ Status DB::Open(Env* env, const std::string& dir, const wal::Caps& caps,
     if (entry.second.largest_seq > covered) covered = entry.second.largest_seq;
   }
 
-  // THE FRESH WAL IS NAMED AND ITS NUMBER RECORDED BEFORE Recover CREATES IT.
-  // A counter left below a file that exists hands the same number out twice,
-  // and the second handout truncates the first file by creating it; a file
-  // created before it is named is one the manifest has not heard of.
   const uint64_t fresh_wal = mstate.next_file_number;
+  wal::RecoverOptions options;
+  options.next_file_number = fresh_wal;
+  options.covered_through = covered;
+  options.named_wals.assign(mstate.wals.begin(), mstate.wals.end());
+  wal::RecoveryResult r;
+  s = wal::Recover(env, dir, caps, options, &r);
+  if (!s.ok()) return unlock(s);
+
+  // THE FRESH WAL IS NAMED AFTER Recover CREATED IT AND BEFORE ANYTHING IS
+  // WRITTEN TO IT. A crash in that window leaves an empty unnamed file, which
+  // the next Open proves empty and removes. A crash before the counter is
+  // recorded hands the same number out again, which truncates that same empty
+  // file -- harmless for exactly the same reason.
   {
     sst::ManifestEdit bump;
     bump.kind = sst::EditKind::kNextFileNumber;
@@ -780,14 +788,6 @@ Status DB::Open(Env* env, const std::string& dir, const wal::Caps& caps,
     mstate.next_file_number = fresh_wal + 1;
     mstate.wals.insert(fresh_wal);
   }
-
-  wal::RecoverOptions options;
-  options.next_file_number = fresh_wal;
-  options.covered_through = covered;
-  options.named_wals.assign(mstate.wals.begin(), mstate.wals.end());
-  wal::RecoveryResult r;
-  s = wal::Recover(env, dir, caps, options, &r);
-  if (!s.ok()) return unlock(s);
 
   out->reset(new DBImpl(env, dir, caps,
                         std::shared_ptr<MemTable>(std::move(r.table)),

@@ -141,9 +141,9 @@ TEST(MemTable, TheDigestRespondsToTheKeySet) {
 TEST(ConcurrencyClaim, WordingIsPinnedAndDoesNotClaimRaceFreedom) {
   const std::string claim(kConcurrencyClaim);
   EXPECT_EQ(claim,
-            "TSan observed no data race across one authored interleaving "
-            "pattern (concurrent MemTable Add and Get); this is not a proof of "
-            "race-freedom.");
+            "TSan observed no data race across two authored interleaving "
+            "patterns (concurrent MemTable Add and Get; concurrent DB Write "
+            "and Sync across a flush); this is not a proof of race-freedom.");
   EXPECT_NE(claim.find("not a proof of race-freedom"), std::string::npos)
       << "the disclaimer is the whole sentence; without it this is a claim the "
          "harness does not support";

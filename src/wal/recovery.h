@@ -66,10 +66,10 @@ struct RecoverOptions {
   // below it is a CORRUPTION and not a skip -- see the partition invariant.
   SeqNum covered_through = 0;
   // THE LIVE WALs, BY NUMBER, ASCENDING, from the manifest. Exactly these are
-  // read; a WAL present and not named is a refused open, and a named WAL that
-  // is absent is a refused open unless it is the HIGHEST named one -- see
-  // manifest.h for why that single exception closes the crash window rather
-  // than opening one.
+  // read. A named WAL that is absent is a refused open, with NO EXCEPTION; a
+  // present WAL that is not named must hold no committed batches, and is
+  // ignored. See manifest.h for why creating before naming is what makes both
+  // halves true without one.
   //
   // Empty means "read every WAL present", which is what a caller with no
   // manifest gets. Only the WAL's own tests do that.

@@ -189,6 +189,6 @@ add_executable(rift_tsan_harness
   test/tsan_harness_test.cc
 )
 target_link_libraries(rift_tsan_harness PRIVATE rift_engine gtest_main)
-target_include_directories(rift_tsan_harness PRIVATE src/memtable)
+target_include_directories(rift_tsan_harness PRIVATE src/memtable src/env src/env/posix src/wal src/sst)
 target_compile_options(rift_tsan_harness PRIVATE ${RIFT_CXX_FLAGS})
 target_compile_definitions(rift_tsan_harness PRIVATE ${RIFT_SANITIZER_DEFINE})

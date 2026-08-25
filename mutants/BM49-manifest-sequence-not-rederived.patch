@@ -14,9 +14,9 @@
 # The check costs a full validation of every table at every open, which is
 # recorded at the code as a cost with a retiring measurement. This patch is what
 # says the cost is buying something.
---- a/engine-cpp/src/sst/manifest.cc	2026-08-25 02:31:27
-+++ b/engine-cpp/src/sst/manifest.cc	2026-08-25 02:31:27
-@@ -286,12 +286,7 @@
+--- a/engine-cpp/src/sst/manifest.cc	2026-08-25 03:07:35
++++ b/engine-cpp/src/sst/manifest.cc	2026-08-25 03:07:35
+@@ -312,12 +312,7 @@
      if (v.largest_key != meta.largest || v.smallest_key != meta.smallest) {
        return Status::Corruption(path + ": key bounds disagree with the manifest");
      }
@@ -27,6 +27,6 @@
 -          std::to_string(v.largest_seq));
 -    }
 +    // BM49: the manifest's number is taken on trust.
+     built.push_back(std::move(t));
    }
-   return Status::Ok();
- }
+   if (opened != nullptr) {

@@ -13,17 +13,18 @@
 #
 # Section 3.3 says it in one line: CLOSE IS A WRITE CALL. Treating it as
 # bookkeeping is a known way to lose data.
---- a/engine-cpp/src/db.cc	2026-08-24 23:08:55
-+++ b/engine-cpp/src/db.cc	2026-08-24 23:08:55
-@@ -376,10 +376,8 @@
- 
-   Status Close() override {
-     { wal::DbLock lock(mu_); if (closed_) return Status::Ok(); closed_ = true; }
--    // The error is RETURNED, not dropped. close(2) reports EIO for writeback
--    // that failed after the last Sync, which is the last moment anyone can
--    // learn the data is gone (BM7).
--    return wal_->Close();
-+    (void)wal_->Close();  // BM7: the close error is dropped
+--- a/engine-cpp/src/db.cc	2026-08-25 03:07:35
++++ b/engine-cpp/src/db.cc	2026-08-25 03:07:35
+@@ -509,9 +509,10 @@
+     // The error is RETURNED, not dropped. close(2) reports EIO for writeback
+     // that failed after the last Sync, which is the last moment anyone can
+     // learn the data is gone (BM7).
+-    const Status w = wal_->Close();
+-    const Status m = manifest_ != nullptr ? manifest_->Close() : Status::Ok();
+-    return w.ok() ? m : w;
++    // BM7: close(2)'s error is dropped.
++    (void)wal_->Close();
++    if (manifest_ != nullptr) (void)manifest_->Close();
 +    return Status::Ok();
    }
  

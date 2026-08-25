@@ -63,38 +63,69 @@ Status RecoverLocked(Env* env, const std::string& dir, const Caps& caps,
 
   // FILE IDENTITY IS THE HALF SEQUENCES CANNOT ANSWER. See recovery.h.
   std::vector<uint64_t> numbers;
+  std::vector<uint64_t> unnamed;
   if (options.named_wals.empty()) {
     numbers = present;
   } else {
     std::vector<uint64_t> named = options.named_wals;
     std::sort(named.begin(), named.end());
-    const uint64_t highest_named = named.back();
     for (uint64_t n : named) {
-      if (std::find(present.begin(), present.end(), n) != present.end()) {
-        numbers.push_back(n);
-        continue;
+      // EVERY NAMED WAL MUST EXIST, WITH NO EXCEPTION. The first version of
+      // this rule forgave the highest named number, because naming came before
+      // creating and a crash in that window left a name with no file -- and
+      // that exception is what the kill-point sweep refused, 41 times. The
+      // order was inverted instead; see manifest.h.
+      if (std::find(present.begin(), present.end(), n) == present.end()) {
+        return Status::Corruption(
+            LogPath(dir, n) +
+            ": named by the manifest and absent. A missing WAL means a directory "
+            "entry was lost, and recovery cannot replay a prefix it cannot prove "
+            "is complete");
       }
-      // THE ONE EXCEPTION, AND IT IS EXACTLY ONE: the highest named WAL is the
-      // one being created when a crash landed, so its absence means it was
-      // never created and it held nothing. Any lower one is a lost directory
-      // entry, and recovery cannot replay a prefix it cannot prove complete.
-      if (n == highest_named) continue;
-      return Status::Corruption(
-          LogPath(dir, n) +
-          ": named by the manifest and absent. A missing WAL means a directory "
-          "entry was lost, and recovery cannot replay a prefix it cannot prove "
-          "is complete");
+      numbers.push_back(n);
     }
     for (uint64_t n : present) {
-      if (std::find(named.begin(), named.end(), n) != named.end()) continue;
-      // A WAL is named BEFORE it is created, so one present and unnamed means
-      // the manifest lost an edit it durably wrote.
-      return Status::Corruption(
-          LogPath(dir, n) +
-          ": present and not named by the manifest; the manifest is missing an "
-          "edit it recorded");
+      if (std::find(named.begin(), named.end(), n) == named.end()) unnamed.push_back(n);
     }
-    out->obsolete_wals = present.size() - numbers.size();
+    out->obsolete_wals = unnamed.size();
+  }
+
+  // A PRESENT, UNNAMED WAL IS ONE OF EXACTLY TWO THINGS, and both are legal:
+  //
+  //   caught between creation and naming -- it is EMPTY, because nothing is
+  //   written to a WAL before its name is durable; or
+  //
+  //   RETIRED BY A FLUSH and not yet deleted -- the manifest dropped its name
+  //   in the same group that added the table covering it, and the crash landed
+  //   before the file was removed.
+  //
+  // What both have in common is the property that matters, so it is the
+  // property checked: NOTHING IN AN UNNAMED WAL MAY BE ABOVE WHAT THE TABLES
+  // COVER. That is B2-Q1's "nothing covered twice" from the other side -- a
+  // record above S in a file nobody names is a record with no durable home --
+  // and the kill-point sweep is what turned it from an assumption about
+  // emptiness into this.
+  for (uint64_t n : unnamed) {
+    const std::string path = LogPath(dir, n);
+    std::string image;
+    s = ReadWholeFile(env, path, &image);
+    if (!s.ok()) return s;
+    const ScanResult scan = ScanLog(Slice(image));
+    for (std::size_t i = 0; i < scan.committed_count; ++i) {
+      if (scan.records[i].kind != RecordKind::kBatch) continue;
+      DecodedBatch b;
+      if (!DecodeBatch(Slice(scan.records[i].payload), &b)) {
+        return Status::Corruption(path + ": malformed BATCH in an unnamed WAL");
+      }
+      if (b.seq > options.covered_through) {
+        return Status::Corruption(
+            path + ": present, not named by the manifest, and holding a batch "
+            "at sequence " + std::to_string(b.seq) +
+            " above what the SSTables cover (" +
+            std::to_string(options.covered_through) +
+            "). A record with no durable home would be lost by ignoring it");
+      }
+    }
   }
 
   // 3. B2-Q1's partition check replaces B1's file-number gapless check. The

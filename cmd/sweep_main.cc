@@ -4,13 +4,30 @@
 // any violation. EVERY NUMBER IT PRINTS IS ALSO ASSERTED -- a number nobody
 // asserts on is decoration that looks like evidence.
 #include <cstdio>
+#include <cstring>
 
 #include "sweep.h"
 
-int main() {
-  const rift::rig::SweepResult r = rift::rig::RunSweep();
+// usage: rift_sweep [default|flush]
+//
+// ONE REGIME PER INVOCATION, and the regime is named in the output. Section
+// 8.4: numbers from a non-default cap never aggregate with default-cap numbers,
+// so a caller that could not tell which it was reading would be aggregating by
+// accident.
+int main(int argc, char** argv) {
+  rift::rig::SweepRegime regime = rift::rig::SweepRegime::kDefault;
+  if (argc > 1) {
+    if (std::strcmp(argv[1], "flush") == 0) {
+      regime = rift::rig::SweepRegime::kFlush;
+    } else if (std::strcmp(argv[1], "default") != 0) {
+      std::printf("   FAIL  unknown regime \"%s\"; expected default or flush\n", argv[1]);
+      return 2;
+    }
+  }
+  const rift::rig::SweepResult r = rift::rig::RunSweep(regime);
 
-  std::printf("\n  kill-point sweep\n");
+  std::printf("\n  kill-point sweep (regime: %s)\n",
+              rift::rig::SweepRegimeName(regime));
   std::printf("  ----------------------------------------------------------\n");
   std::printf("   points visited   : %zu\n", r.points_visited);
   std::printf("   pass             : %zu\n", r.pass);
@@ -67,7 +84,8 @@ int main() {
   // cheap sweep would ever see it.
   unsigned long long first = 0;
   if (!r.failures.empty()) first = r.failures.front().ordinal;
-  std::printf("SWEEP points=%zu violations=%zu first=%llu\n", r.points_visited,
+  std::printf("SWEEP regime=%s points=%zu violations=%zu first=%llu\n",
+              rift::rig::SweepRegimeName(regime), r.points_visited,
               r.violation, first);
 
   if (rc == 0) std::printf("   ok  every kill point recovered to a promised watermark\n\n");

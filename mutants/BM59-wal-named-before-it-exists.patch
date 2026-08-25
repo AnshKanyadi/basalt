@@ -1,0 +1,45 @@
+# id: BM59-wal-named-before-it-exists
+# blinds: creating a WAL before naming it in the manifest
+# covering-lane: cpp-sweep
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# THE ORDER THAT LOOKS SAFER AND IS NOT, and the kill-point sweep is what said
+# so -- 41 violations on its first run. Naming a WAL before creating it leaves,
+# on a crash in between, A NAME WITH NO FILE. That name PERSISTS: every later
+# Open sees a named WAL that is absent, so "named and absent" stops meaning
+# "lost directory entry" forever after, and the only repair is an exception that
+# has to be justified at every Open thereafter.
+#
+# Creating first inverts it into a window that closes itself: the file is
+# written to only after its name is durable, so a crash in between leaves an
+# EMPTY unnamed file which recovery proves harmless and deletes.
+#
+# COVERED BY cpp-sweep AND NOT cpp-test, because the defect is a crash-window
+# defect: no single-process run can see it, and the lane that can is the one
+# that kills at every Env call.
+--- a/engine-cpp/src/db.cc	2026-08-25 03:10:38
++++ b/engine-cpp/src/db.cc	2026-08-25 03:10:38
+@@ -555,9 +555,8 @@
+     // proves empty and deletes. The other order leaves a NAME WITH NO FILE,
+     // which persists and destroys the meaning of "named and absent" forever
+     // after -- see manifest.h, and the 41 sweep violations that found it.
+-    std::unique_ptr<wal::Wal> fresh;
+-    Status s = wal::Wal::Open(env_, dir_, new_wal_number, caps_, &fresh);
+-    if (!s.ok()) return s;
++    // BM59: named first, created second.
++    Status s = Status::Ok();
+     {
+       sst::ManifestEdit bump;
+       bump.kind = sst::EditKind::kNextFileNumber;
+@@ -570,6 +569,9 @@
+       wal::DbLock lock(mu_);
+       mstate_.wals.insert(new_wal_number);
+     }
++    std::unique_ptr<wal::Wal> fresh;
++    s = wal::Wal::Open(env_, dir_, new_wal_number, caps_, &fresh);
++    if (!s.ok()) return s;
+ 
+     // THE ROLL IS ONE LOCKED STEP. A Write must land in the old memtable AND
+     // the old WAL, or in the new memtable AND the new WAL -- never one of each.

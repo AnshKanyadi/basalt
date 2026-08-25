@@ -62,8 +62,12 @@ Status RecoverHere(Env* env, const std::string& dir, const Caps& caps,
   // PRESENT instead would make the set follow the directory, and a deleted WAL
   // would drop out of the set along with the file: the check would then be
   // asking the directory whether the directory was complete.
+  //
+  // ONLY THE WALs THAT ALREADY EXIST. The fresh one this call is about to
+  // create is named AFTER it exists, which is what DB::Open does and what makes
+  // "named and absent" mean "lost" with no exception.
   if (options.named_wals.empty()) {
-    for (uint64_t n = 1; n <= options.next_file_number; ++n) {
+    for (uint64_t n = 1; n < options.next_file_number; ++n) {
       options.named_wals.push_back(n);
     }
   }
@@ -300,29 +304,66 @@ TEST(Recovery, ADeletedWalMakesTheOpenFail) {
   EXPECT_NE(s.message().find("cannot prove"), std::string::npos) << s.ToString();
 }
 
-// THE HALF THE REPLACEMENT DOES NOT COVER, ASSERTED AS A NEGATIVE RATHER THAN
-// LEFT SILENT. The highest named WAL may be absent, because that is the one a
-// crash caught between naming and creating -- it holds nothing. A rule that
-// refused it would refuse every crash in that window, which is the normal case.
-TEST(Recovery, TheHighestNamedWalMayBeAbsentBecauseItIsTheOneBeingCreated) {
+// THE OTHER HALF OF THE RULE, BOTH WAYS. A WAL is created, then named, then
+// written to, so a present unnamed WAL is one a crash caught in that window --
+// or one a flush retired and did not get to delete. What both have in common is
+// the property that is checked: nothing in it may be above what the tables
+// cover. B2-Q1's "nothing covered twice", from the file side.
+TEST(Recovery, APresentUnnamedWalIsToleratedWhenNothingInItIsUncovered) {
   TestEnvironment t;
   {
     RecoveryResult r1;
-    ASSERT_TRUE(RecoverHere(t.env(), kDir, Caps(), &r1).ok());
+    ASSERT_TRUE(RecoverHere(t.env(), kDir, Caps(), &r1).ok());  // creates 000001
     SeqNum mark = 0;
     ASSERT_TRUE(r1.wal->Apply(1, OneSet("a", "1")).ok());
     ASSERT_TRUE(r1.wal->Sync(&mark).ok());
   }
+  // 000001 holds sequence 1 and is NOT named. With the tables covering through
+  // 1 it is a retired WAL awaiting deletion, and ignoring it is correct.
   RecoveryResult r;
   RecoverOptions options;
   options.next_file_number = 2;
-  // WAL 2 is named and does not exist: the crash landed between naming it and
-  // creating it, which is the window naming-before-creating deliberately opens
-  // because it is the harmless one.
-  options.named_wals = {1, 2};
+  options.named_wals = {2};
+  options.covered_through = 1;
+  {
+    // 000002 must exist to be named, so create it first -- the order the engine
+    // itself uses.
+    std::unique_ptr<Wal> w;
+    ASSERT_TRUE(Wal::Open(t.env(), kDir, 2, Caps(), &w).ok());
+    ASSERT_TRUE(w->Close().ok());
+  }
+  options.next_file_number = 3;
+  options.named_wals = {2};
   const Status s = RecoverHere(t.env(), kDir, Caps(), &r, options);
   EXPECT_TRUE(s.ok()) << s.ToString();
-  EXPECT_EQ(r.recovered_seq, 1u);
+  EXPECT_EQ(r.obsolete_wals, 1u) << "the unnamed WAL was not accounted for";
+}
+
+TEST(Recovery, APresentUnnamedWalHoldingUncoveredRecordsIsRefused) {
+  // The direction that matters: a record in a file nobody names, above what any
+  // table covers, is a record with no durable home. Ignoring it would lose it
+  // silently, which is the failure the whole rule exists to prevent.
+  TestEnvironment t;
+  {
+    RecoveryResult r1;
+    ASSERT_TRUE(RecoverHere(t.env(), kDir, Caps(), &r1).ok());  // creates 000001
+    SeqNum mark = 0;
+    ASSERT_TRUE(r1.wal->Apply(1, OneSet("a", "1")).ok());
+    ASSERT_TRUE(r1.wal->Sync(&mark).ok());
+  }
+  {
+    std::unique_ptr<Wal> w;
+    ASSERT_TRUE(Wal::Open(t.env(), kDir, 2, Caps(), &w).ok());
+    ASSERT_TRUE(w->Close().ok());
+  }
+  RecoveryResult r;
+  RecoverOptions options;
+  options.next_file_number = 3;
+  options.named_wals = {2};
+  options.covered_through = 0;  // no table covers sequence 1
+  const Status s = RecoverHere(t.env(), kDir, Caps(), &r, options);
+  ASSERT_FALSE(s.ok());
+  EXPECT_NE(s.message().find("no durable home"), std::string::npos) << s.ToString();
 }
 
 TEST(Recovery, FileNumbersAreSortedByValueAndNotByDirectoryOrder) {

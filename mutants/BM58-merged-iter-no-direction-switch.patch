@@ -1,0 +1,40 @@
+# id: BM58-merged-iter-no-direction-switch
+# blinds: re-seeking every source when the walk changes direction
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# A k-way merge only knows which source holds the next key IN THE DIRECTION IT
+# IS WALKING. The others are positioned for that direction and say nothing about
+# the other one, so stepping back without re-seeking reads whichever entries
+# happen to be under the other cursors.
+#
+# The symptom is a MISSING KEY in a reverse scan, on a database whose forward
+# scan is perfect -- which is why the test that catches it compares the two
+# directions against each other rather than either against a list.
+--- a/engine-cpp/src/merged_iter.cc	2026-08-25 03:10:38
++++ b/engine-cpp/src/merged_iter.cc	2026-08-25 03:10:38
+@@ -125,20 +125,8 @@
+ 
+ void MergedIter::Prev() {
+   RIFT_CHECK(Valid());
+-  if (dir_ != Direction::kReverse) {
+-    const std::string key = user_key().ToString();
+-    const uint64_t t = tag();
+-    for (std::size_t i = 0; i < sources_.size(); ++i) {
+-      if (static_cast<int>(i) == current_) continue;
+-      seek_key_.clear();
+-      AppendInternalKey(&seek_key_, Slice(key), t);
+-      sources_[i].Seek(Slice(key), t, seek_key_);
+-      // Seek lands at the first entry >= the target; one step back is the last
+-      // entry strictly before it, which is where reverse traversal needs it.
+-      if (sources_[i].Valid()) sources_[i].Prev(); else sources_[i].SeekToLast();
+-    }
+-    dir_ = Direction::kReverse;
+-  }
++  // BM58: the other sources are left where forward traversal put them.
++  dir_ = Direction::kReverse;
+   sources_[static_cast<std::size_t>(current_)].Prev();
+   PickLargest();
+ }

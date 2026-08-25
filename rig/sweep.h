@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 
+#include "caps.h"
 #include "exactness_oracle.h"
 #include "run_outcome.h"
 
@@ -55,13 +56,36 @@ struct SweepResult {
   }
 };
 
-// Runs the full sweep over the fixed workload. Deterministic: same binary, same
-// result, every time.
-SweepResult RunSweep();
+// TWO REGIMES, RUN SEPARATELY AND NEVER AGGREGATED. Section 8.4: runs at
+// non-default caps never mix with default-cap runs, and B2 gives that rule its
+// first real work.
+//
+//   kDefault  the caps as shipped. No flush occurs -- the threshold is four
+//             megabytes and this workload writes six keys -- so this regime is
+//             the DIRECT SUCCESSOR of the sweep B1 measured its floors against,
+//             and its numbers are comparable to them.
+//
+//   kFlush    a low flush threshold and a workload that crosses it. This is the
+//             regime in which the flush path has kill points at all, and it is
+//             where CF-1's obligation is discharged: BM2's accidental defence
+//             expires exactly when a flush writes the memtable out, so the two
+//             regimes together say whether the accident was the whole
+//             suppression or only part of it.
+//
+// Comparing a number from one against a floor from the other would be the
+// aggregation section 8.4 forbids, which is why the regime is named in the
+// output and in FLOORS.txt rather than left to whoever reads the log.
+enum class SweepRegime : uint8_t { kDefault, kFlush };
+const char* SweepRegimeName(SweepRegime r);
+wal::Caps CapsFor(SweepRegime r);
 
-// How many Env calls the workload makes, discovered by running it once with no
-// faults. The sweep's upper bound.
-uint64_t WorkloadOrdinalCount();
+// Runs the full sweep over the fixed workload for one regime. Deterministic:
+// same binary, same regime, same result, every time.
+SweepResult RunSweep(SweepRegime regime);
+
+// How many Env calls the workload makes in this regime, discovered by running
+// it once with no faults. The sweep's upper bound.
+uint64_t WorkloadOrdinalCount(SweepRegime regime);
 
 }  // namespace rig
 }  // namespace rift

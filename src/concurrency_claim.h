@@ -14,20 +14,24 @@
 // exists to prove this one is not that.
 //
 // WHY THIS SENTENCE IS NARROWER THAN DESIGN-B1 SECTION 6.4's. The document
-// writes "(Apply/Get against Sync)", which is what the harness will drive once
-// Apply and Sync exist -- B1.6 and B1.8. At B1.5 they do not, and the harness
-// drives concurrent MemTable Add and Get. Using the document's wording today
-// would be a claim that outruns its subject, which is the exact thing this
-// constant exists to prevent, so the wording tracks the harness and widens in
-// the same diff that widens the harness. Never before it.
+// writes "(Apply/Get against Sync)". At B1.5 neither existed and the harness
+// drove concurrent MemTable Add and Get, so the wording tracked that.
+//
+// B2 WIDENS IT, IN THE DIFF THAT WIDENS THE HARNESS, and never before it. The
+// flush gave the engine its first operation that REPLACES the WAL and the
+// memtable underneath a concurrent writer -- so a Write that reads one and
+// applies to the other loses a record with no corruption anywhere. The second
+// pattern drives exactly that: a writer against a Sync that flushes. It is
+// still ONE authored pattern per clause, and still not a search.
 #ifndef RIFT_CONCURRENCY_CLAIM_H_
 #define RIFT_CONCURRENCY_CLAIM_H_
 
 namespace rift {
 
 inline constexpr char kConcurrencyClaim[] =
-    "TSan observed no data race across one authored interleaving pattern "
-    "(concurrent MemTable Add and Get); this is not a proof of race-freedom.";
+    "TSan observed no data race across two authored interleaving patterns "
+    "(concurrent MemTable Add and Get; concurrent DB Write and Sync across "
+    "a flush); this is not a proof of race-freedom.";
 
 }  // namespace rift
 
