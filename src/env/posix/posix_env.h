@@ -19,18 +19,35 @@
 // There is no lane in B1 that would notice this file calling pwrite where it
 // promised write, syncing the wrong descriptor, or dropping a flag.
 //
-// (a) IS CURRENTLY ASSERTED RATHER THAN CHECKED, and it is the load-bearing
-// half. B1-Q12 asks whether making thinness a scan rule is cheap enough to land
-// at B1; the recommendation is yes, enforced at B1.4. It is OPEN, and adding it
-// would add rows to section 10.2, which is not this session's to extend
-// unruled. So the code below is written thin ON PURPOSE and that property is
-// unenforced ON PURPOSE, and this paragraph is the record of which it is.
+// (a) IS ASSERTED HERE AND CHECKED AT B1.4, AND THE RULE IS STATED NOW.
+//
+// B1-Q12 was ruled as recommended: PosixEnv thinness becomes a checked scan
+// rule, stated at B1.2b and enforced at B1.4, and B1.8's semantics suite runs
+// against PosixEnv on a real filesystem -- the latter scoped explicitly as NOT
+// evidence, injecting no faults, making no durability claim and never entering
+// the recovery ledger, which is the condition it was approved under.
+//
+// (Section 13 of DESIGN-B1 revision 4 still prints B1-Q12 as open. The ruling
+// postdates that revision and the document has not been revised since; the
+// binding text is the ruling.)
+//
+// THE RULE, so that B1.4 enforces something written down rather than something
+// remembered. Each private Do* below is a mechanical mapping onto ONE syscall:
+//   * no branching beyond a documented retry loop;
+//   * no state beyond the descriptor and the path;
+//   * no arithmetic on offsets or lengths beyond what the public wrapper
+//     passed;
+//   * a per-method statement cap.
+// Until B1.4 lands the scan rule, thinness is a property of this file that a
+// reader can check and a lane cannot. That is a gap with a date on it, not an
+// open question.
 //
 // The division of labour is still correct -- TestEnv is where fault injection
 // belongs, and a fault-injecting production Env would be a second
 // implementation of the thing under test. This is an idealization to state, not
-// a defect to fix here. First real evidence arrives at B5 on a real
-// filesystem; first ADVERSARIAL evidence at I2's chaos lane.
+// a defect to fix here. Under B1-Q12's ruling the first real evidence now
+// arrives at B1.8 rather than at B5, still fault-free and still not evidence
+// for the recovery contract; the first ADVERSARIAL evidence is I2's chaos lane.
 #ifndef RIFT_ENV_POSIX_POSIX_ENV_H_
 #define RIFT_ENV_POSIX_POSIX_ENV_H_
 
