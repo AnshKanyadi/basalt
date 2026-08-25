@@ -1,0 +1,36 @@
+# id: EXPAND-ignores-batch-history
+# blinds: a DeleteRange covering earlier writes in its own batch
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# NOT IN THE CATALOGUE. Section 8.1 states the intra-batch rule -- at the
+# DeleteRange the expansion covers the current state AND keys written earlier in
+# the same batch, and a Set after it re-adds the key -- and the rule has no
+# mechanism behind it until something plants its absence.
+#
+# The defect is invisible to every single-op workload and to every batch whose
+# DeleteRange comes first. It appears only when a batch writes a key and then
+# deletes a range containing it, which is exactly what snapshot application's
+# clear-then-ingest does when the ingest and the clear share a batch.
+#
+# It is also the half that CANNOT be fixed at replay: the WAL records the
+# expansion, so an expansion that missed a key records a log that is faithfully
+# replayed into the wrong state forever.
+--- a/engine-cpp/src/db.cc	2026-08-24 23:08:55
++++ b/engine-cpp/src/db.cc	2026-08-24 23:08:55
+@@ -85,12 +85,7 @@
+       case wal::OpKind::kDeleteRange: {
+         const Bound start =
+             e.value.empty() ? Bound::Unbounded() : Bound::At(Slice(e.key));
+-        // Everything written EARLIER IN THIS BATCH that falls inside.
+-        for (auto it = pending.begin(); it != pending.end(); ++it) {
+-          if (InRange(Slice(it->first), start, e.end)) {
+-            it->second = {wal::OpKind::kDelete, std::string()};
+-          }
+-        }
++        // EXPAND: earlier writes in the same batch are not covered.
+         // And everything live in the memtable. Reads memory, not Env: this is
+         // the operation most likely to violate "Apply performs no I/O", which
+         // is why that assertion is re-made against this path.

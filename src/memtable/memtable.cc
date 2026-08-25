@@ -96,6 +96,63 @@ MemTable::Node* MemTable::FindGreaterOrEqual(Slice user_key, uint64_t tag,
   }
 }
 
+MemTable::Node* MemTable::FindLessThan(Slice user_key, uint64_t tag) const {
+  Node* x = head_;
+  int level = height_ - 1;
+  while (true) {
+    Node* next = x->next[level];
+    if (next != nullptr && CompareEntry(next->entry, user_key, tag) < 0) {
+      x = next;
+      continue;
+    }
+    if (level == 0) return (x == head_) ? nullptr : x;
+    --level;
+  }
+}
+
+MemTable::Node* MemTable::FindLast() const {
+  Node* x = head_;
+  int level = height_ - 1;
+  while (true) {
+    Node* next = x->next[level];
+    if (next != nullptr) { x = next; continue; }
+    if (level == 0) return (x == head_) ? nullptr : x;
+    --level;
+  }
+}
+
+void MemTable::Iter::SeekToFirst() {
+  std::lock_guard<std::mutex> guard(table_->mu_);
+  node_ = (table_->head_ == nullptr) ? nullptr : table_->head_->next[0];
+}
+
+void MemTable::Iter::SeekToLast() {
+  std::lock_guard<std::mutex> guard(table_->mu_);
+  node_ = (table_->head_ == nullptr) ? nullptr : table_->FindLast();
+}
+
+void MemTable::Iter::Seek(Slice user_key, uint64_t tag) {
+  std::lock_guard<std::mutex> guard(table_->mu_);
+  node_ = (table_->head_ == nullptr)
+              ? nullptr
+              : table_->FindGreaterOrEqual(user_key, tag, nullptr);
+}
+
+void MemTable::Iter::Next() {
+  std::lock_guard<std::mutex> guard(table_->mu_);
+  if (node_ != nullptr) node_ = node_->next[0];
+}
+
+void MemTable::Iter::Prev() {
+  std::lock_guard<std::mutex> guard(table_->mu_);
+  if (node_ == nullptr) return;
+  node_ = table_->FindLessThan(EntryUserKey(node_->entry), EntryTag(node_->entry));
+}
+
+Slice MemTable::Iter::user_key() const { return EntryUserKey(node_->entry); }
+uint64_t MemTable::Iter::tag() const { return EntryTag(node_->entry); }
+Slice MemTable::Iter::value() const { return EntryValue(node_->entry); }
+
 void MemTable::Add(SeqNum seq, ValueType type, Slice user_key, Slice value) {
   const uint64_t tag = MakeTag(seq, type);
   const uint32_t ikey_len = static_cast<uint32_t>(user_key.size() + 8);

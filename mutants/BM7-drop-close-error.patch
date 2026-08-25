@@ -1,0 +1,30 @@
+# id: BM7-drop-close-error
+# blinds: Close's error reaching the caller
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The catalogue's BM7, and it is AN EXACTNESS-(ii) FAILURE rather than a
+# tidiness one. close(2) reports EIO for writeback that FAILED AFTER THE LAST
+# Sync -- data the engine has already told the caller is durable, discovered to
+# be gone at the only moment anyone will ever be told. Swallowing it means the
+# watermark stands for bytes that no longer exist.
+#
+# Section 3.3 says it in one line: CLOSE IS A WRITE CALL. Treating it as
+# bookkeeping is a known way to lose data.
+--- a/engine-cpp/src/db.cc	2026-08-24 23:08:55
++++ b/engine-cpp/src/db.cc	2026-08-24 23:08:55
+@@ -376,10 +376,8 @@
+ 
+   Status Close() override {
+     { wal::DbLock lock(mu_); if (closed_) return Status::Ok(); closed_ = true; }
+-    // The error is RETURNED, not dropped. close(2) reports EIO for writeback
+-    // that failed after the last Sync, which is the last moment anyone can
+-    // learn the data is gone (BM7).
+-    return wal_->Close();
++    (void)wal_->Close();  // BM7: the close error is dropped
++    return Status::Ok();
+   }
+ 
+  private:

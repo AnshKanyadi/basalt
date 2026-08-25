@@ -77,6 +77,10 @@ using SeqNum = uint64_t;
 // compaction filter, and does not need to, because version GC is A5's job on
 // the Go side.
 class MemTable {
+  // Declared first so Iter can name it; defined below.
+  struct Node;
+  friend class Iter;
+
  public:
   MemTable() = default;
 
@@ -106,6 +110,44 @@ class MemTable {
   // workload; a mapping change produces one that differs from the pinned value.
   uint64_t StructuralDigest() const;
 
+  // A cursor over internal keys, in (user key ascending, seq descending) order.
+  //
+  // EVERY POSITIONING CALL TAKES THE DB MUTEX. That is coarse and it is
+  // B1-D6c's ruling carried through honestly: LevelDB's iterator holds no lock
+  // because its skiplist is lock-free, and ours is not. Holding the lock ACROSS
+  // a caller's loop would be worse -- it would put an unbounded user-controlled
+  // span inside the mutex -- so the cost is one acquisition per step.
+  //
+  // Key() and Value() return pointers into the arena, which is safe here for a
+  // reason that expires: B1 has no flush, so nodes are never freed and the
+  // arena outlives every iterator. B2 must revisit this the moment a memtable
+  // can be retired.
+  //
+  // Prev() re-descends from the head rather than following a back pointer,
+  // which is O(log n) instead of O(1). A doubly-linked skiplist would double
+  // the pointer writes on the insert path to speed up a direction B1 has no
+  // measurement for.
+  class Iter {
+   public:
+    explicit Iter(const MemTable* table) : table_(table) {}
+
+    bool Valid() const { return node_ != nullptr; }
+    void SeekToFirst();
+    void SeekToLast();
+    // Positions at the first entry >= (user_key, tag).
+    void Seek(Slice user_key, uint64_t tag);
+    void Next();
+    void Prev();
+
+    Slice user_key() const;
+    uint64_t tag() const;
+    Slice value() const;
+
+   private:
+    const MemTable* table_;
+    Node* node_ = nullptr;
+  };
+
  private:
   struct Node {
     const char* entry;  // in the arena: u32 klen, key+tag, u32 vlen, value
@@ -120,6 +162,8 @@ class MemTable {
   // Compares (user_key ascending, tag descending).
   static int CompareEntry(const char* entry, Slice user_key, uint64_t tag);
   Node* FindGreaterOrEqual(Slice user_key, uint64_t tag, Node** prev) const;
+  Node* FindLessThan(Slice user_key, uint64_t tag) const;
+  Node* FindLast() const;
 
   mutable std::mutex mu_;
   Arena arena_;
