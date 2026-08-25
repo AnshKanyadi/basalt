@@ -18,6 +18,7 @@ const char* InjectionName(Injection injection) {
     case Injection::kDiskFull:  return "disk-full";
     case Injection::kSyncLoss:  return "sync-loss";
     case Injection::kTornSync:  return "torn-sync";
+    case Injection::kSectorSubsetTornSync: return "sector-subset-torn-sync";
     case Injection::kTornFlush: return "torn-flush";
     case Injection::kKill:      return "kill";
   }
@@ -29,18 +30,26 @@ bool SuspendsExactness(Injection injection) {
   // the device returned success and promoted nothing, the engine is blameless,
   // and holding it to exactness would report the engine for the disk's crime.
   //
-  // kTornSync is kSectorSubsetTornSync's mode when the promoted prefix is not
-  // the whole newly covered extent -- a device that violated fsync's own
-  // ordering guarantee. Against such a device the engine's obligation is
-  // narrower and still real: DETECT AND REFUSE, which section 5.4(d) already
-  // does.
+  // kSectorSubsetTornSync is ExactnessSuspendingInjector::kSectorSubsetTornSync:
+  // a device that promoted an arbitrary set of sectors rather than a prefix,
+  // violating fsync's own ordering guarantee. Against such a device the
+  // engine's obligation is narrower and still real: DETECT AND REFUSE, which
+  // section 5.4(d) already does.
+  //
+  // kTornSync IS NOT A MEMBER, and that distinction was got wrong once. B1-D5
+  // ruled PREFIX granularity as THE CONTRACT MODEL -- section 7.4's two-element
+  // set, R in {G_{k-1}, G_k}, is that exact case, and the engine is held to
+  // exactness under it. Classifying it as suspending marked bankable runs as
+  // characterization-only: conservative, and wrong, and it would have made the
+  // two-element set untestable as evidence at B1.9a.
   switch (injection) {  // NO default: arm -- a new injector must be classified
     case Injection::kSyncLoss:
-    case Injection::kTornSync:
+    case Injection::kSectorSubsetTornSync:
       return true;
     case Injection::kNone:
     case Injection::kIoError:
     case Injection::kDiskFull:
+    case Injection::kTornSync:
     case Injection::kTornFlush:
     case Injection::kKill:
       return false;
@@ -119,6 +128,8 @@ class TestEnvironment::Impl {
       suspending_ = (f.injection == Injection::kSyncLoss)
                         ? ExactnessSuspendingInjector::kLyingSync
                         : ExactnessSuspendingInjector::kSectorSubsetTornSync;
+      RIFT_CHECK(f.injection == Injection::kSyncLoss ||
+                 f.injection == Injection::kSectorSubsetTornSync);
     }
 
     const std::string path = PathOf(handle);
@@ -145,6 +156,10 @@ class TestEnvironment::Impl {
         break;
       case Injection::kTornSync:
         TornSync(path, f.prefix_bytes);
+        d.kill = true;
+        break;
+      case Injection::kSectorSubsetTornSync:
+        SectorSubsetTornSync(path, f.prefix_bytes);
         d.kill = true;
         break;
       case Injection::kKill:
@@ -252,6 +267,32 @@ class TestEnvironment::Impl {
     const std::size_t already = f->durable.size();
     const std::size_t k = std::min<std::size_t>(already + prefix, f->content.size());
     f->durable = f->content.substr(0, k);
+    FireHook();
+  }
+
+  // Promotes the whole newly covered extent EXCEPT one 4 KiB sector, which is
+  // left as it was before the Sync. The result is not a prefix, so a GROUP_END
+  // can be durable while an earlier record in its group is not -- which is the
+  // shape no correct device produces and the reason this injector suspends.
+  void SectorSubsetTornSync(const std::string& path, uint64_t sector_index) {
+    FileState* f = Find(path);
+    if (f == nullptr) return;
+    f->content += f->buf;
+    f->buf.clear();
+    const std::size_t already = f->durable.size();
+    std::string promoted = f->content;
+    const std::size_t hole_start = already + sector_index * kSectorBytes;
+    if (hole_start < promoted.size()) {
+      const std::size_t hole_end =
+          std::min<std::size_t>(hole_start + kSectorBytes, promoted.size());
+      for (std::size_t i = hole_start; i < hole_end; ++i) {
+        // Beyond the old durable extent there was nothing, so the sector reads
+        // as zeros -- which section 5.3.1's reserved type 0 makes unmistakable
+        // for a record, and which the engine is therefore obliged to DETECT.
+        promoted[i] = (i < already) ? f->durable[i] : '\0';
+      }
+    }
+    f->durable = promoted;
     FireHook();
   }
 

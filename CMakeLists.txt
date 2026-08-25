@@ -110,6 +110,7 @@ add_library(rift_engine STATIC
   src/wal/writer.cc
   src/wal/sha256.cc
   src/wal/wal.cc
+  src/wal/recovery.cc
 )
 target_include_directories(rift_engine PUBLIC src src/env src/env/posix src/memtable src/wal)
 target_compile_options(rift_engine PRIVATE ${RIFT_CXX_FLAGS})
@@ -151,6 +152,7 @@ add_executable(rift_engine_test
   test/wal_reader_test.cc
   test/wal_test.cc
   test/rig_caps_test.cc
+  test/recovery_test.cc
 )
 # rift_rig carries rift_testenv which carries rift_engine, both PUBLIC-ly;
 # naming any of them again makes the linker warn about a duplicate archive.

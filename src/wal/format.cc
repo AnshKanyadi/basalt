@@ -1,5 +1,6 @@
 #include "format.h"
 
+#include <algorithm>
 #include <cstring>
 #include <string>
 
@@ -87,6 +88,110 @@ void EncodeFileHeader(uint64_t file_number, std::string* out) {
   out->append(kMagic, sizeof(kMagic));
   PutU32(out, kFormatVersion);
   PutU64(out, file_number);
+}
+
+namespace {
+
+struct Cursor {
+  const char* p;
+  std::size_t left;
+  bool U8(uint8_t* v) {
+    if (left < 1) return false;
+    *v = static_cast<uint8_t>(*p); ++p; --left; return true;
+  }
+  bool U32(uint32_t* v) {
+    if (left < 4) return false;
+    *v = 0;
+    for (int i = 0; i < 4; ++i) {
+      *v |= static_cast<uint32_t>(static_cast<unsigned char>(p[i])) << (8 * i);
+    }
+    p += 4; left -= 4; return true;
+  }
+  bool U64(uint64_t* v) {
+    if (left < 8) return false;
+    *v = 0;
+    for (int i = 0; i < 8; ++i) {
+      *v |= static_cast<uint64_t>(static_cast<unsigned char>(p[i])) << (8 * i);
+    }
+    p += 8; left -= 8; return true;
+  }
+  bool Bytes(Slice* s) {
+    uint32_t n = 0;
+    if (!U32(&n)) return false;
+    if (left < n) return false;
+    *s = Slice(p, n);
+    p += n; left -= n; return true;
+  }
+};
+
+}  // namespace
+
+bool DecodeBatch(Slice payload, DecodedBatch* out) {
+  Cursor c{payload.data(), payload.size()};
+  uint8_t kind = 0;
+  uint32_t count = 0;
+  if (!c.U8(&kind) || static_cast<RecordKind>(kind) != RecordKind::kBatch) return false;
+  if (!c.U64(&out->seq)) return false;
+  if (!c.U32(&count)) return false;
+  out->ops.clear();
+  out->ops.reserve(count);
+  for (uint32_t i = 0; i < count; ++i) {
+    uint8_t k = 0;
+    Op op;
+    if (!c.U8(&k)) return false;
+    if (k > static_cast<uint8_t>(OpKind::kDeleteRange)) return false;
+    op.kind = static_cast<OpKind>(k);
+    if (!c.Bytes(&op.key)) return false;
+    switch (op.kind) {  // NO default: arm
+      case OpKind::kSet:
+      case OpKind::kDeleteRange:
+        if (!c.Bytes(&op.value)) return false;
+        break;
+      case OpKind::kDelete:
+        break;
+    }
+    out->ops.push_back(op);
+  }
+  return c.left == 0;
+}
+
+bool DecodeGroupEnd(Slice payload, DecodedGroupEnd* out) {
+  Cursor c{payload.data(), payload.size()};
+  uint8_t kind = 0;
+  if (!c.U8(&kind) || static_cast<RecordKind>(kind) != RecordKind::kGroupEnd) return false;
+  if (!c.U64(&out->high_seq)) return false;
+  if (!c.U32(&out->batch_count)) return false;
+  return c.left == 0;
+}
+
+bool DecodeFileHeader(Slice payload, DecodedFileHeader* out) {
+  Cursor c{payload.data(), payload.size()};
+  uint8_t kind = 0;
+  if (!c.U8(&kind) || static_cast<RecordKind>(kind) != RecordKind::kFileHeader) return false;
+  if (c.left < sizeof(kMagic)) return false;
+  if (std::memcmp(c.p, kMagic, sizeof(kMagic)) != 0) return false;
+  c.p += sizeof(kMagic); c.left -= sizeof(kMagic);
+  if (!c.U32(&out->format_version)) return false;
+  if (!c.U64(&out->file_number)) return false;
+  return c.left == 0;
+}
+
+std::vector<Op> CollapseBatch(const std::vector<Op>& ops) {
+  std::vector<std::size_t> idx(ops.size());
+  for (std::size_t i = 0; i < ops.size(); ++i) idx[i] = i;
+  // Stable sort by key, so equal keys keep submission order and the LAST one
+  // survives -- the model's rule, where a Set after a Delete re-adds the key.
+  std::stable_sort(idx.begin(), idx.end(), [&ops](std::size_t a, std::size_t b) {
+    return ops[a].key.compare(ops[b].key) < 0;
+  });
+  std::vector<Op> out;
+  out.reserve(ops.size());
+  for (std::size_t i = 0; i < idx.size(); ++i) {
+    const bool last_of_key =
+        (i + 1 == idx.size()) || ops[idx[i]].key.compare(ops[idx[i + 1]].key) != 0;
+    if (last_of_key) out.push_back(ops[idx[i]]);
+  }
+  return out;
 }
 
 uint32_t FragmentCrc(uint16_t length, FragmentType type, Slice payload) {

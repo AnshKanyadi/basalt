@@ -114,6 +114,41 @@ void EncodeBatch(SeqNum seq, const std::vector<Op>& ops, std::string* out);
 void EncodeGroupEnd(SeqNum high_seq, uint32_t batch_count, std::string* out);
 void EncodeFileHeader(uint64_t file_number, std::string* out);
 
+struct DecodedBatch {
+  SeqNum seq = 0;
+  std::vector<Op> ops;  // Slices into the payload; valid while it is
+};
+// Decodes a BATCH payload. Returns false on any malformation -- a payload that
+// passed its checksum can still be structurally wrong if the writer was.
+bool DecodeBatch(Slice payload, DecodedBatch* out);
+
+struct DecodedGroupEnd {
+  SeqNum high_seq = 0;
+  uint32_t batch_count = 0;
+};
+bool DecodeGroupEnd(Slice payload, DecodedGroupEnd* out);
+
+struct DecodedFileHeader {
+  uint32_t format_version = 0;
+  uint64_t file_number = 0;
+};
+bool DecodeFileHeader(Slice payload, DecodedFileHeader* out);
+
+// Collapses a batch to AT MOST ONE OP PER KEY, last op winning, sorted by key.
+//
+// B1-D10(a), ruled. Under LevelDB's scheme the internal sequence advances per
+// OP and engine.SeqNum is the batch's last internal sequence, so the C++
+// engine's sequences would jump (1, 5, 9, ...) while engine/model's advance by
+// one per Apply. That is contract-legal and still wrong: B4's rig would then
+// need a per-engine map from operation index to sequence in order to sync both
+// engines "to the same point", AND A RIG THAT NEEDS A TRANSLATION TABLE IS A
+// RIG WITH A PLACE TO BE WRONG.
+//
+// Last-wins reproduces the model's rule: within one batch, a Set after a Delete
+// re-adds the key. The sort is what B1-D10 costs, and it buys an assertable
+// invariant -- no two memtable entries ever share a (user_key, seq) pair.
+std::vector<Op> CollapseBatch(const std::vector<Op>& ops);
+
 // Reads the kind and, for kBatch/kGroupEnd, the sequence, without decoding the
 // rest. This is what section 5.4's resync predicate needs: a candidate must be
 // kind BATCH or GROUP_END and carry a sequence above the last committed group's.
@@ -122,8 +157,15 @@ bool PeekKindAndSeq(Slice payload, RecordKind* kind, SeqNum* seq);
 // THE FRAGMENT CHECKSUM, AND THE DELIBERATE DEPARTURE FROM LEVELDB.
 //
 // This comment is required here, on the helper, and not only in DESIGN-B1
-// section 5.3.3 -- because the change it warns against is one a future reader
-// makes by pattern match, believing they are aligning us with upstream.
+// section 5.3.3 -- because of WHO IT IS AIMED AT.
+//
+// A deliberate divergence from a well-known upstream is not attacked. It is
+// HELPFULLY CORRECTED. BM10 is the one mutation in this project's catalogue
+// that a reviewer would most likely APPROVE: it introduces no bug, it removes
+// two bytes of work per fragment, and it makes us match LevelDB, whose header
+// is byte-identical to ours. A defence written against a defect would be
+// pointed the wrong way; this one is pointed at a competent, well-meaning
+// reader, and it has to be where they will be standing.
 //
 //   UPSTREAM (LevelDB log_format.h / log_writer.cc): the record header is
 //   crc32c:u32 || length:u16 || type:u8, and the CRC is computed over

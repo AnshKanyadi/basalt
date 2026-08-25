@@ -146,6 +146,10 @@ TEST(TestEnvDurability, ATornSyncPromotesAPrefixAndTheCallNeverReturns) {
   const DurableImage image = t.Image();
   ASSERT_EQ(image.count(kLog), 1u);
   EXPECT_EQ(image.at(kLog), "AAA") << "exactly the promoted prefix survives";
+  EXPECT_FALSE(t.exactness_suspended())
+      << "a prefix-granular torn Sync is the CONTRACT MODEL, not a suspension: "
+         "section 7.4's two-element set is this case, and a run that exercises "
+         "it must remain bankable as evidence";
 }
 
 // ------------------------------------------------- the directory entry pair
@@ -250,7 +254,7 @@ TEST(TestEnvRegistry, TheSectorSubsetTornSyncSuspendsThroughTheSameMechanism) {
     WritableFilePtr w;
     CreateAndPublish(env, kLog, &w);
     ASSERT_TRUE(w->Append(Slice("AAAABBBB", 8)).ok());
-    plan.At(t0.ordinal() + 1, Injection::kTornSync, 3);
+    plan.At(t0.ordinal() + 1, Injection::kSectorSubsetTornSync, 0);
   }
   TestEnvironment t(plan);
   Env* env = t.env();
@@ -267,10 +271,11 @@ TEST(TestEnvRegistry, TheSectorSubsetTornSyncSuspendsThroughTheSameMechanism) {
 }
 
 TEST(TestEnvRegistry, EveryInjectorIsClassifiedAndOnlyRegistryMembersSuspend) {
-  const Injection all[] = {Injection::kNone,      Injection::kIoError,
-                           Injection::kDiskFull,  Injection::kSyncLoss,
-                           Injection::kTornSync,  Injection::kTornFlush,
-                           Injection::kKill};
+  const Injection all[] = {Injection::kNone,     Injection::kIoError,
+                           Injection::kDiskFull, Injection::kSyncLoss,
+                           Injection::kTornSync,
+                           Injection::kSectorSubsetTornSync,
+                           Injection::kTornFlush, Injection::kKill};
   int suspending = 0;
   for (Injection i : all) {
     EXPECT_NE(InjectionName(i), nullptr);
@@ -279,6 +284,15 @@ TEST(TestEnvRegistry, EveryInjectorIsClassifiedAndOnlyRegistryMembersSuspend) {
   EXPECT_EQ(suspending, 2) << "the registry has exactly two members; a third "
                               "appearing without a decision is what the closed "
                               "switch in SuspendsExactness exists to prevent";
+  // AND THE PREFIX-GRANULAR TORN SYNC IS NOT ONE OF THEM. B1-D5 ruled prefix as
+  // THE CONTRACT MODEL: section 7.4's two-element set is that exact case and
+  // the engine is held to exactness under it. This assertion exists because the
+  // classification was got wrong once, in the conservative direction -- bankable
+  // runs marked characterization-only, which would have made the two-element
+  // set untestable as evidence at B1.9a.
+  EXPECT_FALSE(SuspendsExactness(Injection::kTornSync));
+  EXPECT_TRUE(SuspendsExactness(Injection::kSectorSubsetTornSync));
+  EXPECT_TRUE(SuspendsExactness(Injection::kSyncLoss));
 }
 
 // ------------------------------------------------------------- the kill

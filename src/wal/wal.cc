@@ -32,7 +32,16 @@ Status Wal::Open(Env* env, const std::string& dir, uint64_t file_number,
   // A Status rather than an abort, because the induced failure section 10.2
   // names -- "construct with kWalBufferBytes < 2 x kMaxRecordBytes;
   // construction must fail" -- has to be OBSERVED, and a path whose only
-  // outcome is abort() is observable in this suite only through a death test.
+  // outcome is abort() is observable in this suite only through a death test,
+  // which forks and behaves differently under three of our four sanitizer
+  // lanes. Choosing INDUCIBILITY over conventional strictness is the same trade
+  // Track A made when it refused checkers it could not see fail.
+  //
+  // THE COST: a Status can be ignored by a caller where an abort cannot, so the
+  // thing that proves no caller ignores it is now load-bearing. That thing is
+  // [[nodiscard]] on Status -- a compile error under -Werror, not a lane, not a
+  // review habit -- and deliberately discarding one is spelled (void) at the
+  // call site, which is a visible act rather than an omission.
   if (caps.max_record_bytes == 0) {
     return Status::InvalidArgument("max_record_bytes must be positive");
   }
@@ -93,8 +102,14 @@ Status Wal::Apply(SeqNum seq, const std::vector<Op>& ops) {
                                  " > cap " + std::to_string(caps_.wal_buffer_bytes));
   }
 
+  // COLLAPSED BEFORE ENCODING, CHARGED BEFORE COLLAPSING. The cap is computed
+  // over the ops AS SUBMITTED, because section 7.6's predicate is a sum over
+  // what the harness submitted and the harness does not model our collapse. The
+  // encoded record is therefore never larger than the charge, only smaller --
+  // conservative in the safe direction, and the two never disagree about
+  // whether a batch was legal.
   std::string encoded;
-  EncodeBatch(seq, ops, &encoded);
+  EncodeBatch(seq, CollapseBatch(ops), &encoded);
   buffered_.push_back(std::move(encoded));
   buffered_bytes_ += bytes;
   high_seq_ = seq;

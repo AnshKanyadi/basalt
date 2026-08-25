@@ -148,37 +148,37 @@ void DriveEveryWrapper(Harness* h) {
   DirectoryPtr dir; FileLockPtr lock;
   std::vector<std::string> children; uint64_t size = 0; bool exists = false;
 
-  env.NewWritableFile(path, &wf);
-  env.NewSequentialFile(path, &sf);
-  env.NewRandomAccessFile(path, &rf);
-  env.NewDirectory(path, &dir);
-  env.GetChildren(path, &children);
-  env.GetFileSize(path, &size);
-  env.FileExists(path, &exists);
-  env.DeleteFile(path);
-  env.RenameFile(path, path);
-  env.CreateDir(path);
-  env.LockFile(path, &lock);
-  env.UnlockFile(nullptr);
+  (void)env.NewWritableFile(path, &wf);
+  (void)env.NewSequentialFile(path, &sf);
+  (void)env.NewRandomAccessFile(path, &rf);
+  (void)env.NewDirectory(path, &dir);
+  (void)env.GetChildren(path, &children);
+  (void)env.GetFileSize(path, &size);
+  (void)env.FileExists(path, &exists);
+  (void)env.DeleteFile(path);
+  (void)env.RenameFile(path, path);
+  (void)env.CreateDir(path);
+  (void)env.LockFile(path, &lock);
+  (void)env.UnlockFile(nullptr);
 
   StubWritableFile w(&h->ctl, &h->rec);
   char scratch[8]; Slice result;
-  w.Append(Slice("x", 1));
-  w.Flush();
-  w.Sync();
-  w.Close();
+  (void)w.Append(Slice("x", 1));
+  (void)w.Flush();
+  (void)w.Sync();
+  (void)w.Close();
 
   StubSequentialFile s(&h->ctl, &h->rec);
-  s.Read(1, &result, scratch);
-  s.Close();
+  (void)s.Read(1, &result, scratch);
+  (void)s.Close();
 
   StubRandomAccessFile r(&h->ctl, &h->rec);
-  r.Read(0, 1, &result, scratch);
-  r.Close();
+  (void)r.Read(0, 1, &result, scratch);
+  (void)r.Close();
 
   StubDirectory d(&h->ctl, &h->rec);
-  d.Sync();
-  d.Close();
+  (void)d.Sync();
+  (void)d.Close();
 }
 
 constexpr CallSite kEveryCallSiteInDrivenOrder[] = {

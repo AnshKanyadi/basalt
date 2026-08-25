@@ -1,0 +1,36 @@
+# id: GAPLESS-ignored
+# blinds: WAL numbering being gapless
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The check section 7.2 step 3 exists to give the directory-sync kill point
+# teeth. Without it a lost directory entry is SILENT: a WAL vanishes, the
+# numbering has a hole nobody looks at, and recovery replays a prefix it
+# believes is complete and reports success.
+#
+# BM4 plants the cause -- an Open that never makes the entry durable. This
+# plants the blindness. Both have to be closed, because the failure only becomes
+# visible where they meet: the entry is lost by one and unnoticed by the other,
+# and neither alone produces a symptom.
+--- a/engine-cpp/src/wal/recovery.cc	2026-08-24 22:16:58
++++ b/engine-cpp/src/wal/recovery.cc	2026-08-24 22:16:58
+@@ -80,16 +80,7 @@
+   // missing-Directory::Sync bug -- and it is a hard error. This is what gives
+   // the directory-sync kill point teeth; without it the loss is silent, and a
+   // recovery that skipped a WAL would replay a prefix it believes is complete.
+-  for (std::size_t i = 0; i < numbers.size(); ++i) {
+-    const uint64_t expected = i + 1;
+-    if (numbers[i] != expected) {
+-      return Status::Corruption(
+-          "WAL numbering is not gapless: expected " + std::to_string(expected) +
+-          ", found " + std::to_string(numbers[i]) +
+-          ". A missing WAL means a directory entry was lost, and recovery "
+-          "cannot replay a prefix it cannot prove is complete");
+-    }
+-  }
++  // GAPLESS: the numbering is no longer checked.
+ 
+   out->table.reset(new MemTable());
+   out->file_numbers = numbers;

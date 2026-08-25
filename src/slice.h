@@ -14,6 +14,23 @@ class Slice {
   Slice(const char* d, std::size_t n) : data_(d), size_(n) {}
   Slice(const std::string& s) : data_(s.data()), size_(s.size()) {}  // NOLINT
 
+  // A string LITERAL, whose storage is static and therefore outlives anything.
+  Slice(const char* s) : data_(s), size_(std::strlen(s)) {}  // NOLINT
+
+  // BINDING A SLICE TO A TEMPORARY STRING IS A COMPILE ERROR.
+  //
+  // A Slice is a pointer and a length owned by somebody else, so
+  // `Slice(std::string(...))` produces one that dangles at the end of the full
+  // expression -- and it reads exactly like the safe forms beside it. Without
+  // this deletion, `Slice("k")` also went through the const std::string&
+  // constructor and dangled, which is a bug this cycle actually had: it was
+  // caught by ASan in the mutant lane's BASELINE GATE, in a test whose only
+  // symptom was that it happened to keep the Slice past the expression.
+  //
+  // Deleting the overload converts the whole class into a build failure. Hold
+  // the string in a named local and pass that.
+  Slice(std::string&&) = delete;
+
   const char* data() const { return data_; }
   std::size_t size() const { return size_; }
   bool empty() const { return size_ == 0; }

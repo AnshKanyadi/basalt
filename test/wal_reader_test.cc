@@ -51,7 +51,8 @@ class Image {
   void FragmentFillingBlock(FragmentType type, char fill) {
     const uint64_t block_off = bytes_.size() % kBlockBytes;
     const std::size_t payload = kBlockBytes - block_off - kHeaderBytes;
-    Fragment(type, Slice(std::string(payload, fill)));
+    const std::string bytes(payload, fill);
+    Fragment(type, Slice(bytes));
   }
 
   std::size_t PayloadToFillBlock() const {
@@ -149,8 +150,14 @@ TEST(Crc32c, TheFragmentChecksumCoversTheLengthField) {
 
 TEST(WalReader, ASingleFullRecordScansClean) {
   Image img;
-  img.Fragment(FragmentType::kFull, Slice(Batch(1, "a", "1")));
-  img.Fragment(FragmentType::kFull, Slice(GroupEnd(1, 1)));
+  {
+    const std::string payload_1 = Batch(1, "a", "1");
+    img.Fragment(FragmentType::kFull, Slice(payload_1));
+  }
+  {
+    const std::string payload_2 = GroupEnd(1, 1);
+    img.Fragment(FragmentType::kFull, Slice(payload_2));
+  }
   const ScanResult r = ScanLog(img.slice());
   EXPECT_EQ(r.outcome, ScanOutcome::kCleanEnd);
   ASSERT_EQ(r.records.size(), 2u);
@@ -164,7 +171,10 @@ TEST(WalReader, AMultiFragmentRecordIsReassembledAcrossBlocks) {
   const std::size_t first = kBlockBytes - kHeaderBytes;
   img.Fragment(FragmentType::kFirst, Slice(big.data(), first));
   img.Fragment(FragmentType::kLast, Slice(big.data() + first, big.size() - first));
-  img.Fragment(FragmentType::kFull, Slice(GroupEnd(1, 1)));
+  {
+    const std::string payload_3 = GroupEnd(1, 1);
+    img.Fragment(FragmentType::kFull, Slice(payload_3));
+  }
   const ScanResult r = ScanLog(img.slice());
   ASSERT_EQ(r.outcome, ScanOutcome::kCleanEnd) << r.failure_reason;
   ASSERT_EQ(r.records.size(), 2u);
@@ -176,9 +186,18 @@ TEST(WalReader, AMultiFragmentRecordIsReassembledAcrossBlocks) {
 // an error and is not reported as one.
 TEST(WalReader, BatchesAfterTheLastGroupEndAreNotCommitted) {
   Image img;
-  img.Fragment(FragmentType::kFull, Slice(Batch(1, "a", "1")));
-  img.Fragment(FragmentType::kFull, Slice(GroupEnd(1, 1)));
-  img.Fragment(FragmentType::kFull, Slice(Batch(2, "b", "2")));
+  {
+    const std::string payload_4 = Batch(1, "a", "1");
+    img.Fragment(FragmentType::kFull, Slice(payload_4));
+  }
+  {
+    const std::string payload_5 = GroupEnd(1, 1);
+    img.Fragment(FragmentType::kFull, Slice(payload_5));
+  }
+  {
+    const std::string payload_6 = Batch(2, "b", "2");
+    img.Fragment(FragmentType::kFull, Slice(payload_6));
+  }
   const ScanResult r = ScanLog(img.slice());
   EXPECT_EQ(r.outcome, ScanOutcome::kCleanEnd);
   EXPECT_EQ(r.records.size(), 3u);
@@ -192,7 +211,10 @@ TEST(WalReader, BatchesAfterTheLastGroupEndAreNotCommitted) {
 TEST(WalReaderSixCases, IncompleteChainAtEofIsATornTail) {
   Image img;
   img.FragmentFillingBlock(FragmentType::kFirst, 'x');
-  img.Fragment(FragmentType::kMiddle, Slice(std::string(100, 'y')));
+  {
+    const std::string payload_7 = std::string(100, 'y');
+    img.Fragment(FragmentType::kMiddle, Slice(payload_7));
+  }
   const ScanResult r = ScanLog(img.slice());
   EXPECT_EQ(r.outcome, ScanOutcome::kTornTail) << r.failure_reason;
 }
@@ -201,7 +223,10 @@ TEST(WalReaderSixCases, IncompleteChainAtEofIsATornTail) {
 TEST(WalReaderSixCases, ACrcFailureWhileInsideIsATornTail) {
   Image img;
   img.FragmentFillingBlock(FragmentType::kFirst, 'x');
-  img.BadCrcFragment(FragmentType::kMiddle, Slice(std::string(100, 'y')));
+  {
+    const std::string payload_8 = std::string(100, 'y');
+    img.BadCrcFragment(FragmentType::kMiddle, Slice(payload_8));
+  }
   const ScanResult r = ScanLog(img.slice());
   EXPECT_EQ(r.outcome, ScanOutcome::kTornTail);
   EXPECT_EQ(r.failure_offset, kBlockBytes) << "the failure point must be the "
@@ -229,7 +254,10 @@ TEST(WalReaderSixCases, AValidRecordAfterGarbageIsInteriorCorruption) {
   Image img;
   img.FragmentFillingBlock(FragmentType::kFirst, 'x');
   img.Garbage(kBlockBytes);
-  img.Fragment(FragmentType::kFull, Slice(Batch(7, "z", "9")));
+  {
+    const std::string payload_9 = Batch(7, "z", "9");
+    img.Fragment(FragmentType::kFull, Slice(payload_9));
+  }
   const ScanResult r = ScanLog(img.slice());
   ASSERT_EQ(r.outcome, ScanOutcome::kInteriorCorruption) << r.failure_reason;
   EXPECT_EQ(r.failure_offset, kBlockBytes);
@@ -244,8 +272,14 @@ TEST(WalReaderSixCases, AValidRecordAfterGarbageIsInteriorCorruption) {
 //    fragment boundary. Classified directly, without resync.
 TEST(WalReaderSixCases, FirstFollowedByFirstIsInteriorCorruption) {
   Image img;
-  img.Fragment(FragmentType::kFirst, Slice(std::string(50, 'x')));
-  img.Fragment(FragmentType::kFirst, Slice(std::string(50, 'y')));
+  {
+    const std::string payload_10 = std::string(50, 'x');
+    img.Fragment(FragmentType::kFirst, Slice(payload_10));
+  }
+  {
+    const std::string payload_11 = std::string(50, 'y');
+    img.Fragment(FragmentType::kFirst, Slice(payload_11));
+  }
   const ScanResult r = ScanLog(img.slice());
   EXPECT_EQ(r.outcome, ScanOutcome::kInteriorCorruption);
   EXPECT_EQ(r.failure_reason, "illegal fragment transition");
@@ -256,7 +290,8 @@ TEST(WalReaderSixCases, EveryIllegalTransitionIsRejected) {
   // OUTSIDE --MIDDLE--> and OUTSIDE --LAST-->
   for (FragmentType t : {FragmentType::kMiddle, FragmentType::kLast}) {
     Image img;
-    img.Fragment(t, Slice(std::string(20, 'q')));
+    const std::string payload(20, 'q');
+    img.Fragment(t, Slice(payload));
     const ScanResult r = ScanLog(img.slice());
     EXPECT_EQ(r.outcome, ScanOutcome::kInteriorCorruption)
         << "a bare " << static_cast<int>(t) << " was accepted while OUTSIDE";
@@ -264,8 +299,14 @@ TEST(WalReaderSixCases, EveryIllegalTransitionIsRejected) {
   // INSIDE --FULL-->
   {
     Image img;
-    img.Fragment(FragmentType::kFirst, Slice(std::string(20, 'q')));
-    img.Fragment(FragmentType::kFull, Slice(Batch(1, "a", "1")));
+    {
+      const std::string payload_12 = std::string(20, 'q');
+      img.Fragment(FragmentType::kFirst, Slice(payload_12));
+    }
+    {
+      const std::string payload_13 = Batch(1, "a", "1");
+      img.Fragment(FragmentType::kFull, Slice(payload_13));
+    }
     const ScanResult r = ScanLog(img.slice());
     EXPECT_EQ(r.outcome, ScanOutcome::kInteriorCorruption);
   }
@@ -279,7 +320,10 @@ TEST(WalReaderSixCases, ABareMiddleIsNotAResyncCandidate) {
   Image img;
   img.FragmentFillingBlock(FragmentType::kFirst, 'x');
   img.Garbage(kBlockBytes);
-  img.Fragment(FragmentType::kMiddle, Slice(std::string(50, 'm')));
+  {
+    const std::string payload_14 = std::string(50, 'm');
+    img.Fragment(FragmentType::kMiddle, Slice(payload_14));
+  }
   const ScanResult r = ScanLog(img.slice());
   EXPECT_EQ(r.outcome, ScanOutcome::kTornTail)
       << "a bare MIDDLE was accepted as a resync candidate, so garbage can now "
@@ -291,12 +335,19 @@ TEST(WalReaderSixCases, ABareMiddleIsNotAResyncCandidate) {
 // log that recovery had already correctly terminated.
 TEST(WalReaderSixCases, AResyncCandidateMustCarryAHigherSequence) {
   Image img;
-  img.Fragment(FragmentType::kFull, Slice(Batch(9, "a", "1")));
-  img.Fragment(FragmentType::kFull, Slice(GroupEnd(9, 1)));
+  {
+    const std::string payload_15 = Batch(9, "a", "1");
+    img.Fragment(FragmentType::kFull, Slice(payload_15));
+  }
+  {
+    const std::string payload_16 = GroupEnd(9, 1);
+    img.Fragment(FragmentType::kFull, Slice(payload_16));
+  }
   img.PadBlock();
   img.FragmentFillingBlock(FragmentType::kFirst, 'x');
   img.Garbage(kBlockBytes);
-  img.Fragment(FragmentType::kFull, Slice(Batch(2, "old", "v")));  // seq 2 < 9
+  const std::string stale = Batch(2, "old", "v");  // seq 2 < 9
+  img.Fragment(FragmentType::kFull, Slice(stale));
   const ScanResult r = ScanLog(img.slice());
   EXPECT_EQ(r.outcome, ScanOutcome::kTornTail) << r.failure_reason;
   EXPECT_EQ(r.last_committed_seq, 9u);
@@ -306,8 +357,14 @@ TEST(WalReaderSixCases, AResyncCandidateMustCarryAHigherSequence) {
 
 TEST(WalReader, AFlippedByteInsideACommittedGroupIsReportedWithAnOffset) {
   Image img;
-  img.Fragment(FragmentType::kFull, Slice(BatchOfSize(1, img.PayloadToFillBlock())));
-  img.Fragment(FragmentType::kFull, Slice(Batch(5, "b", "2")));
+  {
+    const std::string payload_17 = BatchOfSize(1, img.PayloadToFillBlock());
+    img.Fragment(FragmentType::kFull, Slice(payload_17));
+  }
+  {
+    const std::string payload_18 = Batch(5, "b", "2");
+    img.Fragment(FragmentType::kFull, Slice(payload_18));
+  }
   img.FlipByteAt(kBlockBytes + kHeaderBytes + 2);  // inside the second payload
   const ScanResult r = ScanLog(img.slice());
   EXPECT_EQ(r.outcome, ScanOutcome::kTornTail)
@@ -320,7 +377,10 @@ TEST(WalReader, AFlippedByteInsideACommittedGroupIsReportedWithAnOffset) {
 // Corrupting ONLY the length field must fail at the fragment's own offset.
 TEST(WalReader, ACorruptLengthFailsAtAKnownOffset) {
   Image img;
-  img.Fragment(FragmentType::kFull, Slice(Batch(1, "a", "1")));
+  {
+    const std::string payload_19 = Batch(1, "a", "1");
+    img.Fragment(FragmentType::kFull, Slice(payload_19));
+  }
   img.CorruptLengthAt(0);
   const ScanResult r = ScanLog(img.slice());
   EXPECT_NE(r.outcome, ScanOutcome::kCleanEnd);
@@ -335,10 +395,13 @@ TEST(WalReader, FewerThanEightBytesLeftInABlockIsPadding) {
   Image img;
   // Leave exactly 5 bytes of the block unused: fewer than the 8 a header plus
   // one payload byte needs, so the remainder is padding.
-  img.Fragment(FragmentType::kFull,
-               Slice(BatchOfSize(1, img.PayloadToFillBlock() - 5)));
+  const std::string filler = BatchOfSize(1, img.PayloadToFillBlock() - 5);
+  img.Fragment(FragmentType::kFull, Slice(filler));
   img.Zeros(5);
-  img.Fragment(FragmentType::kFull, Slice(Batch(1, "a", "1")));
+  {
+    const std::string payload_20 = Batch(1, "a", "1");
+    img.Fragment(FragmentType::kFull, Slice(payload_20));
+  }
   const ScanResult r = ScanLog(img.slice());
   EXPECT_EQ(r.outcome, ScanOutcome::kCleanEnd) << r.failure_reason;
   EXPECT_EQ(r.records.size(), 2u);

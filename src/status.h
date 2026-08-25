@@ -10,7 +10,23 @@
 
 namespace rift {
 
-class Status {
+// [[nodiscard]] IS THE ANSWER TO A COST WE TOOK ON DELIBERATELY.
+//
+// Wal::Open refuses an unordered cap pair with a Status rather than an abort,
+// because section 10.2's induced failure has to be OBSERVED and a path whose
+// only outcome is abort() is observable in this suite only through a death test
+// -- which forks and behaves differently under three of our four sanitizer
+// lanes. Choosing inducibility over conventional strictness is the same trade
+// Track A made when it refused checkers it could not see fail.
+//
+// THE COST, STATED: a Status can be ignored by a caller where an abort cannot,
+// so the thing that proves no caller ignores it is now load-bearing. This
+// attribute is that thing, and it is a COMPILE ERROR under -Werror rather than
+// a lane: a dropped Status stops being a code review question.
+//
+// Deliberately discarding one is spelled `(void)` at the call site, which is a
+// visible, greppable act rather than an omission.
+class [[nodiscard]] Status {
  public:
   // THE CLOSED ENUM (DESIGN-B1 section 7.6 clause 1).
   //

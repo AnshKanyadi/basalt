@@ -14,14 +14,19 @@
 # site that decides what may be banked; this breaks the FACT that site consumes.
 # Both have to be closed or the suppression is only as good as whichever half
 # nobody edited.
---- a/engine-cpp/src/env/test/test_env.cc	2026-08-24 17:39:55
-+++ b/engine-cpp/src/env/test/test_env.cc	2026-08-24 17:39:55
-@@ -35,9 +35,9 @@
-   // narrower and still real: DETECT AND REFUSE, which section 5.4(d) already
-   // does.
+#
+# Regenerated at B1.7b, when the torn-Sync injector was SPLIT: prefix
+# granularity is B1-D5's contract model and does not suspend, and only the
+# sector-subset mode does. The registry still has exactly two members, and this
+# patch removes one of them.
+--- a/engine-cpp/src/env/test/test_env.cc	2026-08-24 22:25:23
++++ b/engine-cpp/src/env/test/test_env.cc	2026-08-24 22:25:23
+@@ -43,9 +43,9 @@
+   // characterization-only: conservative, and wrong, and it would have made the
+   // two-element set untestable as evidence at B1.9a.
    switch (injection) {  // NO default: arm -- a new injector must be classified
 -    case Injection::kSyncLoss:
-     case Injection::kTornSync:
+     case Injection::kSectorSubsetTornSync:
        return true;
 +    case Injection::kSyncLoss:  // REGISTRY: no longer suspends
      case Injection::kNone:

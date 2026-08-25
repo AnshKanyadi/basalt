@@ -64,7 +64,23 @@ enum class Injection : uint8_t {
   kIoError,       // the call fails; the implementation does not run
   kDiskFull,      // ENOSPC, quota exhausted
   kSyncLoss,      // Sync returns OK and promotes nothing -- the device lied
-  kTornSync,      // a kill INSIDE Sync: a prefix of the new extent is promoted
+  // A kill INSIDE Sync: a PREFIX of the newly covered extent is promoted.
+  //
+  // THIS IS THE CONTRACT MODEL AND IT DOES NOT SUSPEND EXACTNESS. B1-D5 ruled
+  // (a) prefix as the model every contract in section 7 is stated against, and
+  // section 7.4's two-element set -- R in {G_{k-1}, G_k} -- is precisely this
+  // case. The engine is held to exactness under it.
+  kTornSync,
+  // A kill inside Sync that promotes an ARBITRARY SUBSET of 4 KiB sectors of
+  // the newly covered extent, not a prefix.
+  //
+  // THIS ONE SUSPENDS. It can promote a GROUP_END while leaving an earlier
+  // record in the same group torn, which is a device that violated fsync's own
+  // ordering guarantee. Against such a device the engine cannot be held to
+  // exactness, and holding it there anyway would REPORT THE ENGINE FOR THE
+  // DISK'S CRIME. Its obligation is narrower and still real: detect and refuse,
+  // which section 5.4(d) already does.
+  kSectorSubsetTornSync,
   kTornFlush,     // a kill INSIDE Flush: a prefix of the flushed extent lands
   kKill,          // the plain kill point
 };
@@ -117,9 +133,13 @@ constexpr int kMaxPostKillCalls = 1024;
 // intentional kill from a crash.
 constexpr int kRealExitStatus = 97;
 
+// A sector, for kSectorSubsetTornSync. 4 KiB is the unit a device promotes.
+inline constexpr uint64_t kSectorBytes = 4096;
+
 struct PlannedFault {
   Injection injection = Injection::kNone;
-  // For kTornSync / kTornFlush: how many of the newly covered bytes survive.
+  // kTornSync / kTornFlush: how many of the newly covered bytes survive.
+  // kSectorSubsetTornSync: which sector of the newly covered extent does NOT.
   uint64_t prefix_bytes = 0;
 };
 

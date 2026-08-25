@@ -42,9 +42,15 @@ namespace rift {
 namespace wal {
 
 // Every acquisition of the DB mutex goes through this, so that widening the
-// lock's scope widens the guard's scope with it. A separate marker could be
-// left behind by an edit that moved only the lock -- which is exactly the edit
-// BM16 makes.
+// lock's scope widens the guard's scope with it.
+//
+// THIS IS THE HOUSE MOVE AIMED AT A MUTANT'S STRATEGY RATHER THAN AT A BUG.
+// BM16's edit is "widen a lock's scope to simplify a function", and what such an
+// edit LEAVES BEHIND is a separate mutex-depth marker still sitting in the old,
+// narrow scope -- guarding nothing, reporting nothing, and looking untouched in
+// the diff. Binding the marker to the lock means the edit has nothing to leave
+// behind: there is no second thing to forget, because there is no second
+// thing.
 class DbLock {
  public:
   explicit DbLock(std::mutex& m) : lock_(m) {}

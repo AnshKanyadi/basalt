@@ -1,0 +1,33 @@
+# id: HEADER-conditional
+# blinds: the FILE_HEADER being validated unconditionally
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# NOT IN THE CATALOGUE, and it is a defect this cycle actually had.
+#
+# The FILE_HEADER validation was first written inside the committed-records
+# loop, which made it conditional on a GROUP_END existing in the file. A freshly
+# created WAL has a FILE_HEADER and no group, so a file with the WRONG NAME --
+# renamed, copied from another database, restored out of order -- passed
+# recovery whenever it happened to contain no closed group. Every checksum in it
+# is perfect; only the identity is wrong, and identity is precisely what this
+# record exists to establish.
+#
+# Section 5.3.4 lists what the FILE_HEADER catches: an empty file, a truncated
+# file, a foreign file, and a file whose name and contents disagree. A check
+# that runs only when unrelated state happens to be present catches none of them
+# reliably. Amendment A2 requires the mutant in the same change as the gap; this
+# is that.
+--- a/engine-cpp/src/wal/recovery.cc	2026-08-24 22:16:58
++++ b/engine-cpp/src/wal/recovery.cc	2026-08-24 22:16:58
+@@ -138,7 +138,7 @@
+     if (scan.records.empty()) {
+       return Status::Corruption(path + ": no records at all; not a WAL");
+     }
+-    {
++    if (scan.committed_count > 0) {  // HEADER: only when a group closed
+       const LogicalRecord& first = scan.records.front();
+       if (first.kind != RecordKind::kFileHeader) {
+         return Status::Corruption(path + ": first record is not a FILE_HEADER");
