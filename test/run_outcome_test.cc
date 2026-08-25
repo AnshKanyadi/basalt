@@ -69,6 +69,26 @@ TEST(RunOutcome, NonEvidenceColumnsSayNotEvidenceInTheHeading) {
   }
 }
 
+// THE FLOOR, IN BOTH DIRECTIONS.
+//
+// OutcomeFloor was only ever called with `true` -- every test that used it
+// passed an exactness_suspended() that was suspended. A floor that returned
+// kCharacterizationOnly unconditionally would make EVERY run unbankable, and
+// not one assertion in the suite would have gone red: it is the HARNESS-006
+// shape exactly, a conservative misclassification whose cost is a gate nothing
+// can satisfy, discovered two steps downstream and looking like a bug in the
+// engine.
+TEST(RunOutcome, TheFloorSuspendsOnlyWhenSomethingSuspendedIt) {
+  EXPECT_EQ(OutcomeFloor(true), RunOutcome::kCharacterizationOnly);
+  EXPECT_FALSE(CountsAsRecoveryEvidence(OutcomeFloor(true)));
+
+  EXPECT_EQ(OutcomeFloor(false), RunOutcome::kContractPass);
+  EXPECT_TRUE(CountsAsRecoveryEvidence(OutcomeFloor(false)))
+      << "a run with no suspending injector must remain BANKABLE. If the floor "
+         "suspends unconditionally, section 7.4 condition 3 -- both elements of "
+         "the two-element set observed across the sweep -- becomes unsatisfiable";
+}
+
 }  // namespace
 }  // namespace rig
 }  // namespace rift

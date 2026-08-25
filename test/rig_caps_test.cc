@@ -77,6 +77,17 @@ TEST(CapAdjudication, AllFourCellsOfTheTable) {
 TEST(CapAdjudication, BothDivergencesFailTheRunAndNeitherVoidsIt) {
   EXPECT_TRUE(IsDivergence(CapVerdict::kSpuriousTripwire));
   EXPECT_TRUE(IsDivergence(CapVerdict::kMissingTripwire));
+  // AND THE OTHER DIRECTION, which the audit after HARNESS-006 found missing.
+  // A classifier that decides whether a run counts must be asserted BOTH ways:
+  // the safe-looking direction is the one no other assertion notices, because
+  // its failure mode is a gate nothing can satisfy rather than a test that goes
+  // red.
+  EXPECT_FALSE(IsDivergence(CapVerdict::kNormal));
+  EXPECT_FALSE(IsDivergence(CapVerdict::kVoid));
+  EXPECT_EQ(OutcomeForCapVerdict(CapVerdict::kNormal), RunOutcome::kContractPass)
+      << "a normal run that is not banked as a pass is a run that can never be "
+         "banked at all, and nothing else here would say so";
+  EXPECT_TRUE(CountsAsRecoveryEvidence(OutcomeForCapVerdict(CapVerdict::kNormal)));
   EXPECT_EQ(OutcomeForCapVerdict(CapVerdict::kSpuriousTripwire),
             RunOutcome::kContractViolation);
   EXPECT_EQ(OutcomeForCapVerdict(CapVerdict::kMissingTripwire),
