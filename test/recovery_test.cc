@@ -28,6 +28,53 @@ using testenv::TestEnvironment;
 
 const std::string kDir = "db";
 
+// RECOVERY NO LONGER TAKES THE DIRECTORY LOCK -- see recovery.h. These tests
+// take it the way DB::Open does.
+//
+// They also play the MANIFEST'S PART, because the manifest is what supplies the
+// fresh WAL's number now that B1-D7's max+1 has expired. The scan below is that
+// number computed the way the directory would have answered it in B1: these
+// tests are about the WAL and not about the manifest, so the number is supplied
+// rather than made a dependency.
+Status RecoverHere(Env* env, const std::string& dir, const Caps& caps,
+                   RecoveryResult* out,
+                   RecoverOptions options = RecoverOptions()) {
+  if (options.next_file_number == 1) {
+    std::vector<std::string> children;
+    Status g = env->GetChildren(dir, &children);
+    if (!g.ok() && g.code() != Status::Code::kNotFound) return g;
+    uint64_t highest = 0;
+    for (const std::string& name : children) {
+      if (name.size() != 10 || name.compare(6, 4, ".log") != 0) continue;
+      uint64_t n = 0;
+      bool digits = true;
+      for (std::size_t i = 0; i < 6; ++i) {
+        if (name[i] < '0' || name[i] > '9') { digits = false; break; }
+        n = n * 10 + static_cast<uint64_t>(name[i] - '0');
+      }
+      if (digits && n > highest) highest = n;
+    }
+    options.next_file_number = highest + 1;
+  }
+  // And the manifest's part again: the set of live WALs. In B1 nothing was
+  // ever deleted, so the manifest would have named every number ever issued --
+  // 1 through the one this call is about to create. Naming them from what is
+  // PRESENT instead would make the set follow the directory, and a deleted WAL
+  // would drop out of the set along with the file: the check would then be
+  // asking the directory whether the directory was complete.
+  if (options.named_wals.empty()) {
+    for (uint64_t n = 1; n <= options.next_file_number; ++n) {
+      options.named_wals.push_back(n);
+    }
+  }
+  FileLockPtr lock;
+  Status s = env->LockFile(dir + "/LOCK", &lock);
+  if (!s.ok()) return s;
+  s = Recover(env, dir, caps, options, out);
+  (void)env->UnlockFile(std::move(lock));
+  return s;
+}
+
 std::vector<Op> OneSet(const std::string& k, const std::string& v) {
   std::vector<Op> ops;
   Op op;
@@ -87,7 +134,7 @@ TEST(Recovery, RecoversExactlyWhatTheLastReturnedSyncHadCovered) {
   std::unique_ptr<TestEnvironment> reopened =
       TestEnvironment::FromImage(t.Image(), testenv::FaultPlan());
   RecoveryResult r;
-  ASSERT_TRUE(Recover(reopened->env(), kDir, Caps(), &r).ok());
+  ASSERT_TRUE(RecoverHere(reopened->env(), kDir, Caps(), &r).ok());
 
   EXPECT_EQ(r.recovered_seq, promised)
       << "recovery landed on a watermark the harness never saw promised";
@@ -121,7 +168,7 @@ TEST(Recovery, ASyncThatNeverRanPromisesNothing) {
   std::unique_ptr<TestEnvironment> reopened =
       TestEnvironment::FromImage(t.Image(), testenv::FaultPlan());
   RecoveryResult r;
-  ASSERT_TRUE(Recover(reopened->env(), kDir, Caps(), &r).ok());
+  ASSERT_TRUE(RecoverHere(reopened->env(), kDir, Caps(), &r).ok());
   EXPECT_EQ(r.recovered_seq, 0u);
   EXPECT_EQ(Get(*r.table, "a", 100), "<absent>");
 }
@@ -145,7 +192,7 @@ TEST(Recovery, CloseThenReopenIsIndistinguishableFromKillThenReopen) {
     std::unique_ptr<TestEnvironment> re =
         TestEnvironment::FromImage(t.Image(), testenv::FaultPlan());
     RecoveryResult r;
-    EXPECT_TRUE(Recover(re->env(), kDir, Caps(), &r).ok());
+    EXPECT_TRUE(RecoverHere(re->env(), kDir, Caps(), &r).ok());
     return r.recovered_seq;
   };
   EXPECT_EQ(run(true), run(false));
@@ -206,7 +253,7 @@ TEST(Recovery, TheWatermarkIsTheRecordedFieldAndNotTheHighestSequenceSeen) {
   std::unique_ptr<TestEnvironment> re =
       TestEnvironment::FromImage(image, testenv::FaultPlan());
   RecoveryResult r;
-  ASSERT_TRUE(Recover(re->env(), kDir, Caps(), &r).ok());
+  ASSERT_TRUE(RecoverHere(re->env(), kDir, Caps(), &r).ok());
   EXPECT_EQ(r.recovered_seq, 77u)
       << "the watermark came from the highest sequence SEEN rather than from "
          "the GROUP_END field where it was WRITTEN. The two are equal in every "
@@ -215,44 +262,77 @@ TEST(Recovery, TheWatermarkIsTheRecordedFieldAndNotTheHighestSequenceSeen) {
          "test in this file";
 }
 
-// ------------------------------------------------------ gapless numbering
+// ---------------------------------------------- a WAL the manifest named
 
+// B1's check was that WAL NUMBERING was gapless, which was a property of no
+// file ever being deleted. B2 deletes flushed WALs, so the check is REPLACED:
+// the manifest names the live WALs, and one that is named and absent is a lost
+// directory entry. THE SITUATION THIS TEST BUILDS IS UNCHANGED -- three WALs,
+// lose the middle one -- because it is the situation that matters; only the
+// mechanism that notices has moved. See recovery.h for why sequences cannot
+// answer this and file identities can.
 TEST(Recovery, ADeletedWalMakesTheOpenFail) {
   TestEnvironment t;
   {
     RecoveryResult r1;
-    ASSERT_TRUE(Recover(t.env(), kDir, Caps(), &r1).ok());  // creates 000001
+    ASSERT_TRUE(RecoverHere(t.env(), kDir, Caps(), &r1).ok());  // creates 000001
     SeqNum mark = 0;
     ASSERT_TRUE(r1.wal->Apply(1, OneSet("a", "1")).ok());
     ASSERT_TRUE(r1.wal->Sync(&mark).ok());
   }
   {
     RecoveryResult r2;
-    ASSERT_TRUE(Recover(t.env(), kDir, Caps(), &r2).ok());  // creates 000002
+    ASSERT_TRUE(RecoverHere(t.env(), kDir, Caps(), &r2).ok());  // creates 000002
     ASSERT_EQ(r2.file_numbers.size(), 1u);
   }
   {
     RecoveryResult r3;
-    ASSERT_TRUE(Recover(t.env(), kDir, Caps(), &r3).ok());  // creates 000003
+    ASSERT_TRUE(RecoverHere(t.env(), kDir, Caps(), &r3).ok());  // creates 000003
     ASSERT_EQ(r3.file_numbers.size(), 2u);
   }
   // Three WALs now: 1, 2, 3. Lose the middle one, as a lost directory entry
   // would.
   ASSERT_TRUE(t.env()->DeleteFile(kDir + "/000002.log").ok());
   RecoveryResult r4;
-  const Status s = Recover(t.env(), kDir, Caps(), &r4);
+  const Status s = RecoverHere(t.env(), kDir, Caps(), &r4);
   EXPECT_EQ(s.code(), Status::Code::kCorruption) << s.ToString();
-  EXPECT_NE(s.message().find("gapless"), std::string::npos);
+  EXPECT_NE(s.message().find("000002.log"), std::string::npos) << s.ToString();
+  EXPECT_NE(s.message().find("cannot prove"), std::string::npos) << s.ToString();
+}
+
+// THE HALF THE REPLACEMENT DOES NOT COVER, ASSERTED AS A NEGATIVE RATHER THAN
+// LEFT SILENT. The highest named WAL may be absent, because that is the one a
+// crash caught between naming and creating -- it holds nothing. A rule that
+// refused it would refuse every crash in that window, which is the normal case.
+TEST(Recovery, TheHighestNamedWalMayBeAbsentBecauseItIsTheOneBeingCreated) {
+  TestEnvironment t;
+  {
+    RecoveryResult r1;
+    ASSERT_TRUE(RecoverHere(t.env(), kDir, Caps(), &r1).ok());
+    SeqNum mark = 0;
+    ASSERT_TRUE(r1.wal->Apply(1, OneSet("a", "1")).ok());
+    ASSERT_TRUE(r1.wal->Sync(&mark).ok());
+  }
+  RecoveryResult r;
+  RecoverOptions options;
+  options.next_file_number = 2;
+  // WAL 2 is named and does not exist: the crash landed between naming it and
+  // creating it, which is the window naming-before-creating deliberately opens
+  // because it is the harmless one.
+  options.named_wals = {1, 2};
+  const Status s = RecoverHere(t.env(), kDir, Caps(), &r, options);
+  EXPECT_TRUE(s.ok()) << s.ToString();
+  EXPECT_EQ(r.recovered_seq, 1u);
 }
 
 TEST(Recovery, FileNumbersAreSortedByValueAndNotByDirectoryOrder) {
   TestEnvironment t;
   for (int i = 0; i < 12; ++i) {
     RecoveryResult r;
-    ASSERT_TRUE(Recover(t.env(), kDir, Caps(), &r).ok());
+    ASSERT_TRUE(RecoverHere(t.env(), kDir, Caps(), &r).ok());
   }
   RecoveryResult r;
-  ASSERT_TRUE(Recover(t.env(), kDir, Caps(), &r).ok());
+  ASSERT_TRUE(RecoverHere(t.env(), kDir, Caps(), &r).ok());
   ASSERT_EQ(r.file_numbers.size(), 12u);
   for (std::size_t i = 0; i < r.file_numbers.size(); ++i) {
     EXPECT_EQ(r.file_numbers[i], i + 1)
@@ -335,7 +415,7 @@ TEST(Recovery, BatchesAfterTheLastGroupEndAreDiscardedAndThatIsNotAnError) {
   std::unique_ptr<TestEnvironment> re =
       TestEnvironment::FromImage(image, testenv::FaultPlan());
   RecoveryResult r;
-  ASSERT_TRUE(Recover(re->env(), kDir, Caps(), &r).ok());
+  ASSERT_TRUE(RecoverHere(re->env(), kDir, Caps(), &r).ok());
   EXPECT_EQ(r.recovered_seq, 1u);
   EXPECT_EQ(Get(*r.table, "a", 100), "1");
   EXPECT_EQ(Get(*r.table, "b", 100), "<absent>")
@@ -381,7 +461,7 @@ TEST(Recovery, InteriorCorruptionRefusesTheOpenAndSaysWhere) {
   std::unique_ptr<TestEnvironment> re =
       TestEnvironment::FromImage(image, testenv::FaultPlan());
   RecoveryResult r;
-  const Status s = Recover(re->env(), kDir, Caps(), &r);
+  const Status s = RecoverHere(re->env(), kDir, Caps(), &r);
   ASSERT_EQ(s.code(), Status::Code::kCorruption) << s.ToString();
   EXPECT_NE(s.message().find("interior corruption"), std::string::npos);
   EXPECT_NE(s.message().find("byte offset"), std::string::npos)
@@ -405,7 +485,7 @@ TEST(Recovery, AFileWhoseHeaderDisagreesWithItsNameIsRefused) {
   std::unique_ptr<TestEnvironment> re =
       TestEnvironment::FromImage(image, testenv::FaultPlan());
   RecoveryResult r;
-  const Status s = Recover(re->env(), kDir, Caps(), &r);
+  const Status s = RecoverHere(re->env(), kDir, Caps(), &r);
   EXPECT_EQ(s.code(), Status::Code::kCorruption) << s.ToString();
   EXPECT_NE(s.message().find("file number"), std::string::npos);
 }
@@ -432,7 +512,7 @@ TEST(Recovery, ABatchIsCollapsedToOneOpPerKeyWithTheLastWinning) {
     ASSERT_TRUE(w->Sync(&mark).ok());
   }
   RecoveryResult r;
-  ASSERT_TRUE(Recover(t.env(), kDir, Caps(), &r).ok());
+  ASSERT_TRUE(RecoverHere(t.env(), kDir, Caps(), &r).ok());
   EXPECT_EQ(Get(*r.table, "k", 100), "last")
       << "a Set after a Delete in the same batch must re-add the key, which is "
          "the model's rule reproduced";

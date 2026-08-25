@@ -45,12 +45,37 @@ inline constexpr uint64_t kMaxRecordBytes = 64ull * 1024 * 1024;
 // configuration that cannot be built.
 inline constexpr uint64_t kWalBufferBytes = 256ull * 1024 * 1024;
 
+// kFlushBytes -- 4 MiB of memtable memory as the engine accounts it (B1-D6a),
+// which is what makes the trigger answerable at all.
+//
+// The number balances two costs that pull opposite ways: a larger memtable
+// means fewer, bigger SSTables and less write amplification, and it means a
+// longer replay after a crash, because everything not yet flushed is replayed
+// from the WAL.
+//
+// IT IS NOT THE ONLY BOUND ON MEMTABLE MEMORY, and that matters: a caller that
+// never Syncs never flushes, because the flush runs on the Sync path -- the
+// only blocking entry point the frozen interface has. Such a caller reaches
+// kWalBufferBytes first, since unsynced WAL bytes and memtable bytes grow
+// together, so memtable memory is bounded by that cap PLUS this threshold and
+// not by this threshold alone.
+//
+// It joins Caps for the reason the other two are there: the sweep sets it low
+// so that a short workload actually flushes, and a run at a non-default value
+// is a DIFFERENT REGIME that never aggregates with a default one.
+//
+// THE MEASUREMENT THAT WOULD MOVE IT: B5's numbers, showing flush frequency or
+// recovery time attributed by profile rather than inferred.
+inline constexpr uint64_t kFlushBytes = 4ull * 1024 * 1024;
+
 struct Caps {
   uint64_t max_record_bytes = kMaxRecordBytes;
   uint64_t wal_buffer_bytes = kWalBufferBytes;
+  uint64_t flush_bytes = kFlushBytes;
 
   bool IsDefault() const {
-    return max_record_bytes == kMaxRecordBytes && wal_buffer_bytes == kWalBufferBytes;
+    return max_record_bytes == kMaxRecordBytes &&
+           wal_buffer_bytes == kWalBufferBytes && flush_bytes == kFlushBytes;
   }
   bool Ordered() const { return wal_buffer_bytes >= 2 * max_record_bytes; }
 };

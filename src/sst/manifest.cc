@@ -82,6 +82,9 @@ const char* EditKindName(EditKind kind) {
     case EditKind::kAddTable:        return "add table";
     case EditKind::kDeleteTable:     return "delete table";
     case EditKind::kNextFileNumber:  return "next file number";
+    case EditKind::kSetLogNumber:    return "log number";
+    case EditKind::kAddWal:          return "add wal";
+    case EditKind::kDeleteWal:       return "delete wal";
   }
   RIFT_UNREACHABLE("EditKind holds a value no enumerator names");
 }
@@ -110,6 +113,9 @@ void EncodeEdit(const ManifestEdit& edit, std::string* out) {
       return;
     case EditKind::kDeleteTable:
     case EditKind::kNextFileNumber:
+    case EditKind::kSetLogNumber:
+    case EditKind::kAddWal:
+    case EditKind::kDeleteWal:
       PutU64(out, edit.number);
       return;
     case EditKind::kInvalid:
@@ -135,7 +141,7 @@ bool DecodeEdit(Slice payload, ManifestEdit* out, std::string* why) {
   // that case -- -Werror=switch is about the enumerators that EXIST -- so the
   // one place the closed-enum discipline meets untrusted input rejects before
   // it converts, rather than converting and hoping.
-  if (edit_kind == 0 || edit_kind > static_cast<uint8_t>(EditKind::kNextFileNumber)) {
+  if (edit_kind == 0 || edit_kind > static_cast<uint8_t>(EditKind::kDeleteWal)) {
     *why = "unknown edit kind " + std::to_string(edit_kind);
     return false;
   }
@@ -155,6 +161,15 @@ bool DecodeEdit(Slice payload, ManifestEdit* out, std::string* why) {
       break;
     case EditKind::kNextFileNumber:
       if (!c.U64(&out->number)) { *why = "truncated next-file-number edit"; return false; }
+      break;
+    case EditKind::kSetLogNumber:
+      if (!c.U64(&out->number)) { *why = "truncated log-number edit"; return false; }
+      break;
+    case EditKind::kAddWal:
+      if (!c.U64(&out->number)) { *why = "truncated add-wal edit"; return false; }
+      break;
+    case EditKind::kDeleteWal:
+      if (!c.U64(&out->number)) { *why = "truncated delete-wal edit"; return false; }
       break;
     case EditKind::kInvalid:
       RIFT_UNREACHABLE("the range check above admitted kInvalid");
@@ -244,6 +259,17 @@ Status Replay(const std::string& path, uint64_t expected_number, Slice image,
           case EditKind::kNextFileNumber:
             state->next_file_number = edit.number;
             break;
+          case EditKind::kSetLogNumber:
+            // RESERVED AND NEVER WRITTEN. It was the first shape of the live-WAL
+            // rule and the set replaced it; the byte stays spent so a manifest
+            // written by a build that used it is still decodable.
+            break;
+          case EditKind::kAddWal:
+            state->wals.insert(edit.number);
+            break;
+          case EditKind::kDeleteWal:
+            state->wals.erase(edit.number);
+            break;
           case EditKind::kInvalid:
             RIFT_UNREACHABLE("DecodeEdit returned kInvalid and reported success");
         }
@@ -262,26 +288,26 @@ Status Replay(const std::string& path, uint64_t expected_number, Slice image,
 // validated by the SAME ValidateTable the classifier's gates were induced
 // against, and its largest key -- which is a fact about bytes on disk -- is what
 // the manifest's number is held to.
-Status VerifyTables(Env* env, const std::string& dir, const ManifestState& state) {
+Status VerifyTables(Env* env, const std::string& dir, const ManifestState& state,
+                    std::vector<std::shared_ptr<Table>>* opened) {
+  // NEWEST FIRST once built: std::map iterates by ascending file number, so the
+  // vector is reversed at the end. Order is not cosmetic -- a deletion in a
+  // newer table must hide a value in an older one.
+  std::vector<std::shared_ptr<Table>> built;
   for (const auto& entry : state.tables) {
     const TableMeta& meta = entry.second;
     const std::string path = TablePath(dir, meta.number);
-    std::string image;
-    Status s = ReadWholeFile(env, path, &image);
+    std::shared_ptr<Table> t;
+    Status s = Table::Open(env, path, meta.number, &t);
     if (!s.ok()) {
-      return Status::Corruption(path + ": named by the manifest and unreadable (" +
+      return Status::Corruption(path + ": named by the manifest and unusable (" +
                                 s.ToString() + ")");
     }
-    const TableCheck v = ValidateTable(Slice(image));
-    if (!v.ok()) {
-      return Status::Corruption(path + ": " + std::string(TableFaultName(v.fault)) +
-                                " at offset " + std::to_string(v.offset) + " (" +
-                                v.why + ")");
-    }
-    if (image.size() != meta.file_bytes) {
+    const TableCheck& v = t->check();
+    if (t->file_bytes() != meta.file_bytes) {
       return Status::Corruption(path + ": manifest says " +
                                 std::to_string(meta.file_bytes) + " bytes, file has " +
-                                std::to_string(image.size()));
+                                std::to_string(t->file_bytes()));
     }
     if (v.largest_key != meta.largest || v.smallest_key != meta.smallest) {
       return Status::Corruption(path + ": key bounds disagree with the manifest");
@@ -292,6 +318,10 @@ Status VerifyTables(Env* env, const std::string& dir, const ManifestState& state
           std::to_string(meta.largest_seq) + "; the table's own keys say " +
           std::to_string(v.largest_seq));
     }
+    built.push_back(std::move(t));
+  }
+  if (opened != nullptr) {
+    opened->assign(built.rbegin(), built.rend());
   }
   return Status::Ok();
 }
@@ -384,8 +414,10 @@ Status InstallCurrent(Env* env, const std::string& dir, uint64_t number) {
 }  // namespace
 
 Status Manifest::Open(Env* env, const std::string& dir, ManifestState* state,
+                      std::vector<std::shared_ptr<Table>>* tables,
                       std::unique_ptr<Manifest>* out) {
   *state = ManifestState();
+  if (tables != nullptr) tables->clear();
   out->reset();
 
   bool have_current = false;
@@ -402,7 +434,7 @@ Status Manifest::Open(Env* env, const std::string& dir, ManifestState* state,
     if (!s.ok()) return s;
     s = Replay(path, old_number, Slice(image), state);
     if (!s.ok()) return s;
-    s = VerifyTables(env, dir, *state);
+    s = VerifyTables(env, dir, *state, tables);
     if (!s.ok()) return s;
   }
 
@@ -436,6 +468,12 @@ Status Manifest::Open(Env* env, const std::string& dir, ManifestState* state,
   counter.kind = EditKind::kNextFileNumber;
   counter.number = state->next_file_number;
   snapshot.push_back(counter);
+  for (uint64_t n : state->wals) {
+    ManifestEdit w;
+    w.kind = EditKind::kAddWal;
+    w.number = n;
+    snapshot.push_back(w);
+  }
   for (const auto& entry : state->tables) {
     ManifestEdit add;
     add.kind = EditKind::kAddTable;

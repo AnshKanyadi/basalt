@@ -96,6 +96,7 @@ add_library(rift_engine STATIC
   src/status.cc
   src/slice.cc
   src/internal_key.cc
+  src/merged_iter.cc
   src/env/call_site.cc
   src/env/fault_controller.cc
   src/env/env.cc
@@ -115,6 +116,7 @@ add_library(rift_engine STATIC
   src/wal/recovery.cc
   src/sst/bloom.cc
   src/sst/table_format.cc
+  src/sst/table.cc
   src/sst/table_builder.cc
   src/sst/manifest.cc
   src/sst/table_check.cc
@@ -164,6 +166,7 @@ add_executable(rift_engine_test
   test/rig_caps_test.cc
   test/recovery_test.cc
   test/db_test.cc
+  test/db_flush_test.cc
   test/sst_bloom_test.cc
   test/sst_format_test.cc
   test/sst_manifest_test.cc

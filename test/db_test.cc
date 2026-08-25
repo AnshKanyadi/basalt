@@ -28,6 +28,30 @@ using wal::SeqNum;
 
 const std::string kDir = "db";
 
+// The live WAL, found rather than named -- and found HARNESS-SIDE, from the
+// ledger, which consumes no ordinal.
+//
+// B1 could hardcode 000001.log because the WAL was the first file the engine
+// ever created. B2 allocates file numbers from the MANIFEST's counter, which
+// the manifest draws on first, so the number is an artefact of allocation
+// order and a test that hardcodes one rots the next time the order changes.
+//
+// ASKING THE Env WOULD BE WORSE THAN HARDCODING. A GetChildren consumes an Env
+// ordinal, so a probe run that called one would shift every ordinal after it
+// relative to the real run that replays the same workload -- and a fault plan
+// built from the probe's ordinals would then inject at the wrong call. That is
+// how this helper's first version broke a kill-point test.
+std::string LiveWalPath(testenv::TestEnvironment* t) {
+  std::string best;
+  for (const testenv::LedgerEntry& e : t->ledger()) {
+    if (e.path.size() < 4) continue;
+    if (e.path.compare(e.path.size() - 4, 4, ".log") != 0) continue;
+    if (e.path > best) best = e.path;
+  }
+  EXPECT_FALSE(best.empty()) << "no WAL was ever opened";
+  return best;
+}
+
 std::string Get(const DB& db, const std::string& key) {
   std::string v;
   const Status s = db.Get(Slice(key), &v);
@@ -264,7 +288,7 @@ TEST(DB, TheWalRecordsTheExpansionAndNotTheRange) {
     SeqNum mark = 0;
     ASSERT_TRUE(db->Sync(&mark).ok());
   }
-  const std::string image = t.ContentNow(kDir + "/000001.log");
+  const std::string image = t.ContentNow(LiveWalPath(&t));
   const wal::ScanResult scan = wal::ScanLog(Slice(image));
   ASSERT_EQ(scan.outcome, wal::ScanOutcome::kCleanEnd);
   bool saw_range = false;
@@ -459,7 +483,8 @@ TEST(DBDeleteRange, ATornExpansionSpanningBlocksIsDiscardedWholeAndTheGroupStand
     FillKeys(db.get(), kKeysSpanningBlocks);
     SeqNum mark = 0;
     ASSERT_TRUE(db->Sync(&mark).ok());
-    const std::size_t after_fill = probe.ContentNow(kDir + "/000001.log").size();
+    const std::string wal_path = LiveWalPath(&probe);
+    const std::size_t after_fill = probe.ContentNow(wal_path).size();
 
     WriteBatch b;
     b.DeleteRange(Bound::Unbounded(), Bound::Unbounded());
@@ -469,7 +494,7 @@ TEST(DBDeleteRange, ATornExpansionSpanningBlocksIsDiscardedWholeAndTheGroupStand
     for (const testenv::LedgerEntry& e : probe.ledger()) {
       if (e.site == CallSite::kWritableFileSync) sync_ordinal = e.ordinal;
     }
-    record_bytes = probe.ContentNow(kDir + "/000001.log").size() - after_fill;
+    record_bytes = probe.ContentNow(wal_path).size() - after_fill;
     // Tear roughly halfway through the expansion, which -- because it spans
     // blocks -- lands inside a MIDDLE fragment.
     torn_prefix = record_bytes / 2;
@@ -500,7 +525,7 @@ TEST(DBDeleteRange, ATornExpansionSpanningBlocksIsDiscardedWholeAndTheGroupStand
   // The image holds a partially written multi-fragment record. The reader must
   // classify it as a TORN TAIL -- nothing structurally valid follows -- and
   // recovery must discard the whole record, not the part it could parse.
-  const std::string image = t.Image().at(kDir + "/000001.log");
+  const std::string image = t.Image().at(LiveWalPath(&t));
   const wal::ScanResult scan = wal::ScanLog(Slice(image));
   EXPECT_EQ(scan.outcome, wal::ScanOutcome::kTornTail) << scan.failure_reason;
 

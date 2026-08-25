@@ -29,20 +29,21 @@ bool ParseLogNumber(const std::string& name, uint64_t* number) {
   return true;
 }
 
+}  // namespace
+
 std::string LogPath(const std::string& dir, uint64_t number) {
   std::string n = std::to_string(number);
   while (n.size() < 6) n.insert(n.begin(), '0');
   return dir + "/" + n + ".log";
 }
 
-}  // namespace
+namespace {
 
-Status Recover(Env* env, const std::string& dir, const Caps& caps,
-               RecoveryResult* out) {
-  // 1. LOCK.
-  FileLockPtr lock;
-  Status s = env->LockFile(dir + "/LOCK", &lock);
-  if (!s.ok()) return s;
+Status RecoverLocked(Env* env, const std::string& dir, const Caps& caps,
+                     const RecoverOptions& options, RecoveryResult* out) {
+  // 1. THE CALLER HOLDS THE LOCK. See recovery.h for why this function no
+  //    longer takes it.
+  Status s = Status::Ok();
 
   // 2. GetChildren, parse, SORT BY PARSED NUMBER.
   //
@@ -53,29 +54,60 @@ Status Recover(Env* env, const std::string& dir, const Caps& caps,
   std::vector<std::string> children;
   s = env->GetChildren(dir, &children);
   if (!s.ok()) return s;
-  std::vector<uint64_t> numbers;
+  std::vector<uint64_t> present;
   for (const std::string& name : children) {
     uint64_t n = 0;
-    if (ParseLogNumber(name, &n)) numbers.push_back(n);
+    if (ParseLogNumber(name, &n)) present.push_back(n);
   }
-  std::sort(numbers.begin(), numbers.end());
+  std::sort(present.begin(), present.end());
 
-  // 3. GAPLESS.
-  //
-  // In B1 no file is ever deleted, so a gap means a LOST DIRECTORY ENTRY -- the
-  // missing-Directory::Sync bug -- and it is a hard error. This is what gives
-  // the directory-sync kill point teeth; without it the loss is silent, and a
-  // recovery that skipped a WAL would replay a prefix it believes is complete.
-  for (std::size_t i = 0; i < numbers.size(); ++i) {
-    const uint64_t expected = i + 1;
-    if (numbers[i] != expected) {
+  // FILE IDENTITY IS THE HALF SEQUENCES CANNOT ANSWER. See recovery.h.
+  std::vector<uint64_t> numbers;
+  if (options.named_wals.empty()) {
+    numbers = present;
+  } else {
+    std::vector<uint64_t> named = options.named_wals;
+    std::sort(named.begin(), named.end());
+    const uint64_t highest_named = named.back();
+    for (uint64_t n : named) {
+      if (std::find(present.begin(), present.end(), n) != present.end()) {
+        numbers.push_back(n);
+        continue;
+      }
+      // THE ONE EXCEPTION, AND IT IS EXACTLY ONE: the highest named WAL is the
+      // one being created when a crash landed, so its absence means it was
+      // never created and it held nothing. Any lower one is a lost directory
+      // entry, and recovery cannot replay a prefix it cannot prove complete.
+      if (n == highest_named) continue;
       return Status::Corruption(
-          "WAL numbering is not gapless: expected " + std::to_string(expected) +
-          ", found " + std::to_string(numbers[i]) +
-          ". A missing WAL means a directory entry was lost, and recovery "
-          "cannot replay a prefix it cannot prove is complete");
+          LogPath(dir, n) +
+          ": named by the manifest and absent. A missing WAL means a directory "
+          "entry was lost, and recovery cannot replay a prefix it cannot prove "
+          "is complete");
     }
+    for (uint64_t n : present) {
+      if (std::find(named.begin(), named.end(), n) != named.end()) continue;
+      // A WAL is named BEFORE it is created, so one present and unnamed means
+      // the manifest lost an edit it durably wrote.
+      return Status::Corruption(
+          LogPath(dir, n) +
+          ": present and not named by the manifest; the manifest is missing an "
+          "edit it recorded");
+    }
+    out->obsolete_wals = present.size() - numbers.size();
   }
+
+  // 3. B2-Q1's partition check replaces B1's file-number gapless check. The
+  //    spans are collected during replay below and adjudicated after it, since
+  //    the property is about SEQUENCES and sequences are only known once the
+  //    records have been read. See recovery.h for the invariant in full.
+  struct Span {
+    uint64_t number = 0;
+    bool any = false;
+    SeqNum first = 0;
+    SeqNum last = 0;
+  };
+  std::vector<Span> spans;
 
   out->table.reset(new MemTable());
   out->file_numbers = numbers;
@@ -85,6 +117,8 @@ Status Recover(Env* env, const std::string& dir, const Caps& caps,
 
   // 4-5. Replay in order, committing group by group.
   for (uint64_t number : numbers) {
+    Span span;
+    span.number = number;
     const std::string path = LogPath(dir, number);
     std::string image;
     s = ReadWholeFile(env, path, &image);
@@ -167,6 +201,20 @@ Status Recover(Env* env, const std::string& dir, const Caps& caps,
           if (!DecodeBatch(Slice(rec.payload), &b)) {
             return Status::Corruption(path + ": malformed BATCH");
           }
+          // NOTHING COVERED TWICE, ASSERTED RATHER THAN REPAIRED. File
+          // selection above already excluded every WAL a table covers, so a
+          // batch arriving here at or below S means the selection was wrong --
+          // and repairing it by skipping would hide exactly that. BM55 removes
+          // the selection and this is what fires.
+          if (b.seq <= options.covered_through) {
+            return Status::Corruption(
+                path + ": batch at sequence " + std::to_string(b.seq) +
+                " is already covered by the SSTables through " +
+                std::to_string(options.covered_through) +
+                "; a WAL below the manifest's log number was replayed");
+          }
+          if (!span.any) { span.any = true; span.first = b.seq; }
+          span.last = b.seq;
           for (const Op& op : b.ops) {
             switch (op.kind) {  // NO default: arm
               case OpKind::kSet:
@@ -220,15 +268,57 @@ Status Recover(Env* env, const std::string& dir, const Caps& caps,
         }
       }
     }
+    spans.push_back(span);
   }
 
-  // 6. Create WAL max+1 and make its directory entry durable BEFORE returning.
-  const uint64_t next = numbers.empty() ? 1 : numbers.back() + 1;
-  s = Wal::Open(env, dir, next, caps, &out->wal);
-  if (!s.ok()) return s;
+  // 3 (continued). THE PARTITION, ADJUDICATED. What sequences can answer is
+  //    ORDER and the JOIN; file identity answered the rest, above.
+  {
+    const SeqNum covered = options.covered_through;
+    SeqNum chain_end = 0;
+    bool seen_any = false;
+    for (const Span& span : spans) {
+      if (!span.any) continue;
+      if (!seen_any) {
+        // THE JOIN. The first replayed batch must be above everything the
+        // tables hold; equality would be a record covered twice.
+        if (span.first <= covered) {
+          return Status::Corruption(
+              LogPath(dir, span.number) + ": first batch is sequence " +
+              std::to_string(span.first) +
+              ", at or below what the SSTables already cover (" +
+              std::to_string(covered) + ")");
+        }
+        out->first_wal_seq = span.first;
+      } else if (span.first <= chain_end) {
+        // ORDER. Files are replayed oldest first, so a later file whose first
+        // batch does not exceed the previous file's last is a log written out
+        // of order -- which no crash produces.
+        return Status::Corruption(
+            LogPath(dir, span.number) + ": first batch is sequence " +
+            std::to_string(span.first) + ", not above the previous WAL's last (" +
+            std::to_string(chain_end) + ")");
+      }
+      chain_end = span.last;
+      out->last_wal_seq = span.last;
+      seen_any = true;
+    }
+    // The tables never claim more than the watermark.
+    if (covered > out->recovered_seq) out->recovered_seq = covered;
+  }
 
-  (void)env->UnlockFile(std::move(lock));
+  // 6. Create the fresh WAL at the number the MANIFEST supplied, and make its
+  //    directory entry durable BEFORE returning. B1's max+1 expires here.
+  s = Wal::Open(env, dir, options.next_file_number, caps, &out->wal);
+  if (!s.ok()) return s;
   return Status::Ok();
+}
+
+}  // namespace
+
+Status Recover(Env* env, const std::string& dir, const Caps& caps,
+               const RecoverOptions& options, RecoveryResult* out) {
+  return RecoverLocked(env, dir, caps, options, out);
 }
 
 }  // namespace wal

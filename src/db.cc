@@ -2,12 +2,18 @@
 
 #include <algorithm>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <utility>
+#include <vector>
 
 #include "check.h"
 #include "env_guard.h"
+#include "manifest.h"
+#include "merged_iter.h"
 #include "recovery.h"
+#include "table.h"
+#include "table_builder.h"
 #include "wal.h"
 
 namespace rift {
@@ -49,6 +55,37 @@ WriteBatch& WriteBatch::DeleteRange(const Bound& start, const Bound& end) {
 
 namespace {
 
+// WHAT A READ SEES, AND WHAT KEEPS IT ALIVE WHILE IT LOOKS.
+//
+// THIS IS memtable.h's EXPIRING NOTE, DISCHARGED. B1's iterators returned
+// pointers into an arena, "safe here for a reason that expires: B1 has no
+// flush, so nodes are never freed and the arena outlives every iterator. B2
+// must revisit this the moment a memtable can be retired." B2 retires
+// memtables. An iterator holding a raw pointer into one would read freed arena
+// the moment a flush completed, so a read captures SHARED POINTERS under the
+// lock and holds them for its whole life. Refcounts, not lifetime by argument.
+struct Version {
+  std::shared_ptr<MemTable> mem;
+  std::shared_ptr<MemTable> imm;  // being flushed; may be null
+  // NEWEST FIRST. Order is not cosmetic: a deletion in a newer table must hide
+  // a value in an older one, so the first source holding a user key wins.
+  std::vector<std::shared_ptr<sst::Table>> tables;
+
+  void Build(MergedIter* out) const {
+    out->AddMemTable(mem.get());
+    if (imm != nullptr) out->AddMemTable(imm.get());
+    for (const auto& t : tables) out->AddTable(t.get());
+  }
+};
+
+// A point read down the merge order: memtable, then the memtable being flushed,
+// then tables newest first. It stops at the FIRST source that holds the key,
+// because a deletion there hides everything older -- which is why this walks
+// sources rather than merging them, and why it is the one read path that can
+// use the bloom filter to skip a table entirely.
+Status VersionGet(const Version& v, Slice key, wal::SeqNum snapshot,
+                  std::string* value);
+
 // THE EXPANSION HAPPENS AT Apply AND THE WAL RECORDS THE EXPANSION. Section 8.1.
 //
 // If the WAL recorded the raw DeleteRange, recovery would have to expand it
@@ -66,7 +103,7 @@ namespace {
 // a DeleteRange the expansion covers the current state AND keys written earlier
 // in the same batch, and a Set after it re-adds the key -- the model's rule
 // reproduced.
-std::vector<wal::Op> ExpandAndCollapse(const WriteBatch& b, const MemTable& table,
+std::vector<wal::Op> ExpandAndCollapse(const WriteBatch& b, const Version& v,
                                        wal::SeqNum snapshot,
                                        std::vector<std::string>* owned) {
   // key -> (kind, value). std::map so the result is sorted by key, which is
@@ -91,10 +128,16 @@ std::vector<wal::Op> ExpandAndCollapse(const WriteBatch& b, const MemTable& tabl
             it->second = {wal::OpKind::kDelete, std::string()};
           }
         }
-        // And everything live in the memtable. Reads memory, not Env: this is
-        // the operation most likely to violate "Apply performs no I/O", which
-        // is why that assertion is re-made against this path.
-        MemTable::Iter it(&table);
+        // And everything live in THE MERGED VIEW -- the memtable, the memtable
+        // being flushed, and every SSTable. B2-D7 section 8: at B1 this read
+        // the memtable, and reading only the memtable now would make a
+        // DeleteRange silently miss every key that had been flushed.
+        //
+        // Reads memory, not Env. This is the operation most likely to violate
+        // "Apply performs no I/O", which is why that assertion is re-made
+        // against this path -- and why table.h holds whole SSTables resident.
+        MergedIter it;
+        v.Build(&it);
         if (start.bounded()) {
           it.Seek(start.key(), (snapshot << 8) | 1);
         } else {
@@ -151,8 +194,10 @@ class DBImpl;
 // reason the internal key packs the tag the way it does.
 class IterImpl final : public Iterator {
  public:
-  IterImpl(const MemTable* table, wal::SeqNum snapshot, IterOptions o)
-      : it_(table), snapshot_(snapshot), o_(std::move(o)) {}
+  IterImpl(Version v, wal::SeqNum snapshot, IterOptions o)
+      : v_(std::move(v)), snapshot_(snapshot), o_(std::move(o)) {
+    v_.Build(&it_);
+  }
 
   bool First() override {
     if (o_.lower.bounded()) {
@@ -263,7 +308,10 @@ class IterImpl final : public Iterator {
     return false;
   }
 
-  MemTable::Iter it_;
+  // ORDER MATTERS: v_ holds the stores alive and must outlive the cursor that
+  // walks them, so it is declared first and destroyed last.
+  Version v_;
+  MergedIter it_;
   wal::SeqNum snapshot_;
   IterOptions o_;
   bool valid_ = false;
@@ -273,30 +321,83 @@ class IterImpl final : public Iterator {
 
 class SnapshotImpl final : public Snapshot {
  public:
-  SnapshotImpl(const MemTable* table, wal::SeqNum seq) : table_(table), seq_(seq) {}
+  SnapshotImpl(Version v, wal::SeqNum seq) : v_(std::move(v)), seq_(seq) {}
   Status Get(Slice key, std::string* value) const override {
-    return table_->Get(key, seq_, value);
+    return VersionGet(v_, key, seq_, value);
   }
   std::unique_ptr<Iterator> NewIter(const IterOptions& o) const override {
-    return std::unique_ptr<Iterator>(new IterImpl(table_, seq_, o));
+    return std::unique_ptr<Iterator>(new IterImpl(v_, seq_, o));
   }
   Status Close() override { return Status::Ok(); }
 
  private:
-  const MemTable* table_;
+  // A SNAPSHOT PINS ITS STORES. The frozen interface says a snapshot "holds its
+  // version against compaction until it is Closed"; in B1 that was trivially
+  // true because nothing was ever retired. Holding the shared pointers is what
+  // makes it true now, and it is why a flush may drop the DB's reference to a
+  // memtable while a snapshot taken before it still reads through it.
+  Version v_;
   wal::SeqNum seq_;
 };
 
+Status VersionGet(const Version& v, Slice key, wal::SeqNum snapshot,
+                  std::string* value) {
+  // A MEMTABLE Get CANNOT SAY WHY IT FOUND NOTHING, and here that matters: it
+  // returns kNotFound both for "no such key" and for "the newest visible
+  // version is a deletion", and those differ the moment there is an older store
+  // to fall through to. So the memtables are asked through a cursor instead --
+  // one seek, and the first visible version it lands on is the answer whatever
+  // store it came from.
+  //
+  // The TABLES are asked one at a time, newest first, because that is the only
+  // path on which the bloom filter can skip a whole file.
+  MergedIter mem_only;
+  mem_only.AddMemTable(v.mem.get());
+  if (v.imm != nullptr) mem_only.AddMemTable(v.imm.get());
+  mem_only.Seek(key, MakeTag(snapshot, ValueType::kValue));
+  if (mem_only.Valid() && mem_only.user_key() == key) {
+    if (TypeOfTag(mem_only.tag()) == ValueType::kDeletion) return Status::NotFound("");
+    *value = mem_only.value().ToString();
+    return Status::Ok();
+  }
+  for (const auto& t : v.tables) {
+    bool deleted = false;
+    bool filtered = false;
+    const Status s = t->Get(key, snapshot, value, &deleted, &filtered);
+    if (s.ok()) return s;
+    if (deleted) return Status::NotFound("");
+  }
+  return Status::NotFound("");
+}
+
 class DBImpl final : public DB {
  public:
-  DBImpl(std::unique_ptr<MemTable> table, std::unique_ptr<wal::Wal> w,
-         wal::SeqNum seq)
-      : table_(std::move(table)), wal_(std::move(w)), seq_(seq) {}
+  DBImpl(Env* env, std::string dir, wal::Caps caps,
+         std::shared_ptr<MemTable> table, std::unique_ptr<wal::Wal> w,
+         wal::SeqNum seq, std::unique_ptr<sst::Manifest> manifest,
+         sst::ManifestState mstate,
+         std::vector<std::shared_ptr<sst::Table>> tables,
+         wal::SeqNum flushed_through)
+      : env_(env), dir_(std::move(dir)), caps_(std::move(caps)),
+        mem_(std::move(table)), wal_(std::move(w)), seq_(seq),
+        manifest_(std::move(manifest)), mstate_(std::move(mstate)),
+        tables_(std::move(tables)), flushed_through_(flushed_through) {}
 
   Status Write(const WriteBatch& b, wal::SeqNum* seq) override {
     std::vector<std::string> owned;
     wal::SeqNum assigned = 0;
     std::vector<wal::Op> ops;
+    // ONE LOCK ACQUISITION, ACROSS THE WAL APPEND TOO -- and B2 is what forces
+    // it. B1 released the lock around wal_->Apply, which was harmless while
+    // nothing ever replaced wal_ or the memtable. The flush replaces BOTH, so
+    // in the gap a Write could name the OLD WAL and then apply to the NEW
+    // memtable: the record lands in a log that is about to be deleted and the
+    // data lands in a memtable the flushed table does not contain. A LOST
+    // WRITE, with no corruption anywhere.
+    //
+    // It does not weaken the mutex-depth guard, which is about holding the lock
+    // across I/O: Apply makes NO Env call by contract (section 8.3), and the
+    // Env-call counter asserts it. The lock is still only held around memory.
     {
       wal::DbLock lock(mu_);
       if (closed_) return Status::InvalidArgument("Write after Close");
@@ -304,25 +405,23 @@ class DBImpl final : public DB {
       // (section 5.3.4). A sequence space that skipped empty batches would put
       // a translation table inside B4's oracle.
       assigned = ++seq_;
-      ops = ExpandAndCollapse(b, *table_, assigned - 1, &owned);
-    }
-    Status s = wal_->Apply(assigned, ops);
-    if (!s.ok()) {
-      // APPLIES NOTHING, ATOMICALLY. The sequence is consumed either way, which
-      // is legal -- the frozen contract requires monotonicity, not density --
-      // and is simpler than unwinding a counter two threads can see.
-      *seq = assigned;
-      return s;
-    }
-    {
-      wal::DbLock lock(mu_);
+      ops = ExpandAndCollapse(b, CurrentVersionLocked(), assigned - 1, &owned);
+      Status s = wal_->Apply(assigned, ops);
+      if (!s.ok()) {
+        // APPLIES NOTHING, ATOMICALLY. The sequence is consumed either way,
+        // which is legal -- the frozen contract requires monotonicity, not
+        // density -- and is simpler than unwinding a counter two threads can
+        // see.
+        *seq = assigned;
+        return s;
+      }
       for (const wal::Op& op : ops) {
         switch (op.kind) {  // NO default: arm
           case wal::OpKind::kSet:
-            table_->Add(assigned, ValueType::kValue, op.key, op.value);
+            mem_->Add(assigned, ValueType::kValue, op.key, op.value);
             break;
           case wal::OpKind::kDelete:
-            table_->Add(assigned, ValueType::kDeletion, op.key, Slice());
+            mem_->Add(assigned, ValueType::kDeletion, op.key, Slice());
             break;
           case wal::OpKind::kDeleteRange:
             RIFT_UNREACHABLE("DeleteRange survived expansion");
@@ -333,40 +432,71 @@ class DBImpl final : public DB {
     return Status::Ok();
   }
 
-  wal::SeqNum DurableSeq() const override { return wal_->DurableSeq(); }
+  // MONOTONE ACROSS A FLUSH, which is the whole reason this is a maximum and
+  // not simply the WAL's number. Rolling the WAL gives the new one a durable
+  // sequence of zero, so a DurableSeq that read only the live WAL would go
+  // BACKWARDS at every flush -- and the frozen contract says monotone
+  // non-decreasing.
+  //
+  // The floor rises only when a flushed table AND the manifest edit naming it
+  // are both durable. Until then the table exists and nothing refers to it, so
+  // a crash loses it and the promise would have been false.
+  wal::SeqNum DurableSeq() const override {
+    wal::DbLock lock(mu_);
+    const wal::SeqNum w = wal_->DurableSeq();
+    return w > flushed_through_ ? w : flushed_through_;
+  }
 
   Status Sync(wal::SeqNum* watermark) override {
     // NO LOCK HELD. Everything below makes Env calls, and the mutex-depth guard
     // would fire if one were.
-    return wal_->Sync(watermark);
+    Status s = wal_->Sync(watermark);
+    if (!s.ok()) return s;
+    // THE FLUSH RUNS HERE AND CAN RUN NOWHERE ELSE. It is I/O, and Write never
+    // blocks on I/O -- asserted by the Env-call counter, not promised -- so the
+    // only blocking entry point the frozen interface has is this one. A
+    // background thread is the other answer and it is not available: A5's scope
+    // rule says code that needs a thread is orchestration and lives outside the
+    // engine.
+    bool needed = false;
+    { wal::DbLock lock(mu_); needed = !closed_ && mem_->MemoryUsage() >= caps_.flush_bytes; }
+    if (!needed) return s;
+    const Status f = Flush();
+    if (!f.ok()) return f;
+    { wal::DbLock lock(mu_); *watermark = wal_->DurableSeq() > flushed_through_
+                                              ? wal_->DurableSeq() : flushed_through_; }
+    return s;
   }
 
   Status Get(Slice key, std::string* value) const override {
     wal::SeqNum snap;
-    { wal::DbLock lock(mu_); snap = seq_; }
-    return table_->Get(key, snap, value);
+    Version v;
+    { wal::DbLock lock(mu_); snap = seq_; v = CurrentVersionLocked(); }
+    return VersionGet(v, key, snap, value);
   }
 
   std::unique_ptr<Iterator> NewIter(const IterOptions& o) const override {
     wal::SeqNum snap;
-    { wal::DbLock lock(mu_); snap = seq_; }
-    return std::unique_ptr<Iterator>(new IterImpl(table_.get(), snap, o));
+    Version v;
+    { wal::DbLock lock(mu_); snap = seq_; v = CurrentVersionLocked(); }
+    return std::unique_ptr<Iterator>(new IterImpl(std::move(v), snap, o));
   }
 
   std::unique_ptr<Snapshot> NewSnapshot() override {
     wal::DbLock lock(mu_);
-    return std::unique_ptr<Snapshot>(new SnapshotImpl(table_.get(), seq_));
+    return std::unique_ptr<Snapshot>(new SnapshotImpl(CurrentVersionLocked(), seq_));
   }
 
   Status ApproximateDiskBytes(const Bound& start, const Bound& end,
                               uint64_t* out) const override {
     wal::SeqNum snap;
-    { wal::DbLock lock(mu_); snap = seq_; }
+    Version v;
+    { wal::DbLock lock(mu_); snap = seq_; v = CurrentVersionLocked(); }
     uint64_t total = 0;
     IterOptions o;
     o.lower = start;
     o.upper = end;
-    IterImpl it(table_.get(), snap, o);
+    IterImpl it(std::move(v), snap, o);
     for (bool ok = it.First(); ok; ok = it.Next()) {
       total += it.Key().size() + it.Value().size();
     }
@@ -379,14 +509,227 @@ class DBImpl final : public DB {
     // The error is RETURNED, not dropped. close(2) reports EIO for writeback
     // that failed after the last Sync, which is the last moment anyone can
     // learn the data is gone (BM7).
-    return wal_->Close();
+    const Status w = wal_->Close();
+    const Status m = manifest_ != nullptr ? manifest_->Close() : Status::Ok();
+    return w.ok() ? m : w;
   }
 
  private:
+  Version CurrentVersionLocked() const {
+    Version v;
+    v.mem = mem_;
+    v.imm = imm_;
+    v.tables = tables_;
+    return v;
+  }
+
+  // B2-D5's ordering, and there is only one correct one. Every adjacent pair
+  // below is a kill point the sweep visits, and the crash-consistency claim for
+  // B2 is that every one of them recovers to a promised watermark.
+  //
+  //   1. write the SSTable, Sync it
+  //   2. Directory::Sync              (its NAME becomes durable)
+  //   3. append the manifest edit, Sync it
+  //   4. Directory::Sync              (the manifest's extent is durable)
+  //   5. only now: delete the WAL(s) fully covered, then Directory::Sync
+  //
+  // Reversing 3 and 5 loses data outright. Reversing 1 and 3 names a file that
+  // may not exist.
+  Status Flush() {
+    // NUMBERS ARE RESERVED IN THE MANIFEST BEFORE ANY FILE USES THEM. A crash
+    // between allocating a number and recording it would leave the counter
+    // below a file that exists, and the next allocation would then truncate a
+    // live file by creating its replacement. BM54 is the check that refuses
+    // such a manifest; this is what stops one being written.
+    uint64_t table_number = 0;
+    uint64_t new_wal_number = 0;
+    {
+      wal::DbLock lock(mu_);
+      if (closed_ || imm_ != nullptr) return Status::Ok();
+      table_number = mstate_.next_file_number;
+      new_wal_number = table_number + 1;
+      mstate_.next_file_number = table_number + 2;
+    }
+    // THE NEW WAL IS NAMED BEFORE THE FILE EXISTS, which is what closes the
+    // crash window: an absent named WAL is legal for the HIGHEST named number
+    // only, and this is that number. Creating first and naming second would put
+    // a file on disk the manifest has not heard of, which is indistinguishable
+    // from the manifest having lost an edit.
+    {
+      sst::ManifestEdit bump;
+      bump.kind = sst::EditKind::kNextFileNumber;
+      bump.number = table_number + 2;
+      sst::ManifestEdit add_wal;
+      add_wal.kind = sst::EditKind::kAddWal;
+      add_wal.number = new_wal_number;
+      const Status s = manifest_->AppendGroup({bump, add_wal});
+      if (!s.ok()) return s;
+      wal::DbLock lock(mu_);
+      mstate_.wals.insert(new_wal_number);
+    }
+
+    std::unique_ptr<wal::Wal> fresh;
+    Status s = wal::Wal::Open(env_, dir_, new_wal_number, caps_, &fresh);
+    if (!s.ok()) return s;
+
+    // THE ROLL IS ONE LOCKED STEP. A Write must land in the old memtable AND
+    // the old WAL, or in the new memtable AND the new WAL -- never one of each.
+    std::shared_ptr<MemTable> flushing;
+    std::unique_ptr<wal::Wal> retiring;
+    uint64_t retired_number = 0;
+    wal::SeqNum roll_seq = 0;
+    {
+      wal::DbLock lock(mu_);
+      flushing = mem_;
+      imm_ = flushing;
+      mem_ = std::make_shared<MemTable>();
+      retiring = std::move(wal_);
+      wal_ = std::move(fresh);
+      retired_number = retiring->file_number();
+      roll_seq = seq_;
+    }
+
+    // 1. the table, then its own Sync.
+    const std::string path = sst::TablePath(dir_, table_number);
+    sst::TableMeta meta;
+    meta.number = table_number;
+    {
+      WritableFilePtr f;
+      s = env_->NewWritableFile(path, &f);
+      if (!s.ok()) return s;
+      sst::TableBuilder b(f.get());
+      MemTable::Iter it(flushing.get());
+      std::string ikey;
+      for (it.SeekToFirst(); it.Valid(); it.Next()) {
+        ikey.clear();
+        AppendInternalKey(&ikey, it.user_key(), it.tag());
+        b.Add(Slice(ikey), it.value());
+      }
+      s = b.Finish();
+      if (!s.ok()) return s;
+      meta.file_bytes = b.file_size();
+      meta.smallest = b.smallest().ToString();
+      meta.largest = b.largest().ToString();
+      meta.largest_seq = b.largest_seq();
+      s = f->Sync();
+      if (!s.ok()) return s;
+      s = f->Close();
+      if (!s.ok()) return s;
+    }
+
+    // 2. the directory, so the table's NAME is durable.
+    s = SyncDir();
+    if (!s.ok()) return s;
+
+    // 3. the manifest edit, then its own Sync (AppendGroup does both).
+    //
+    // ONE GROUP, and it must be one group: the table becoming live and the WALs
+    // it covers becoming obsolete are the same fact. A crash between them
+    // would either lose the table or lose the WAL, and the whole ordering
+    // exists so that neither is possible.
+    {
+      sst::ManifestEdit add;
+      add.kind = sst::EditKind::kAddTable;
+      add.table = meta;
+      // The table becoming live and the WALs it covers ceasing to be are ONE
+      // FACT, so they are one group.
+      std::vector<sst::ManifestEdit> group;
+      group.push_back(add);
+      {
+        wal::DbLock lock(mu_);
+        for (uint64_t n : mstate_.wals) {
+          if (n >= new_wal_number) continue;
+          sst::ManifestEdit drop;
+          drop.kind = sst::EditKind::kDeleteWal;
+          drop.number = n;
+          group.push_back(drop);
+        }
+      }
+      s = manifest_->AppendGroup(group);
+      if (!s.ok()) return s;
+    }
+
+    // 4. the directory again.
+    s = SyncDir();
+    if (!s.ok()) return s;
+
+    // The table and the edge naming it are both durable, so everything the
+    // table holds now survives a crash. ONLY NOW may the watermark rise past
+    // what the retired WAL ever promised.
+    std::shared_ptr<sst::Table> opened;
+    s = sst::Table::Open(env_, path, table_number, &opened);
+    if (!s.ok()) return s;
+    {
+      wal::DbLock lock(mu_);
+      tables_.insert(tables_.begin(), opened);  // newest first
+      mstate_.tables[meta.number] = meta;
+      for (auto it = mstate_.wals.begin(); it != mstate_.wals.end();) {
+        it = (*it < new_wal_number) ? mstate_.wals.erase(it) : std::next(it);
+      }
+      imm_.reset();
+      if (roll_seq > flushed_through_) flushed_through_ = roll_seq;
+    }
+
+    // 5. only now: every WAL the manifest has declared obsolete, and then the
+    //    directory. Sweeping the whole directory rather than deleting the one
+    //    file just retired folds in B2-D5 candidate (c): a crash before this
+    //    point leaks a file that the NEXT flush removes, rather than one that
+    //    nothing removes.
+    const Status closed = retiring->Close();
+    if (!closed.ok()) return closed;
+    (void)retired_number;
+    std::vector<std::string> children;
+    s = env_->GetChildren(dir_, &children);
+    if (!s.ok()) return s;
+    std::sort(children.begin(), children.end());  // never iterate unsorted
+    for (const std::string& name : children) {
+      uint64_t n = 0;
+      if (!ParseWalNumber(name, &n)) continue;
+      if (n >= new_wal_number) continue;
+      s = env_->DeleteFile(dir_ + "/" + name);
+      if (!s.ok()) return s;
+    }
+    return SyncDir();
+  }
+
+  // NNNNNN.log, and nothing else. The engine names its own files, so this is a
+  // parse of a name this process wrote rather than of arbitrary input -- but it
+  // still refuses anything that is not exactly the shape, because a directory
+  // holds files other programs put there too.
+  static bool ParseWalNumber(const std::string& name, uint64_t* out) {
+    if (name.size() != 10 || name.compare(6, 4, ".log") != 0) return false;
+    uint64_t n = 0;
+    for (std::size_t i = 0; i < 6; ++i) {
+      if (name[i] < '0' || name[i] > '9') return false;
+      n = n * 10 + static_cast<uint64_t>(name[i] - '0');
+    }
+    *out = n;
+    return true;
+  }
+
+  Status SyncDir() const {
+    DirectoryPtr d;
+    Status s = env_->NewDirectory(dir_, &d);
+    if (!s.ok()) return s;
+    s = d->Sync();
+    const Status closed = d->Close();
+    return s.ok() ? closed : s;
+  }
+
+  Env* env_;
+  std::string dir_;
+  wal::Caps caps_;
   mutable std::mutex mu_;
-  std::unique_ptr<MemTable> table_;
+  std::shared_ptr<MemTable> mem_;
+  std::shared_ptr<MemTable> imm_;
   std::unique_ptr<wal::Wal> wal_;
   wal::SeqNum seq_ = 0;
+  std::unique_ptr<sst::Manifest> manifest_;
+  sst::ManifestState mstate_;
+  std::vector<std::shared_ptr<sst::Table>> tables_;  // newest first
+  // The highest sequence a DURABLE table holds. See DurableSeq for why the
+  // watermark is a maximum over this and the live WAL rather than the WAL alone.
+  wal::SeqNum flushed_through_ = 0;
   bool closed_ = false;
 };
 
@@ -394,11 +737,63 @@ class DBImpl final : public DB {
 
 Status DB::Open(Env* env, const std::string& dir, const wal::Caps& caps,
                 std::unique_ptr<DB>* out) {
-  wal::RecoveryResult r;
-  Status s = wal::Recover(env, dir, caps, &r);
+  // THE LOCK IS TAKEN HERE AND HELD ACROSS BOTH HALVES. B1 had recovery take
+  // it, recover, and release it. B2 must read the MANIFEST under the same lock,
+  // because the manifest is what supplies recovery's file number and its
+  // sequence floor -- and a function that both locks and recovers cannot be
+  // composed with one that has to run inside the lock.
+  FileLockPtr lock;
+  Status s = env->LockFile(dir + "/LOCK", &lock);
   if (!s.ok()) return s;
-  out->reset(new DBImpl(std::move(r.table), std::move(r.wal), r.recovered_seq));
-  return Status::Ok();
+  auto unlock = [&](Status result) {
+    (void)env->UnlockFile(std::move(lock));
+    return result;
+  };
+
+  sst::ManifestState mstate;
+  std::vector<std::shared_ptr<sst::Table>> tables;  // newest first
+  std::unique_ptr<sst::Manifest> manifest;
+  s = sst::Manifest::Open(env, dir, &mstate, &tables, &manifest);
+  if (!s.ok()) return unlock(s);
+
+  // S: the highest sequence the SSTables hold. Recovery skips everything at or
+  // below it, and the partition invariant is stated against it.
+  wal::SeqNum covered = 0;
+  for (const auto& entry : mstate.tables) {
+    if (entry.second.largest_seq > covered) covered = entry.second.largest_seq;
+  }
+
+  // THE FRESH WAL IS NAMED AND ITS NUMBER RECORDED BEFORE Recover CREATES IT.
+  // A counter left below a file that exists hands the same number out twice,
+  // and the second handout truncates the first file by creating it; a file
+  // created before it is named is one the manifest has not heard of.
+  const uint64_t fresh_wal = mstate.next_file_number;
+  {
+    sst::ManifestEdit bump;
+    bump.kind = sst::EditKind::kNextFileNumber;
+    bump.number = fresh_wal + 1;
+    sst::ManifestEdit add_wal;
+    add_wal.kind = sst::EditKind::kAddWal;
+    add_wal.number = fresh_wal;
+    s = manifest->AppendGroup({bump, add_wal});
+    if (!s.ok()) return unlock(s);
+    mstate.next_file_number = fresh_wal + 1;
+    mstate.wals.insert(fresh_wal);
+  }
+
+  wal::RecoverOptions options;
+  options.next_file_number = fresh_wal;
+  options.covered_through = covered;
+  options.named_wals.assign(mstate.wals.begin(), mstate.wals.end());
+  wal::RecoveryResult r;
+  s = wal::Recover(env, dir, caps, options, &r);
+  if (!s.ok()) return unlock(s);
+
+  out->reset(new DBImpl(env, dir, caps,
+                        std::shared_ptr<MemTable>(std::move(r.table)),
+                        std::move(r.wal), r.recovered_seq, std::move(manifest),
+                        std::move(mstate), std::move(tables), covered));
+  return unlock(Status::Ok());
 }
 
 }  // namespace rift

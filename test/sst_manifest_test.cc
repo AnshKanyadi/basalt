@@ -86,7 +86,7 @@ TEST(Manifest, AFreshDirectoryGetsAManifestAndACurrent) {
   ASSERT_TRUE(t.env()->CreateDir(kDir).ok());
   ManifestState state;
   std::unique_ptr<Manifest> m;
-  ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, &m).ok());
+  ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok());
   EXPECT_EQ(1u, m->number());
   EXPECT_TRUE(state.tables.empty());
   EXPECT_EQ(2u, state.next_file_number);
@@ -101,7 +101,7 @@ TEST(Manifest, WhatIsAppendedSurvivesAReopen) {
   {
     ManifestState state;
     std::unique_ptr<Manifest> m;
-    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, &m).ok());
+    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok());
     meta = WriteTable(&t, state.next_file_number,
                       {{IKey("a", 3), "1"}, {IKey("b", 7), "2"}});
     ManifestEdit bump;
@@ -112,7 +112,7 @@ TEST(Manifest, WhatIsAppendedSurvivesAReopen) {
   }
   ManifestState state;
   std::unique_ptr<Manifest> m;
-  ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, &m).ok());
+  ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok());
   ASSERT_EQ(1u, state.tables.size());
   const TableMeta& got = state.tables.begin()->second;
   EXPECT_EQ(meta.number, got.number);
@@ -129,7 +129,7 @@ TEST(Manifest, EveryOpenRotatesAndTheOldOneIsRemoved) {
   for (uint64_t expected = 1; expected <= 3; ++expected) {
     ManifestState state;
     std::unique_ptr<Manifest> m;
-    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, &m).ok());
+    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok());
     EXPECT_EQ(expected, m->number());
     ASSERT_TRUE(m->Close().ok());
     std::vector<std::string> children;
@@ -154,7 +154,7 @@ TEST(Manifest, ARecordedSequenceIsHeldToTheTableThatJustifiesIt) {
   {
     ManifestState state;
     std::unique_ptr<Manifest> m;
-    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, &m).ok());
+    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok());
     TableMeta meta = WriteTable(&t, state.next_file_number,
                                 {{IKey("a", 3), "1"}, {IKey("b", 7), "2"}});
     meta.largest_seq = 99;  // a number the table cannot justify
@@ -166,7 +166,7 @@ TEST(Manifest, ARecordedSequenceIsHeldToTheTableThatJustifiesIt) {
   }
   ManifestState state;
   std::unique_ptr<Manifest> m;
-  const Status s = Manifest::Open(t.env(), kDir, &state, &m);
+  const Status s = Manifest::Open(t.env(), kDir, &state, nullptr, &m);
   ASSERT_FALSE(s.ok());
   EXPECT_NE(std::string::npos, s.ToString().find("99")) << s.ToString();
   EXPECT_NE(std::string::npos, s.ToString().find("7")) << s.ToString();
@@ -178,7 +178,7 @@ TEST(Manifest, ARecordedSizeIsHeldToTheFileThatJustifiesIt) {
   {
     ManifestState state;
     std::unique_ptr<Manifest> m;
-    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, &m).ok());
+    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok());
     TableMeta meta = WriteTable(&t, state.next_file_number, {{IKey("a", 3), "1"}});
     meta.file_bytes += 1;
     ManifestEdit bump;
@@ -189,7 +189,7 @@ TEST(Manifest, ARecordedSizeIsHeldToTheFileThatJustifiesIt) {
   }
   ManifestState state;
   std::unique_ptr<Manifest> m;
-  EXPECT_FALSE(Manifest::Open(t.env(), kDir, &state, &m).ok());
+  EXPECT_FALSE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok());
 }
 
 TEST(Manifest, ATableNamedAndMissingIsRefused) {
@@ -198,7 +198,7 @@ TEST(Manifest, ATableNamedAndMissingIsRefused) {
   {
     ManifestState state;
     std::unique_ptr<Manifest> m;
-    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, &m).ok());
+    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok());
     TableMeta meta = WriteTable(&t, state.next_file_number, {{IKey("a", 3), "1"}});
     ManifestEdit bump;
     bump.kind = EditKind::kNextFileNumber;
@@ -209,7 +209,7 @@ TEST(Manifest, ATableNamedAndMissingIsRefused) {
   }
   ManifestState state;
   std::unique_ptr<Manifest> m;
-  EXPECT_FALSE(Manifest::Open(t.env(), kDir, &state, &m).ok());
+  EXPECT_FALSE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok());
 }
 
 TEST(Manifest, ATableNumberAtOrAboveTheCounterIsRefused) {
@@ -220,14 +220,14 @@ TEST(Manifest, ATableNumberAtOrAboveTheCounterIsRefused) {
   {
     ManifestState state;
     std::unique_ptr<Manifest> m;
-    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, &m).ok());
+    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok());
     const TableMeta meta = WriteTable(&t, 900, {{IKey("a", 3), "1"}});
     ASSERT_TRUE(m->AppendGroup({Add(meta)}).ok());  // counter left far below
     ASSERT_TRUE(m->Close().ok());
   }
   ManifestState state;
   std::unique_ptr<Manifest> m;
-  const Status s = Manifest::Open(t.env(), kDir, &state, &m);
+  const Status s = Manifest::Open(t.env(), kDir, &state, nullptr, &m);
   EXPECT_FALSE(s.ok());
   EXPECT_NE(std::string::npos, s.ToString().find("900")) << s.ToString();
 }
@@ -263,7 +263,7 @@ TEST(Manifest, AGroupTerminatorCarryingASequenceIsRefused) {
   PutFile(&t, CurrentPath(kDir), Slice("MANIFEST-000009\n"));
   ManifestState state;
   std::unique_ptr<Manifest> m;
-  const Status s = Manifest::Open(t.env(), kDir, &state, &m);
+  const Status s = Manifest::Open(t.env(), kDir, &state, nullptr, &m);
   ASSERT_FALSE(s.ok());
   EXPECT_NE(std::string::npos, s.ToString().find("durable sequence")) << s.ToString();
 }
@@ -299,7 +299,7 @@ TEST(Manifest, AWalBatchInAManifestIsRefused) {
   PutFile(&t, CurrentPath(kDir), Slice("MANIFEST-000009\n"));
   ManifestState state;
   std::unique_ptr<Manifest> m;
-  const Status s = Manifest::Open(t.env(), kDir, &state, &m);
+  const Status s = Manifest::Open(t.env(), kDir, &state, nullptr, &m);
   ASSERT_FALSE(s.ok());
   EXPECT_NE(std::string::npos, s.ToString().find("WAL batch")) << s.ToString();
 }
@@ -331,7 +331,7 @@ TEST(Manifest, AManifestEditInAWalIsRefused) {
     ASSERT_TRUE(f->Close().ok());
   }
   wal::RecoveryResult r;
-  const Status s = wal::Recover(t.env(), kDir, wal::Caps(), &r);
+  const Status s = wal::Recover(t.env(), kDir, wal::Caps(), wal::RecoverOptions(), &r);
   ASSERT_FALSE(s.ok());
   EXPECT_NE(std::string::npos, s.ToString().find("manifest edit")) << s.ToString();
 }
@@ -409,7 +409,7 @@ TEST(Manifest, InteriorCorruptionIsRefusedAndATornTailIsNot) {
     PutFile(&t, CurrentPath(kDir), Slice("MANIFEST-000001\n"));
     ManifestState state;
     std::unique_ptr<Manifest> m;
-    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, &m).ok());
+    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok());
     EXPECT_EQ(100u, state.next_file_number - 1)
         << "the first committed group did not replay";
     ASSERT_TRUE(m->Close().ok());
@@ -427,7 +427,7 @@ TEST(Manifest, InteriorCorruptionIsRefusedAndATornTailIsNot) {
     PutFile(&t, CurrentPath(kDir), Slice("MANIFEST-000001\n"));
     ManifestState state;
     std::unique_ptr<Manifest> m;
-    const Status s = Manifest::Open(t.env(), kDir, &state, &m);
+    const Status s = Manifest::Open(t.env(), kDir, &state, nullptr, &m);
     ASSERT_FALSE(s.ok()) << "committed manifest state was silently discarded";
     EXPECT_NE(std::string::npos, s.ToString().find("interior corruption")) << s.ToString();
   }
@@ -440,7 +440,7 @@ TEST(Manifest, ATornTailIsDiscardedAndTheRestReplays) {
   {
     ManifestState state;
     std::unique_ptr<Manifest> m;
-    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, &m).ok());
+    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok());
     ManifestEdit bump;
     bump.kind = EditKind::kNextFileNumber;
     bump.number = 42;
@@ -455,24 +455,59 @@ TEST(Manifest, ATornTailIsDiscardedAndTheRestReplays) {
   PutFile(&torn, CurrentPath(kDir), Slice("MANIFEST-000001\n"));
   ManifestState state;
   std::unique_ptr<Manifest> m;
-  ASSERT_TRUE(Manifest::Open(torn.env(), kDir, &state, &m).ok());
+  ASSERT_TRUE(Manifest::Open(torn.env(), kDir, &state, nullptr, &m).ok());
   // The snapshot group written by the FIRST open survived; the bump did not.
   EXPECT_EQ(2u, state.next_file_number - 1);
   ASSERT_TRUE(m->Close().ok());
 }
 
 TEST(Manifest, CurrentIsParsedStrictly) {
-  // The one file whose entire job is to name another one. A lenient parse here
-  // opens the wrong manifest because a byte changed.
+  // CURRENT is the one file in the tree whose entire job is to name another
+  // one, so a lenient parse opens the wrong manifest because a byte changed.
+  //
+  // A REAL MANIFEST-000001 IS PUT IN THE DIRECTORY FIRST, and that is the whole
+  // difference between this test and the one that let BM52 live. Without it
+  // every malformed body below was refused because the manifest it named did
+  // not exist -- a lenient parse failed too, for a reason that had nothing to
+  // do with parsing, and the test never created the situation it was checking.
+  // With manifest 1 present, "MANIFEST-1\n" and "MANIFEST-00000x\n" are bodies
+  // a lenient parse RESOLVES, so refusing them has to come from the parse.
+  TestEnvironment seed;
+  ASSERT_TRUE(seed.env()->CreateDir(kDir).ok());
+  {
+    ManifestState state;
+    std::unique_ptr<Manifest> m;
+    ASSERT_TRUE(Manifest::Open(seed.env(), kDir, &state, nullptr, &m).ok());
+    ASSERT_EQ(1u, m->number());
+    ASSERT_TRUE(m->Close().ok());
+  }
+  const std::string live = seed.ContentNow(ManifestPath(kDir, 1));
+  ASSERT_FALSE(live.empty());
+
+  // The control: this body IS accepted, so the refusals below are about the
+  // bodies and not about the fixture.
+  {
+    TestEnvironment t;
+    ASSERT_TRUE(t.env()->CreateDir(kDir).ok());
+    PutFile(&t, ManifestPath(kDir, 1), Slice(live));
+    PutFile(&t, CurrentPath(kDir), Slice("MANIFEST-000001\n"));
+    ManifestState state;
+    std::unique_ptr<Manifest> m;
+    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok());
+    ASSERT_TRUE(m->Close().ok());
+  }
+
   const char* bad[] = {"", "MANIFEST-1\n", "MANIFEST-000001", "manifest-000001\n",
-                       "MANIFEST-00000x\n", "MANIFEST-000001\n\n"};
+                       "MANIFEST-00000x\n", "MANIFEST-000001\n\n",
+                       "MANIFEST-000001x\n", "MANIFEST-0000001\n"};
   for (const char* body : bad) {
     TestEnvironment t;
     ASSERT_TRUE(t.env()->CreateDir(kDir).ok());
+    PutFile(&t, ManifestPath(kDir, 1), Slice(live));
     PutFile(&t, CurrentPath(kDir), Slice(body));
     ManifestState state;
     std::unique_ptr<Manifest> m;
-    EXPECT_FALSE(Manifest::Open(t.env(), kDir, &state, &m).ok())
+    EXPECT_FALSE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok())
         << "accepted CURRENT body: " << body;
   }
 }
@@ -489,7 +524,7 @@ TEST(Manifest, CurrentIsInstalledByRenameFollowedByADirectorySync) {
   ASSERT_TRUE(t.env()->CreateDir(kDir).ok());
   ManifestState state;
   std::unique_ptr<Manifest> m;
-  ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, &m).ok());
+  ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok());
   ASSERT_TRUE(m->Close().ok());
 
   bool renamed = false;
@@ -511,7 +546,7 @@ TEST(Manifest, AKillBeforeTheSwapLeavesTheOldManifestLive) {
   {
     ManifestState state;
     std::unique_ptr<Manifest> m;
-    ASSERT_TRUE(Manifest::Open(probe.env(), kDir, &state, &m).ok());
+    ASSERT_TRUE(Manifest::Open(probe.env(), kDir, &state, nullptr, &m).ok());
     ManifestEdit bump;
     bump.kind = EditKind::kNextFileNumber;
     bump.number = 55;
@@ -525,7 +560,7 @@ TEST(Manifest, AKillBeforeTheSwapLeavesTheOldManifestLive) {
     auto t2 = TestEnvironment::FromImage(before, FaultPlan());
     ManifestState state;
     std::unique_ptr<Manifest> m;
-    ASSERT_TRUE(Manifest::Open(t2->env(), kDir, &state, &m).ok());
+    ASSERT_TRUE(Manifest::Open(t2->env(), kDir, &state, nullptr, &m).ok());
     ASSERT_TRUE(m->Close().ok());
     for (const auto& e : t2->ledger()) {
       if (e.site == CallSite::kEnvRenameFile) { rename_ordinal = e.ordinal; break; }
@@ -539,12 +574,12 @@ TEST(Manifest, AKillBeforeTheSwapLeavesTheOldManifestLive) {
   {
     ManifestState state;
     std::unique_ptr<Manifest> m;
-    (void)Manifest::Open(killed->env(), kDir, &state, &m);
+    (void)Manifest::Open(killed->env(), kDir, &state, nullptr, &m);
   }
   auto after = TestEnvironment::FromImage(killed->Image(), FaultPlan());
   ManifestState state;
   std::unique_ptr<Manifest> m;
-  ASSERT_TRUE(Manifest::Open(after->env(), kDir, &state, &m).ok());
+  ASSERT_TRUE(Manifest::Open(after->env(), kDir, &state, nullptr, &m).ok());
   EXPECT_EQ(55u, state.next_file_number - 1);
   ASSERT_TRUE(m->Close().ok());
 }

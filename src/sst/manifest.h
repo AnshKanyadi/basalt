@@ -69,6 +69,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -76,6 +77,7 @@
 #include "internal_key.h"
 #include "slice.h"
 #include "status.h"
+#include "table.h"
 #include "writer.h"
 
 namespace rift {
@@ -88,6 +90,9 @@ enum class EditKind : uint8_t {
   kAddTable = 1,
   kDeleteTable = 2,
   kNextFileNumber = 3,
+  kSetLogNumber = 4,
+  kAddWal = 5,
+  kDeleteWal = 6,
 };
 const char* EditKindName(EditKind kind);
 
@@ -103,7 +108,8 @@ struct TableMeta {
 struct ManifestEdit {
   EditKind kind = EditKind::kInvalid;
   TableMeta table;      // kAddTable
-  uint64_t number = 0;  // kDeleteTable, kNextFileNumber
+  uint64_t number = 0;  // kDeleteTable, kNextFileNumber, kSetLogNumber,
+                        // kAddWal, kDeleteWal
 };
 
 // THERE IS NO WATERMARK FIELD HERE, AND THAT IS THE MECHANISM. A durable
@@ -112,6 +118,32 @@ struct ManifestState {
   std::map<uint64_t, TableMeta> tables;  // by file number: ordered, never a map
                                          // iterated for behaviour (section 6.1)
   uint64_t next_file_number = 1;
+
+  // THE LIVE WALs, BY NUMBER, and this is B2-D5's replacement for B1's gapless
+  // check: "every file number the manifest names exists, and every WAL present
+  // is either named or above the manifest's counter."
+  //
+  // WHY THE SET AND NOT A SEQUENCE RULE. The first attempt checked that the
+  // replayed WALs' batch sequences formed one contiguous run, which would have
+  // caught a lost file. IT IS UNSOUND: a Write whose Apply is refused by a cap
+  // CONSUMES ITS SEQUENCE AND WRITES NO BATCH -- deliberately, per the Write
+  // path's own note that the contract requires monotonicity and not density --
+  // so a legitimate hole is indistinguishable from a lost file, and the check
+  // would refuse the normal case in the name of the abnormal one. That is the
+  // inversion section 5.4 rejected candidate (a) for.
+  //
+  // A LOST FILE IS A QUESTION ABOUT FILES, so it is answered with file
+  // identities. Every WAL this engine creates is NAMED IN THE MANIFEST BEFORE
+  // THE FILE IS CREATED, which is what closes the crash window: an absent named
+  // WAL is legal for THE HIGHEST NAMED NUMBER ONLY -- that is the one being
+  // created, and it holds nothing -- and is a lost directory entry for any
+  // other. A present WAL that is not named cannot arise, because naming comes
+  // first, so one is a refused open too.
+  //
+  // The lowest named number is also the oldest WAL recovery must read: a flush
+  // removes the names it has covered in the same manifest group that adds the
+  // table covering them.
+  std::set<uint64_t> wals;
 };
 
 std::string ManifestPath(const std::string& dir, uint64_t number);
@@ -124,9 +156,15 @@ bool DecodeEdit(Slice payload, ManifestEdit* out, std::string* why);
 class Manifest {
  public:
   // Replays the manifest named by CURRENT, or creates a fresh one if CURRENT is
-  // absent. Re-derives every named table's largest sequence from the table
-  // itself and REFUSES THE OPEN on disagreement.
+  // absent. Re-derives every named table's largest sequence, size and key
+  // bounds from the table ITSELF and REFUSES THE OPEN on disagreement.
+  //
+  // `tables`, if not null, receives the tables it opened in order to do that,
+  // NEWEST FIRST. They are handed out rather than reopened because verification
+  // and use would otherwise read and validate every file twice -- and because
+  // the copy a caller reads from should be the copy that was checked.
   static Status Open(Env* env, const std::string& dir, ManifestState* state,
+                     std::vector<std::shared_ptr<Table>>* tables,
                      std::unique_ptr<Manifest>* out);
 
   ~Manifest();
