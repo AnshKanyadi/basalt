@@ -103,8 +103,11 @@ add_library(rift_engine STATIC
   src/memtable/arena.cc
   src/memtable/tower.cc
   src/memtable/memtable.cc
+  src/wal/crc32c.cc
+  src/wal/format.cc
+  src/wal/reader.cc
 )
-target_include_directories(rift_engine PUBLIC src src/env src/env/posix src/memtable)
+target_include_directories(rift_engine PUBLIC src src/env src/env/posix src/memtable src/wal)
 target_compile_options(rift_engine PRIVATE ${RIFT_CXX_FLAGS})
 
 # Harness-side types. A SEPARATE archive, deliberately: it is what the rig uses
@@ -139,6 +142,7 @@ add_executable(rift_engine_test
   test/real_exit_kill_test.cc
   test/tower_test.cc
   test/memtable_test.cc
+  test/wal_reader_test.cc
 )
 # rift_rig carries rift_testenv which carries rift_engine, both PUBLIC-ly;
 # naming any of them again makes the linker warn about a duplicate archive.

@@ -1,0 +1,50 @@
+# id: BM11-accept-illegal-chain
+# blinds: fragment-chain legality, both as a rule and as a resync predicate
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The catalogue's BM11. Two halves, and they fail in OPPOSITE directions, which
+# is why one patch carries both.
+#
+# Accepting FIRST -> FIRST loses a class of interior corruption: no crash
+# produces that shape, so a log containing it is a writer bug or media damage,
+# and treating it as a tail truncates data the log still holds.
+#
+# Accepting a bare MIDDLE as a resync candidate loses AVAILABILITY: garbage that
+# happens to CRC-match at a block boundary would turn a perfectly normal torn
+# tail into a refused open. Section 5.4's cost is spurious hard errors, and this
+# is the half that keeps that cost bounded.
+#
+# A rule that only ever fails safe in one direction is not the rule; it is half
+# of it.
+--- a/engine-cpp/src/wal/reader.cc	2026-08-24 21:02:37
++++ b/engine-cpp/src/wal/reader.cc	2026-08-24 21:02:37
+@@ -79,7 +79,7 @@
+   // FULL or FIRST only. Accepting a bare MIDDLE would let garbage masquerade as
+   // interior corruption and MANUFACTURE a refused open -- an availability bug
+   // produced by a safety rule.
+-  if (f.type != FragmentType::kFull && f.type != FragmentType::kFirst) return false;
++  // BM11: a bare MIDDLE or LAST is accepted as a resync candidate.
+   RecordKind kind;
+   SeqNum seq;
+   if (!PeekKindAndSeq(f.payload, &kind, &seq)) return false;
+@@ -88,14 +88,9 @@
+ }
+ 
+ bool LegalTransition(bool inside, FragmentType t) {
+-  switch (t) {  // NO default: arm
+-    case FragmentType::kInvalid: return false;
+-    case FragmentType::kFull:    return !inside;
+-    case FragmentType::kFirst:   return !inside;
+-    case FragmentType::kMiddle:  return inside;
+-    case FragmentType::kLast:    return inside;
+-  }
+-  RIFT_UNREACHABLE("FragmentType holds a value no enumerator names");
++  (void)inside;
++  (void)t;
++  return true;  // BM11: every transition is legal
+ }
+ 
+ }  // namespace

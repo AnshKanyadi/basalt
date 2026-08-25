@@ -1,0 +1,69 @@
+# id: BM3-silent-interior-truncate
+# blinds: resynchronization, so every read failure becomes end-of-log
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The catalogue's BM3, and it is candidate (b) restored -- the one B1-D4
+# rejected as "dangerously comfortable". It is correct whenever the failure
+# really IS the tail, and it SILENTLY DISCARDS PROMISED DATA whenever it is not.
+#
+# Silently is the operative word. No log line, no error, no metric: the database
+# opens, is short some committed writes, and nobody learns for weeks. There is
+# no observable difference between this and the correct behaviour except in the
+# one case that matters, which is why the induced failure has to construct that
+# case rather than wait for it.
+#
+# The patch removes IsResyncCandidate along with the loop that calls it, because
+# leaving a static function unreferenced is a -Wunused-function -Werror failure
+# and the control lane reported BROKEN rather than a kill. That is also what a
+# developer making this change for real would do: the helper has no other
+# caller, and its deletion is the visible half of a change whose dangerous half
+# is invisible.
+--- a/engine-cpp/src/wal/reader.cc	2026-08-24 21:04:44
++++ b/engine-cpp/src/wal/reader.cc	2026-08-24 21:04:44
+@@ -70,23 +70,6 @@
+   return nullptr;
+ }
+ 
+-// Is `offset` a structurally valid START of a record whose sequence is above
+-// the last committed group's? The resync predicate, and every clause of it is
+-// load-bearing.
+-bool IsResyncCandidate(Slice image, uint64_t offset, SeqNum committed) {
+-  Fragment f;
+-  if (ReadFragment(image, offset, &f) != nullptr) return false;
+-  // FULL or FIRST only. Accepting a bare MIDDLE would let garbage masquerade as
+-  // interior corruption and MANUFACTURE a refused open -- an availability bug
+-  // produced by a safety rule.
+-  if (f.type != FragmentType::kFull && f.type != FragmentType::kFirst) return false;
+-  RecordKind kind;
+-  SeqNum seq;
+-  if (!PeekKindAndSeq(f.payload, &kind, &seq)) return false;
+-  if (kind != RecordKind::kBatch && kind != RecordKind::kGroupEnd) return false;
+-  return seq > committed;
+-}
+-
+ bool LegalTransition(bool inside, FragmentType t) {
+   switch (t) {  // NO default: arm
+     case FragmentType::kInvalid: return false;
+@@ -139,18 +122,7 @@
+       r.resync_offset = offset;
+       return;
+     }
+-    // Resync: advance to the next block boundary and ask whether anything
+-    // structurally valid lives there. Damage is bounded to one block, and a
+-    // block boundary is the one alignment always known to be a legal fragment
+-    // start, which is what makes this bounded rather than a search.
+-    uint64_t b = ((offset / kBlockBytes) + 1) * kBlockBytes;
+-    for (; b < size; b += kBlockBytes) {
+-      if (IsResyncCandidate(image, b, r.last_committed_seq)) {
+-        r.outcome = ScanOutcome::kInteriorCorruption;
+-        r.resync_offset = b;
+-        return;
+-      }
+-    }
++    // BM3: stop at the first bad record; never resync.
+     r.outcome = ScanOutcome::kTornTail;
+   };
+ 
