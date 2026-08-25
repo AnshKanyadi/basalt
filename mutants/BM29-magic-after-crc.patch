@@ -1,0 +1,39 @@
+# id: BM29-magic-after-crc
+# blinds: a foreign file being reported differently from a damaged one
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# NOT A CORRECTNESS BUG, AND THAT IS THE POINT -- the same shape as BM10. Both
+# orderings refuse the file. Only one of them tells an operator the truth: with
+# the checksum first, every non-SSTable in the directory is reported as a
+# CORRUPT SSTABLE, and the recovery procedure that follows from that report is
+# the wrong procedure.
+#
+# A reviewer reordering these two for symmetry with the block reader would be
+# doing something entirely reasonable, which is why the ordering is asserted by
+# a test rather than defended by a comment alone.
+--- a/engine-cpp/src/sst/table_format.cc	2026-08-25 01:47:27
++++ b/engine-cpp/src/sst/table_format.cc	2026-08-25 01:47:27
+@@ -67,15 +67,16 @@
+   // THE MAGIC IS CHECKED BEFORE THE CRC, deliberately. A foreign file is a
+   // different report from a corrupted one, and telling an operator "this is not
+   // an SSTable" is more useful than "this SSTable is damaged".
+-  if (std::memcmp(p + 36, kMagic, sizeof(kMagic)) != 0) {
+-    *why = "footer magic is not RIFTSST";
+-    return false;
+-  }
++  // BM29: the checksum is checked first, so a foreign file reports as damaged.
+   const uint32_t stored = GetU32(p + kFooterCrcCovers);
+   if (wal::Crc32c(p, kFooterCrcCovers) != stored) {
+     *why = "footer checksum mismatch";
+     return false;
+   }
++  if (std::memcmp(p + 36, kMagic, sizeof(kMagic)) != 0) {
++    *why = "footer magic is not RIFTSST";
++    return false;
++  }
+   out->filter.offset = GetU64(p);
+   out->filter.size = GetU32(p + 8);
+   out->index.offset = GetU64(p + 12);

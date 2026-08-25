@@ -1,0 +1,29 @@
+# id: BM44-append-error-swallowed
+# blinds: a failed Append being reported
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The writer keeps going after a failed write and Finish returns ok. The flush
+# path then names the file in the manifest, and B2-D5's careful ordering --
+# table, sync, dirsync, manifest, dirsync, only then delete the WAL -- delivers
+# its guarantee about a table that was never fully written.
+#
+# BM5 is this defect one layer down, at Sync. That it needs its own patch here
+# is the point: swallowing an error is a per-call-site defect, and a rig that
+# catches it in one place has said nothing about the others.
+--- a/engine-cpp/src/sst/table_builder.cc	2026-08-25 02:14:45
++++ b/engine-cpp/src/sst/table_builder.cc	2026-08-25 02:14:45
+@@ -7,8 +7,9 @@
+ 
+ Status TableBuilder::Append(Slice bytes) {
+   if (!status_.ok()) return status_;
+-  status_ = file_->Append(bytes);
+-  if (status_.ok()) offset_ += bytes.size();
++  // BM44: the append's status is discarded.
++  file_->Append(bytes);
++  offset_ += bytes.size();
+   return status_;
+ }
+ 

@@ -1,0 +1,27 @@
+# id: BM33-reserved-not-zero
+# blinds: the reserved footer bytes being written zero
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The eight reserved bytes are the format's only cheap upgrade path: B3 can
+# spend them without a version bump PRECISELY BECAUSE every file this build
+# writes has them zero, so a non-zero value is unambiguously a newer writer.
+# Fill them with anything at all and that inference is gone forever, silently,
+# in files that all validate.
+#
+# The cost is not paid now. It is paid at the first B3 file that has to be told
+# apart from a B2 one, by which time every table ever written is the evidence
+# and none of it can be re-written.
+--- a/engine-cpp/src/sst/table_format.cc	2026-08-25 01:47:27
++++ b/engine-cpp/src/sst/table_format.cc	2026-08-25 01:47:27
+@@ -51,7 +51,7 @@
+   PutU64(out, f.index.offset);
+   PutU32(out, f.index.size);
+   PutU32(out, f.format_version);
+-  out->append(8, '\0');  // reserved, and never written otherwise
++  out->append(8, '\x5A');  // BM33: reserved bytes carry junk
+   out->append(kMagic, sizeof(kMagic));
+   RIFT_CHECK(out->size() - before == kFooterCrcCovers);
+   PutU32(out, wal::Crc32c(out->data() + before, kFooterCrcCovers));

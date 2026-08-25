@@ -30,10 +30,6 @@ uint64_t GetFixed64(const char* p) {
   return v;
 }
 
-uint64_t MakeTag(SeqNum seq, ValueType type) {
-  return (seq << 8) | static_cast<uint64_t>(type);
-}
-
 }  // namespace
 
 // entry layout: [u32 internal_key_len][user_key][u64 tag][u32 value_len][value]

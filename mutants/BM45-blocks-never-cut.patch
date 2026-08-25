@@ -1,0 +1,27 @@
+# id: BM45-blocks-never-cut
+# blinds: the block size actually bounding a block
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# One data block for the whole table. Every gate stays green: the table is
+# legal, the index has one entry that is exactly the last key, every checksum
+# verifies, and every key is found. What is lost is the reason blocks exist --
+# a point lookup now reads and checksums the ENTIRE TABLE.
+#
+# A defect that costs only performance is still a defect when the constant it
+# ignores is part of a frozen format, and this is the same argument BM32 makes
+# about the restart interval. The lane that catches it asserts the SHAPE the
+# writer produced, not merely that the writer produced something valid.
+--- a/engine-cpp/src/sst/table_builder.h	2026-08-25 02:14:45
++++ b/engine-cpp/src/sst/table_builder.h	2026-08-25 02:14:45
+@@ -36,7 +36,7 @@
+ //
+ // THE MEASUREMENT THAT WOULD MOVE IT: B5's standalone numbers, showing block
+ // size attributed by profile rather than inferred. Absent that number, 4 KiB.
+-inline constexpr std::size_t kDataBlockBytes = 4096;
++inline constexpr std::size_t kDataBlockBytes = 1u << 30;  // BM45
+ 
+ class TableBuilder {
+  public:

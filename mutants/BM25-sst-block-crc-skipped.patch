@@ -1,0 +1,28 @@
+# id: BM25-sst-block-crc-skipped
+# blinds: the per-block checksum
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The SSTable's equivalent of BM8. Every block carries its own crc32c and it is
+# the only thing standing between a torn or bit-rotted block and a reader that
+# decodes it into plausible keys. Without it the byte sweep in
+# test/sst_format_test.cc goes from "every byte is covered" to a statement about
+# the bytes that happen to be lengths.
+--- a/engine-cpp/src/sst/table_format.cc	2026-08-25 01:47:26
++++ b/engine-cpp/src/sst/table_format.cc	2026-08-25 01:47:26
+@@ -118,11 +118,8 @@
+   const char* p = block.data();
+   const std::size_t n = block.size();
+ 
+-  const uint32_t stored = GetU32(p + n - kBlockTrailerBytes);
+-  if (wal::Crc32c(p, n - kBlockTrailerBytes) != stored) {
+-    *why = "block checksum mismatch";
+-    return false;
+-  }
++  // BM25: the block's checksum is read and discarded.
++  (void)GetU32(p + n - kBlockTrailerBytes);
+   const uint32_t count = GetU32(p + n - kBlockTrailerBytes - 4);
+   if (count == 0) {
+     *why = "block declares zero restart points";

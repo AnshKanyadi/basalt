@@ -44,23 +44,17 @@
 #include <string>
 
 #include "arena.h"
+#include "internal_key.h"
 #include "slice.h"
 #include "status.h"
 #include "tower.h"
 
 namespace rift {
 
-// LevelDB's convention, and it is load-bearing for ordering: a deletion and a
-// value at the same sequence must sort deterministically, and the type is the
-// low byte of the tag so they do.
-enum class ValueType : uint8_t {
-  kDeletion = 0,
-  kValue = 1,
-};
-
-using SeqNum = uint64_t;
-
-// internal_key = user_key || ((seq << 8) | value_type) as u64 little-endian
+// ValueType, SeqNum, MakeTag and the internal key layout now live in
+// internal_key.h. B2 gave the layout a SECOND holder -- the SSTable -- and a
+// second holder is the moment a format defined in one file's private helpers
+// becomes two formats that agree until they do not.
 //
 // Ordering: user key ASCENDING by memcmp, then seq DESCENDING, so the newest
 // version of a key sorts first and a snapshot read is one seek.

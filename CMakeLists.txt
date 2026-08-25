@@ -95,6 +95,7 @@ set(RIFT_CXX_FLAGS -Wall -Wextra -Werror -Werror=switch -fno-exceptions -fno-rtt
 add_library(rift_engine STATIC
   src/status.cc
   src/slice.cc
+  src/internal_key.cc
   src/env/call_site.cc
   src/env/fault_controller.cc
   src/env/env.cc
@@ -111,9 +112,13 @@ add_library(rift_engine STATIC
   src/wal/sha256.cc
   src/wal/wal.cc
   src/wal/recovery.cc
+  src/sst/bloom.cc
+  src/sst/table_format.cc
+  src/sst/table_builder.cc
+  src/sst/table_check.cc
   src/db.cc
 )
-target_include_directories(rift_engine PUBLIC src src/env src/env/posix src/memtable src/wal)
+target_include_directories(rift_engine PUBLIC src src/env src/env/posix src/memtable src/wal src/sst)
 target_compile_options(rift_engine PRIVATE ${RIFT_CXX_FLAGS})
 
 # Harness-side types. A SEPARATE archive, deliberately: it is what the rig uses
@@ -157,6 +162,9 @@ add_executable(rift_engine_test
   test/rig_caps_test.cc
   test/recovery_test.cc
   test/db_test.cc
+  test/sst_bloom_test.cc
+  test/sst_format_test.cc
+  test/sst_writer_test.cc
   test/oracle_test.cc
 )
 # rift_rig carries rift_testenv which carries rift_engine, both PUBLIC-ly;

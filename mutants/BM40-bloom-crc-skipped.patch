@@ -1,0 +1,27 @@
+# id: BM40-bloom-crc-skipped
+# blinds: the filter block's own checksum
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# Every block in this file ends with its own crc32c and the filter is not an
+# exception -- that is why its trailer mirrors a data block's rather than
+# inventing a shape. A corrupted bit in the bit array flips a probe from set to
+# clear, and a clear probe is a definite NO for every key that touches it.
+--- a/engine-cpp/src/sst/bloom.cc	2026-08-25 02:14:45
++++ b/engine-cpp/src/sst/bloom.cc	2026-08-25 02:14:45
+@@ -68,11 +68,8 @@
+   }
+   const char* p = block.data();
+   const std::size_t n = block.size();
+-  const uint32_t stored = GetU32(p + n - 4);
+-  if (wal::Crc32c(p, n - 4) != stored) {
+-    *why = "filter checksum mismatch";
+-    return false;
+-  }
++  // BM40: the filter's checksum is read and discarded.
++  (void)GetU32(p + n - 4);
+   const uint32_t nbytes = GetU32(p + n - 8);
+   const uint32_t probes = GetU32(p + n - 12);
+   // THE DECLARED LENGTH MUST AGREE WITH THE BLOCK IT ARRIVED IN. This is the

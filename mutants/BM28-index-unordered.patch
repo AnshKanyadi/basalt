@@ -1,0 +1,38 @@
+# id: BM28-index-unordered
+# blinds: index entries being strictly ascending
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The sibling of BM27 one level up, and a separate defence: an index can be out
+# of order while every block it names is internally perfect and every separator
+# equals its block's last key. The binary search over the index is then
+# searching an unsorted array, which does not fail -- it returns the wrong
+# block.
+#
+# The `(void)` casts are the mutation's cost of admission, not part of it: with
+# the comparison gone the two tracking variables are set and never read, and
+# -Werror refuses that. The FIRST attempt at this patch omitted them and its
+# direction control reported BROKEN rather than a kill -- the seventh time that
+# control has separated "the lane caught it" from "the patch did not build".
+--- a/engine-cpp/src/sst/table_check.cc	2026-08-25 02:00:49
++++ b/engine-cpp/src/sst/table_check.cc	2026-08-25 02:00:49
+@@ -99,14 +99,11 @@
+       return Fail(TableFault::kNotAnInternalKey, footer.index.offset + ie.offset,
+                   "index key is " + std::to_string(ie.key.size()) + " bytes");
+     }
+-    if (have_previous_index_key &&
+-        CompareInternalKey(ie.key, previous_index_key) <= 0) {
+-      return Fail(TableFault::kIndexNotAscending,
+-                  footer.index.offset + ie.offset,
+-                  "index key does not exceed the one before it");
+-    }
++    // BM28: index order is not checked.
+     previous_index_key = ie.key;
+     have_previous_index_key = true;
++    (void)previous_index_key;
++    (void)have_previous_index_key;
+ 
+     BlockHandle h;
+     if (!DecodeHandle(ie.value, &h)) {

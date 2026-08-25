@@ -1,0 +1,28 @@
+# id: BM30-range-check-by-addition
+# blinds: the range check being immune to overflow
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# `h.offset + h.size <= footer_at` is the obvious way to write this and it is
+# wrong for one input class: a handle near 2^64 wraps and lands back INSIDE the
+# file, so the check passes and the read is out of bounds. The subtraction form
+# cannot wrap.
+#
+# The offsets in question come from bytes on disk that have already failed a
+# checksum somewhere, which is precisely when a reader must not be arithmetically
+# credulous. Under ASan this is a heap overflow; under a production build it is a
+# read of whatever follows the mapping.
+--- a/engine-cpp/src/sst/table_check.cc	2026-08-25 01:47:27
++++ b/engine-cpp/src/sst/table_check.cc	2026-08-25 01:47:27
+@@ -60,7 +60,8 @@
+   // nothing is dereferenced until its bounds have been proven against a checksum
+   // that already passed.
+   auto in_range = [&](const BlockHandle& h) {
+-    return h.offset <= footer_at && h.size <= footer_at - h.offset;
++    // BM30: computed by addition, which wraps.
++    return h.offset + h.size <= footer_at;
+   };
+   if (!in_range(footer.index)) {
+     return Fail(TableFault::kHandleOutOfRange, footer_at,

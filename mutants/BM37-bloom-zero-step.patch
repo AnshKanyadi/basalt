@@ -1,0 +1,29 @@
+# id: BM37-bloom-zero-step
+# blinds: the probe step being non-zero for every hash
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# A DEGENERACY WITH NO SYMPTOM ANYWHERE ABOVE IT. Without `| 1` a hash whose
+# high half is a multiple of the bit count gives a step of zero, and all seven
+# probes land on one bit: a 7-probe filter behaving like a 1-probe one, for
+# those keys.
+#
+# It cannot cause a false negative -- the same bit is set and tested -- so the
+# safety property stays green. It cannot move the measured rate either, at any
+# key count this test suite runs, because the inputs that trigger it are rare.
+# THE ONLY PLACE IT IS OBSERVABLE IS THE ARITHMETIC, which is why ProbeWalk is
+# public and why `step()` exists: a guard whose absence is invisible everywhere
+# is a guard that has to be asserted where it lives, or it is not asserted.
+--- a/engine-cpp/src/sst/bloom.cc	2026-08-25 02:14:45
++++ b/engine-cpp/src/sst/bloom.cc	2026-08-25 02:14:45
+@@ -24,7 +24,7 @@
+ // public. `h2 | 1` is not cosmetic: it is what makes step() non-zero.
+ ProbeWalk::ProbeWalk(uint64_t hash, uint64_t bits) : bits_(bits) {
+   const uint32_t h1 = static_cast<uint32_t>(hash & 0xffffffffu);
+-  const uint32_t h2 = static_cast<uint32_t>(hash >> 32) | 1u;
++  const uint32_t h2 = static_cast<uint32_t>(hash >> 32);  // BM37: no odd guard
+   pos_ = h1 % bits;
+   step_ = h2 % bits;
+ }

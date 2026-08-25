@@ -1,0 +1,37 @@
+# id: BM32-restart-every-entry
+# blinds: the restart interval being part of the frozen format
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# A mutation that produces PERFECTLY VALID TABLES. Every block still round-trips,
+# every classifier gate still passes, every read still returns the right answer;
+# the restart array is simply four bytes per entry instead of four per sixteen.
+#
+# It is in the catalogue because "the tests pass" is not the standard for a
+# FROZEN format. kRestartInterval is a number in a file that other builds will
+# read, and a defence that only exists as a constant nobody asserts is not a
+# defence -- it is a default. The same argument put the block layout under a
+# byte-level sweep rather than a round-trip test.
+--- a/engine-cpp/src/sst/table_format.cc	2026-08-25 01:47:27
++++ b/engine-cpp/src/sst/table_format.cc	2026-08-25 01:47:27
+@@ -85,15 +85,14 @@
+ }
+ 
+ void BlockBuilder::Add(Slice key, Slice value) {
+-  if (since_restart_ == 0) {
+-    restarts_.push_back(static_cast<uint32_t>(buf_.size()));
+-  }
++  // BM32: a restart point on every entry.
++  restarts_.push_back(static_cast<uint32_t>(buf_.size()));
+   PutU32(&buf_, static_cast<uint32_t>(key.size()));
+   buf_.append(key.data(), key.size());
+   PutU32(&buf_, static_cast<uint32_t>(value.size()));
+   buf_.append(value.data(), value.size());
+   ++entries_;
+-  since_restart_ = (since_restart_ + 1) % kRestartInterval;
++  since_restart_ = 0;
+ }
+ 
+ std::string BlockBuilder::Finish() {

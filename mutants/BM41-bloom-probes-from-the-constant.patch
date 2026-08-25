@@ -1,0 +1,27 @@
+# id: BM41-bloom-probes-from-the-constant
+# blinds: the reader using the FILE's probe count rather than its own
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# VERSION SKEW PRODUCING A FALSE NEGATIVE, with every checksum in the file
+# intact. A build that pinned k=3 wrote files whose keys set three bits; a
+# reader using its own k=7 tests four bits nobody set, and every key in the
+# table probes absent.
+#
+# The mutation is invisible to a test that only rewrites the stored count
+# DOWNWARD and checks members are still found -- fewer probes can only accept
+# more. It takes a filter actually WRITTEN with a different k, built by hand
+# from the same probe walk, to make the direction that matters observable.
+--- a/engine-cpp/src/sst/bloom.cc	2026-08-25 02:14:45
++++ b/engine-cpp/src/sst/bloom.cc	2026-08-25 02:14:45
+@@ -104,7 +104,7 @@
+   const uint64_t bits = static_cast<uint64_t>(bits_.size()) * 8;
+   if (bits == 0) return true;
+   ProbeWalk walk(BloomHash(user_key), bits);
+-  for (uint32_t i = 0; i < probes_; ++i) {
++  for (uint32_t i = 0; i < kProbes; ++i) {  // BM41: our constant, not the file's
+     const uint64_t pos = walk.Next();
+     const unsigned char byte = static_cast<unsigned char>(bits_.data()[pos / 8]);
+     if ((byte & (1u << (pos % 8))) == 0) return false;

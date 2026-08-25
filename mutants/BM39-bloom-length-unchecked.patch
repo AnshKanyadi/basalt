@@ -1,0 +1,31 @@
+# id: BM39-bloom-length-unchecked
+# blinds: the declared filter length agreeing with the block it arrived in
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# A TRUNCATED FILTER STOPS ANNOUNCING ITSELF. The stored length is the only
+# thing that can disagree with reality, and disagreement is how a torn write
+# inside the filter block becomes a reported fault instead of a smaller filter
+# that answers "no" to keys the table holds.
+#
+# Note which failure this converts into which: without the check, the fault is
+# still DETECTED eventually -- by a false negative, in production, on one key,
+# with no record of why. Section 5.4's discriminator applied to a third format:
+# does corruption produce something the reader REJECTS, or something it
+# ACCEPTS?
+--- a/engine-cpp/src/sst/bloom.cc	2026-08-25 02:14:45
++++ b/engine-cpp/src/sst/bloom.cc	2026-08-25 02:14:45
+@@ -78,10 +78,7 @@
+   // THE DECLARED LENGTH MUST AGREE WITH THE BLOCK IT ARRIVED IN. This is the
+   // only way a filter truncated by a torn write announces itself as a FILTER
+   // problem rather than as a table that answers "no" to keys it holds.
+-  if (static_cast<std::size_t>(nbytes) + kFilterTrailerBytes != n) {
+-    *why = "filter length " + std::to_string(nbytes) + " disagrees with its block";
+-    return false;
+-  }
++  // BM39: the declared length is trusted.
+   if (probes == 0) {
+     *why = "filter declares zero probes";
+     return false;

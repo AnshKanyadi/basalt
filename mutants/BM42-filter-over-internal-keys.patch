@@ -1,0 +1,29 @@
+# id: BM42-filter-over-internal-keys
+# blinds: the filter being built over USER keys
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# ONE MISSING CALL, AND EVERY LOOKUP MISSES. A reader probes a user key; a
+# filter built over user_key||tag holds none of them, so the answer is
+# "definitely not" for keys the table certainly contains -- a bloom filter's one
+# forbidden answer, produced not by drift but by feeding it the wrong thing.
+#
+# It is the most natural wrong line in the file: `internal_key` is the parameter
+# in scope, and passing it reads like passing the key. The table it produces is
+# perfectly legal -- the classifier accepts it, every checksum verifies, the
+# index is exact -- because the filter's CONTENTS are not part of the format's
+# legality. Only a test that probes the filter with the keys the table holds can
+# see this, which is why one exists.
+--- a/engine-cpp/src/sst/table_builder.cc	2026-08-25 02:14:45
++++ b/engine-cpp/src/sst/table_builder.cc	2026-08-25 02:14:45
+@@ -26,7 +26,7 @@
+   // The filter is over USER keys: a lookup asks whether a user key could be in
+   // this table, and an answer that depended on the caller's sequence would skip
+   // nothing.
+-  filter_.AddUserKey(ExtractUserKey(internal_key));
++  filter_.AddUserKey(internal_key);  // BM42
+ 
+   last_key_.assign(internal_key.data(), internal_key.size());
+   largest_ = last_key_;

@@ -1,0 +1,31 @@
+# id: BM43-shortened-separator
+# blinds: the index separator being the block's last key EXACTLY
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# LEVELDB'S OPTIMIZATION, REINTRODUCED. This is the BM10 shape: a mutation a
+# reviewer would approve, because it makes the index smaller and matches
+# upstream, and because B2-D2 records the cost of NOT doing it in as many words
+# -- the index is larger, deliberately.
+#
+# What it costs is the check itself. A separator that merely SEPARATES has
+# nothing in the table to be compared against, so the classifier's strongest
+# rule about the index becomes unwritable, and an index entry naming the wrong
+# block becomes undetectable by construction rather than merely unchecked.
+#
+# B2-D2's argument is that the check is worth more than the bytes. This patch is
+# what makes that argument falsifiable rather than merely stated.
+--- a/engine-cpp/src/sst/table_builder.cc	2026-08-25 02:14:45
++++ b/engine-cpp/src/sst/table_builder.cc	2026-08-25 02:14:45
+@@ -51,7 +51,8 @@
+   // written because the key is not shortened.
+   std::string handle;
+   EncodeHandle(h, &handle);
+-  index_.Add(Slice(last_key_), Slice(handle));
++  // BM43: the shortest separator, LevelDB style.
++  index_.Add(ExtractUserKey(Slice(last_key_)), Slice(handle));
+ 
+   data_ = BlockBuilder();
+   block_entries_ = 0;
