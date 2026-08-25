@@ -98,8 +98,10 @@ add_library(rift_engine STATIC
   src/env/call_site.cc
   src/env/fault_controller.cc
   src/env/env.cc
+  src/env/posix/posix_raw.cc
+  src/env/posix/posix_env.cc
 )
-target_include_directories(rift_engine PUBLIC src src/env)
+target_include_directories(rift_engine PUBLIC src src/env src/env/posix)
 target_compile_options(rift_engine PRIVATE ${RIFT_CXX_FLAGS})
 
 # Harness-side types. A SEPARATE archive, deliberately: it is what the rig uses
@@ -117,6 +119,7 @@ add_executable(rift_engine_test
   test/lane_canary_test.cc
   test/run_outcome_test.cc
   test/env_surface_test.cc
+  test/posix_raw_test.cc
 )
 target_link_libraries(rift_engine_test PRIVATE rift_engine rift_rig gtest_main)
 target_compile_options(rift_engine_test PRIVATE ${RIFT_CXX_FLAGS})

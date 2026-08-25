@@ -1,0 +1,52 @@
+# id: SEAM-zero-unbounded
+# blinds: the bound on consecutive zero returns
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# A LIVENESS defect, and the reason the seam test's harness caps its own call
+# count. Unpatched, WriteFully gives up after kMaxConsecutiveZeroWrites;
+# patched, it retries forever. Without the harness cap this patch would HANG the
+# lane rather than redden it, and a lane that hangs while checking a liveness
+# property reports nothing at all -- so the cap is what makes this induction
+# possible, not a convenience.
+#
+# The patch removes the `zeros` counter entirely, not just the bound. The first
+# version removed only the bound and left the counter set-but-never-read, which
+# -Wextra -Werror rejects -- so the tree did not compile and the control lane
+# reported BROKEN instead of a kill. That is the control doing its job for the
+# second time in this catalogue, and the reason every patch here carries one.
+#
+# NOT A CATALOGUE MUTANT. DESIGN-B1 section 14.2 records "Mutants: none" for
+# B1.2b, and that is a statement about the BM catalogue: PosixEnv is outside the
+# fault matrix, so it gets no BM number. But the standing rule is that no gate
+# counts until its failure has been induced and observed, and B1.2b's gates are
+# the three seam tests. This patch is that induction, made repeatable rather
+# than performed once by hand -- there is no CI here, so an induction nobody can
+# re-run is an induction that decays into a sentence in a commit message.
+--- a/engine-cpp/src/env/posix/posix_raw.cc	2026-08-24 17:19:58
++++ b/engine-cpp/src/env/posix/posix_raw.cc	2026-08-24 17:19:58
+@@ -14,7 +14,6 @@
+ 
+ Status WriteFully(int fd, const char* data, std::size_t n, RawWriteFn raw) {
+   std::size_t done = 0;
+-  int zeros = 0;
+   while (done < n) {
+     const ssize_t w = raw(fd, data + done, n - done);
+     if (w < 0) {
+@@ -22,13 +21,8 @@
+       return Status::IoError("write: errno " + std::to_string(errno));
+     }
+     if (w == 0) {
+-      if (++zeros >= kMaxConsecutiveZeroWrites) {
+-        return Status::IoError("write returned 0 " +
+-                               std::to_string(zeros) + " times without an error");
+-      }
+-      continue;
++      continue;  // SEAM: retry a zero-return forever
+     }
+-    zeros = 0;
+     done += static_cast<std::size_t>(w);
+   }
+   return Status::Ok();

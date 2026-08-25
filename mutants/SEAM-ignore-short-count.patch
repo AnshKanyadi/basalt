@@ -1,0 +1,31 @@
+# id: SEAM-ignore-short-count
+# blinds: the loop resuming from the count write(2) actually returned
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The loop stops resuming and assumes every write was complete. On a local
+# filesystem write(2) essentially always returns the full count, so this is
+# correct on every machine anyone runs it on -- until a pipe, a network
+# filesystem or a signal makes it not, and the bytes it silently drops are WAL
+# bytes that were reported durable.
+#
+# NOT A CATALOGUE MUTANT. DESIGN-B1 section 14.2 records "Mutants: none" for
+# B1.2b, and that is a statement about the BM catalogue: PosixEnv is outside the
+# fault matrix, so it gets no BM number. But the standing rule is that no gate
+# counts until its failure has been induced and observed, and B1.2b's gates are
+# the three seam tests. This patch is that induction, made repeatable rather
+# than performed once by hand -- there is no CI here, so an induction nobody can
+# re-run is an induction that decays into a sentence in a commit message.
+--- a/engine-cpp/src/env/posix/posix_raw.cc	2026-08-24 17:16:49
++++ b/engine-cpp/src/env/posix/posix_raw.cc	2026-08-24 17:16:49
+@@ -29,7 +29,7 @@
+       continue;
+     }
+     zeros = 0;
+-    done += static_cast<std::size_t>(w);
++    done = n;  // SEAM: assume the whole write landed
+   }
+   return Status::Ok();
+ }
