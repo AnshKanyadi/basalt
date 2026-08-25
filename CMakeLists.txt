@@ -98,6 +98,7 @@ add_library(rift_engine STATIC
   src/env/call_site.cc
   src/env/fault_controller.cc
   src/env/env.cc
+  src/env/env_guard.cc
   src/env/posix/posix_raw.cc
   src/env/posix/posix_env.cc
   src/memtable/arena.cc
@@ -106,6 +107,9 @@ add_library(rift_engine STATIC
   src/wal/crc32c.cc
   src/wal/format.cc
   src/wal/reader.cc
+  src/wal/writer.cc
+  src/wal/sha256.cc
+  src/wal/wal.cc
 )
 target_include_directories(rift_engine PUBLIC src src/env src/env/posix src/memtable src/wal)
 target_compile_options(rift_engine PRIVATE ${RIFT_CXX_FLAGS})
@@ -125,8 +129,10 @@ target_compile_options(rift_testenv PRIVATE ${RIFT_CXX_FLAGS})
 add_library(rift_rig STATIC
   rig/run_outcome.cc
   rig/durable_mirror.cc
+  rig/cap_adjudication.cc
+  rig/regime.cc
 )
-target_include_directories(rift_rig PUBLIC rig src src/env src/env/test)
+target_include_directories(rift_rig PUBLIC rig src src/env src/env/test src/wal)
 target_link_libraries(rift_rig PUBLIC rift_testenv)
 target_compile_options(rift_rig PRIVATE ${RIFT_CXX_FLAGS})
 
@@ -143,6 +149,8 @@ add_executable(rift_engine_test
   test/tower_test.cc
   test/memtable_test.cc
   test/wal_reader_test.cc
+  test/wal_test.cc
+  test/rig_caps_test.cc
 )
 # rift_rig carries rift_testenv which carries rift_engine, both PUBLIC-ly;
 # naming any of them again makes the linker warn about a duplicate archive.

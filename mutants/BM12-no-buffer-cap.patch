@@ -1,0 +1,28 @@
+# id: BM12-no-buffer-cap
+# blinds: the WAL-buffer tripwire
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The catalogue's BM12. The buffer grows without bound.
+#
+# In a fault-injected harness that means an OOM kill, WHICH IS THE WORST
+# POSSIBLE FAILURE SIGNAL because it destroys the run that would have explained
+# it: no ledger, no kill point, no seed, just a dead process and a sweep that
+# cannot say what it was doing. The tripwire's job is to make the run HALT with
+# a status instead.
+#
+# The cap is a tripwire and not a policy. Status::kBusy as the policy remains
+# the leaning for B5, and section 7.6.1's precondition is its acceptance test.
+--- a/engine-cpp/src/wal/wal.cc	2026-08-24 21:15:11
++++ b/engine-cpp/src/wal/wal.cc	2026-08-24 21:15:11
+@@ -84,7 +84,7 @@
+ 
+   DbLock lock(mu_);
+   if (closed_) return Status::InvalidArgument("Apply after Close");
+-  if (buffered_bytes_ + bytes > caps_.wal_buffer_bytes) {
++  if (false && buffered_bytes_ + bytes > caps_.wal_buffer_bytes) {  // BM12
+     // A TRIPWIRE, NOT A POLICY. Unbounded growth in a fault-injected harness
+     // means an OOM kill, which is the worst possible failure signal because it
+     // destroys the run that would have explained it. Status::kBusy as the

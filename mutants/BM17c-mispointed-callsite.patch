@@ -17,14 +17,14 @@
 # the scan and the behaviour test cover different halves, and this patch is the
 # proof that neither half is redundant. Amendment A2 requires a new mutant class
 # in the same change as the gap that revealed it; this is that.
---- a/engine-cpp/src/env/env.cc	2026-08-24 19:17:27
-+++ b/engine-cpp/src/env/env.cc	2026-08-24 19:17:27
-@@ -174,7 +174,7 @@
+--- a/engine-cpp/src/env/env.cc	2026-08-24 21:33:57
++++ b/engine-cpp/src/env/env.cc	2026-08-24 21:33:57
+@@ -194,7 +194,7 @@
  }
  
  Status Env::RenameFile(const std::string& from, const std::string& to) {
--  Status s = faults_->Intercept(CallSite::kEnvRenameFile, id_);
-+  Status s = faults_->Intercept(CallSite::kEnvCreateDir, id_);
+-  Status s = Enter(faults_, CallSite::kEnvRenameFile, id_);
++  Status s = Enter(faults_, CallSite::kEnvCreateDir, id_);
    if (!s.ok()) return s;
    return DoRenameFile(from, to);
  }

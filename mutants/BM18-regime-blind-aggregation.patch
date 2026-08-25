@@ -1,0 +1,36 @@
+# id: BM18-regime-blind-aggregation
+# blinds: the regime as the aggregation key
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The catalogue's BM18. Runs at lowered caps are banked together with default-cap
+# runs, producing a number about NO REGIME AT ALL.
+#
+# Track A's ablation is why this is a first-class mutant rather than a tidiness
+# one: lowering a harness parameter there did not weaken detection, IT REMOVED
+# THE BUG FROM EXISTENCE ENTIRELY. Results across parameter regimes were not
+# comparable, not merely less comparable. A tripwire observed firing at a
+# lowered cap is evidence that the tripwire works and is not evidence about the
+# 64 MiB regime -- and the whole reason the caps are run-time configurable is so
+# the sweep CAN lower them, which is what makes this contamination reachable.
+#
+# The patch deletes the validation loop rather than just its body, because a
+# range-for whose body no longer uses the loop variable is a -Wunused-variable
+# -Werror failure and the control reported BROKEN. It is also what the real edit
+# looks like: nobody leaves an empty loop behind.
+--- a/engine-cpp/rig/regime.cc	2026-08-24 21:17:58
++++ b/engine-cpp/rig/regime.cc	2026-08-24 21:17:58
+@@ -22,10 +22,7 @@
+ bool AggregateRuns(const std::vector<RunRecord>& rows, Tally* out) {
+   if (rows.empty()) return false;
+   const Regime key = rows.front().regime();
+-  for (const RunRecord& r : rows) {
+-    // THE AGGREGATION KEY. BM18 removes this check.
+-    if (r.regime() != key) return false;
+-  }
++  // BM18: the regime is no longer part of the aggregation key.
+   Tally t;
+   t.regime = key;
+   for (const RunRecord& r : rows) {

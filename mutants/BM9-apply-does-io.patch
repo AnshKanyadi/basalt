@@ -1,0 +1,26 @@
+# id: BM9-apply-does-io
+# blinds: Apply making zero Env calls
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The catalogue's BM9. Apply flushes, so it performs I/O -- which is LevelDB's
+# actual behaviour when a WritableFile's internal buffer fills, and the reason
+# B1-D9 put the buffer in the engine's own memory instead.
+#
+# "Never blocks on I/O" is a contract the frozen interface states, and an
+# implementation that satisfies it until the moment its buffer fills does not
+# satisfy it. The per-thread Env-call counter is what makes the difference
+# checkable rather than asserted, and it also catches the far worse version of
+# this: I/O at an unpredictable moment, on the node loop, under a mutex.
+--- a/engine-cpp/src/wal/wal.cc	2026-08-24 21:15:11
++++ b/engine-cpp/src/wal/wal.cc	2026-08-24 21:15:11
+@@ -95,6 +95,7 @@
+ 
+   std::string encoded;
+   EncodeBatch(seq, ops, &encoded);
++  (void)file_->Flush();  // BM9: Apply performs I/O
+   buffered_.push_back(std::move(encoded));
+   buffered_bytes_ += bytes;
+   high_seq_ = seq;

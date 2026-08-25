@@ -1,0 +1,34 @@
+# id: BM4-missing-dir-sync
+# blinds: the directory entry being made durable before Open returns
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The catalogue's BM4. Everything about the WAL is correct: the file is created,
+# the FILE_HEADER is written, the bytes are fsynced. Only the NAME is not
+# durable -- so a kill takes the entire file, bytes and all, and the engine has
+# no way to know it ever existed.
+#
+# This is the failure section 7.2's gapless-file-number check exists to convert
+# into a failed open. Without either, the loss is silent: a WAL vanishes, the
+# numbering has a hole nobody looks at, and recovery replays a prefix it
+# believes is complete.
+--- a/engine-cpp/src/wal/wal.cc	2026-08-24 21:15:11
++++ b/engine-cpp/src/wal/wal.cc	2026-08-24 21:15:11
+@@ -57,14 +57,7 @@
+   s = w->file_->Sync();
+   if (!s.ok()) return s;
+ 
+-  // The directory entry, made durable before Open returns.
+-  DirectoryPtr d;
+-  s = env->NewDirectory(dir, &d);
+-  if (!s.ok()) return s;
+-  s = d->Sync();
+-  if (!s.ok()) return s;
+-  s = d->Close();
+-  if (!s.ok()) return s;
++  // BM4: the directory entry is never made durable.
+ 
+   *out = std::move(w);
+   return Status::Ok();

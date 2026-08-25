@@ -1,0 +1,36 @@
+# id: BM20-missing-tripwire
+# blinds: cap adjudication, DIRECTION 2 -- the engine accepting an over-cap record
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The catalogue's BM20, the converse of BM19 and the clause that stops the rule
+# from being vacuous. Section 7.6 clause 4: a satisfied predicate with NO error
+# returned is also a divergence.
+#
+# Without direction 2 the adjudication would only ever be able to say "the
+# engine reported something it should not have", never "the engine failed to
+# report something it should have" -- and a predicate that can only be checked
+# in one direction is an oracle asking the engine whether it was justified,
+# which is the failure section 7.6.1 refuses to let kBusy reintroduce at B5.
+--- a/engine-cpp/src/wal/wal.cc	2026-08-24 21:15:11
++++ b/engine-cpp/src/wal/wal.cc	2026-08-24 21:15:11
+@@ -75,7 +75,7 @@
+   // predicate is a sum over the ops it submitted and never has to model
+   // fragmentation (section 5.3.4).
+   const uint64_t bytes = BatchRecordBytes(ops);
+-  if (bytes > caps_.max_record_bytes) {
++  if (bytes > caps_.max_record_bytes * 1000) {  // BM20
+     // Applies NOTHING, atomically. A partially applied over-cap batch would be
+     // a torn write the format cannot represent.
+     return Status::RecordTooLarge("record " + std::to_string(bytes) + " > cap " +
+@@ -84,7 +84,7 @@
+ 
+   DbLock lock(mu_);
+   if (closed_) return Status::InvalidArgument("Apply after Close");
+-  if (buffered_bytes_ + bytes > caps_.wal_buffer_bytes) {
++  if (buffered_bytes_ + bytes > caps_.wal_buffer_bytes * 1000) {  // BM20
+     // A TRIPWIRE, NOT A POLICY. Unbounded growth in a fault-injected harness
+     // means an OOM kill, which is the worst possible failure signal because it
+     // destroys the run that would have explained it. Status::kBusy as the
