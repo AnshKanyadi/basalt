@@ -1,0 +1,23 @@
+# id: LANE-cpp-asan
+# blinds: nothing -- it reads one byte past a heap buffer
+# covering-lane: cpp-asan
+# expect: killed
+# control-lane: cpp-test
+# expect-control: alive
+#
+# Proves the cpp-asan lane is AddressSanitizer and not a second copy of
+# cpp-test. The control is the whole point: the same patched tree must pass
+# uninstrumented, so the red under ASan is attributable to ASan. Without it,
+# four lanes going red on one broken build would read as four independent
+# results, which is exactly the arithmetic B1.1 exists to refuse.
+--- a/engine-cpp/test/lane_canary_test.cc	2026-08-24 16:53:12
++++ b/engine-cpp/test/lane_canary_test.cc	2026-08-24 16:53:12
+@@ -47,7 +47,7 @@
+   const int kSize = 8;
+   char* buf = new char[kSize];
+   for (int i = 0; i < kSize; ++i) buf[i] = static_cast<char>('a' + i);
+-  volatile int index = kSize - 1;
++  volatile int index = kSize;  // LANE-cpp-asan: one byte past the end
+   volatile char sink = buf[index];
+   (void)sink;
+   delete[] buf;

@@ -1,0 +1,24 @@
+# id: LANE-cpp-test
+# blinds: nothing -- it asserts something false
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# THE ALIVE CANARY. A failing C++ test of ours must turn a lane red. Every green
+# between B1.1 and B1.9 is uninterpretable without this one having been seen to
+# go red, because until it does, "required lane" and "lane that can fail" are
+# different claims and only the second is worth anything.
+#
+# The control proves the tree still compiles, so the red is the assertion.
+--- a/engine-cpp/test/lane_canary_test.cc	2026-08-24 16:53:12
++++ b/engine-cpp/test/lane_canary_test.cc	2026-08-24 16:53:12
+@@ -66,7 +66,7 @@
+   return 0;
+ }
+ 
+-TEST(LaneCanary, OurOwnAssertionsRun) { EXPECT_EQ(Doubled(21), 42); }
++TEST(LaneCanary, OurOwnAssertionsRun) { EXPECT_EQ(Doubled(21), 43); }
+ 
+ TEST(LaneCanary, HeapBufferIsReadInBounds) {
+   EXPECT_EQ(ReadHeapBufferInBounds(), 8);

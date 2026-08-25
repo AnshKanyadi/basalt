@@ -1,0 +1,22 @@
+# id: LANE-cpp-ubsan
+# blinds: nothing -- it overflows a signed int
+# covering-lane: cpp-ubsan
+# expect: killed
+# control-lane: cpp-test
+# expect-control: alive
+#
+# Proves the cpp-ubsan lane is UndefinedBehaviorSanitizer, and specifically that
+# -fno-sanitize-recover=all is in force: without it UBSan prints the diagnostic,
+# the process exits 0, and this patch would survive with undefined behaviour in
+# the lane's own log.
+--- a/engine-cpp/test/lane_canary_test.cc	2026-08-24 16:53:12
++++ b/engine-cpp/test/lane_canary_test.cc	2026-08-24 16:53:12
+@@ -59,7 +59,7 @@
+ // silently and which neither ASan nor TSan looks for. The return value is
+ // independent of the sum for the same reason as above.
+ int AddSignedIntegers() {
+-  volatile int a = 2147483646;
++  volatile int a = 2147483647;  // LANE-cpp-ubsan: a + b overflows int
+   volatile int b = 1;
+   volatile int sum = a + b;
+   (void)sum;

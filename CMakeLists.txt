@@ -1,15 +1,9 @@
 # Rift C++ storage engine (Track B).
 #
-# B1.0 scope: this file exists to build the VENDORED GoogleTest and nothing
-# else. There is no engine code yet and no test of ours yet -- that is B1.1,
-# deliberately, because B1.1 is the step at which a failing C++ test of ours
-# first turns a lane red (DESIGN-B1 section 14.1, threshold 2). Keeping B1.0
-# free of our code is what keeps that threshold at B1.1 where it is claimed.
-#
 # NO NETWORK. There is no FetchContent, no ExternalProject, no download step,
 # and there must never be one: `make cpp-ci` runs every lane with networking
-# disabled precisely so that adding one is a red lane rather than a surprise
-# for whoever first builds this on a plane. DESIGN-B1 section 9.2.
+# disabled precisely so that adding one is a red lane rather than a surprise for
+# whoever first builds this on a plane. DESIGN-B1 section 9.2.
 cmake_minimum_required(VERSION 3.16)
 project(rift_engine CXX)
 
@@ -24,21 +18,60 @@ endif()
 set(RIFT_THIRD_PARTY "${CMAKE_CURRENT_SOURCE_DIR}/../third_party" CACHE PATH
     "Root of the vendored dependency trees")
 
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+# ------------------------------------------------------------------- lanes
+#
+# One build directory per lane, one sanitizer per build directory. The lanes are
+# not variations on a theme: cpp-test is the UNINSTRUMENTED control that makes
+# the other three mean something, which is why it asserts it has no sanitizer
+# just as firmly as they assert they have one (test/sanitizer_lane_test.cc).
+set(RIFT_SANITIZER "none" CACHE STRING "none | address | undefined | thread")
+set_property(CACHE RIFT_SANITIZER PROPERTY STRINGS none address undefined thread)
+
+# Sanitizer flags are set GLOBALLY, and set HERE -- before the vendored
+# googletest is added -- so the framework is instrumented too. Half-instrumented
+# ASan is worse than none: it reports the halves it can see and stays quiet
+# about the rest, which reads as a clean run.
+if(RIFT_SANITIZER STREQUAL "address")
+  add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
+  add_link_options(-fsanitize=address)
+  set(RIFT_SANITIZER_DEFINE RIFT_EXPECT_ASAN=1)
+elseif(RIFT_SANITIZER STREQUAL "undefined")
+  # -fno-sanitize-recover=all is load-bearing. Without it UBSan PRINTS a
+  # diagnostic and carries on, the process exits 0, and the lane is green with
+  # undefined behaviour in its own log. A lane that reports a defect by writing
+  # it down and passing anyway is decoration.
+  add_compile_options(-fsanitize=undefined -fno-sanitize-recover=all
+                      -fno-omit-frame-pointer -g)
+  add_link_options(-fsanitize=undefined)
+  set(RIFT_SANITIZER_DEFINE RIFT_EXPECT_UBSAN=1)
+elseif(RIFT_SANITIZER STREQUAL "thread")
+  add_compile_options(-fsanitize=thread -g)
+  add_link_options(-fsanitize=thread)
+  set(RIFT_SANITIZER_DEFINE RIFT_EXPECT_TSAN=1)
+elseif(RIFT_SANITIZER STREQUAL "none")
+  set(RIFT_SANITIZER_DEFINE RIFT_EXPECT_NO_SANITIZER=1)
+else()
+  message(FATAL_ERROR
+          "RIFT_SANITIZER must be none|address|undefined|thread, got '${RIFT_SANITIZER}'")
+endif()
+
 # ---------------------------------------------------------------- googletest
 #
 # gmock is not built: we do not use it, and building it doubles the framework's
-# compile time in every one of four sanitizer lanes. This is a build-config
-# choice and NOT a modification of the vendored tree -- the tree on disk is the
-# complete upstream tree at the pinned commit, which scripts/cpp-vendor-check.sh
-# asserts by hash on every run of `make cpp-vendor-check`.
+# compile time in every one of four lanes. This is a build-config choice and NOT
+# a modification of the vendored tree -- the tree on disk is the complete
+# upstream tree at the pinned commit, which scripts/cpp-vendor-check.sh asserts
+# by hash on every run of `make cpp-vendor-check`.
 set(BUILD_GMOCK   OFF CACHE BOOL "" FORCE)
 set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 
-# The engine is built -fno-exceptions -fno-rtti (DESIGN-B1 section 9.1:
-# no exception may cross into Go, ever, and the flag makes that structural
-# rather than a review habit). GoogleTest must be told the same thing, in the
-# same terms, or its inline code and ours disagree about GTEST_HAS_EXCEPTIONS
-# across a translation-unit boundary -- an ODR violation that would present as
+# The engine is built -fno-exceptions -fno-rtti (DESIGN-B1 section 9.1: no
+# exception may cross into Go, ever, and the flag makes that structural rather
+# than a review habit). GoogleTest must be told the same thing, in the same
+# terms, or its inline code and ours disagree about GTEST_HAS_EXCEPTIONS across
+# a translation-unit boundary -- an ODR violation that would present as
 # something far stranger than a build error.
 add_subdirectory("${RIFT_THIRD_PARTY}/googletest"
                  "${CMAKE_BINARY_DIR}/googletest" EXCLUDE_FROM_ALL)
@@ -46,3 +79,49 @@ target_compile_options(gtest      PRIVATE -fno-exceptions -fno-rtti)
 target_compile_options(gtest_main PRIVATE -fno-exceptions -fno-rtti)
 target_compile_definitions(gtest      PUBLIC GTEST_HAS_EXCEPTIONS=0 GTEST_HAS_RTTI=0)
 target_compile_definitions(gtest_main PUBLIC GTEST_HAS_EXCEPTIONS=0 GTEST_HAS_RTTI=0)
+
+# ------------------------------------------------------------ our own flags
+#
+# -Werror=switch is named explicitly even though -Werror already implies it.
+# It is not a style preference: it is the mechanism that makes Status::Code and
+# RunOutcome CLOSED (DESIGN-B1 sections 7.5, 7.6). Removing it turns "somebody
+# added an enumerator and forgot to classify it" from a build failure into a
+# runtime surprise, and the enum stops being closed the moment it does.
+set(RIFT_CXX_FLAGS -Wall -Wextra -Werror -Werror=switch -fno-exceptions -fno-rtti)
+
+# The shipping archive. CLAUDE.md: CMake produces a static archive and cgo links
+# it (B5). Nothing from rig/ may ever enter it -- the oracle must not be
+# reachable from the thing it judges.
+add_library(rift_engine STATIC
+  src/status.cc
+)
+target_include_directories(rift_engine PUBLIC src)
+target_compile_options(rift_engine PRIVATE ${RIFT_CXX_FLAGS})
+
+# Harness-side types. A SEPARATE archive, deliberately: it is what the rig uses
+# to decide what a run may be counted as, and it never links into Go.
+add_library(rift_rig STATIC
+  rig/run_outcome.cc
+)
+target_include_directories(rift_rig PUBLIC rig src)
+target_compile_options(rift_rig PRIVATE ${RIFT_CXX_FLAGS})
+
+# ----------------------------------------------------------------- binaries
+add_executable(rift_engine_test
+  test/sanitizer_lane_test.cc
+  test/status_test.cc
+  test/lane_canary_test.cc
+  test/run_outcome_test.cc
+)
+target_link_libraries(rift_engine_test PRIVATE rift_engine rift_rig gtest_main)
+target_compile_options(rift_engine_test PRIVATE ${RIFT_CXX_FLAGS})
+target_compile_definitions(rift_engine_test PRIVATE ${RIFT_SANITIZER_DEFINE})
+
+# The cpp-tsan lane runs THIS and not the unit suite (DESIGN-B1 section 6.4).
+add_executable(rift_tsan_harness
+  test/sanitizer_lane_test.cc
+  test/tsan_harness_test.cc
+)
+target_link_libraries(rift_tsan_harness PRIVATE rift_engine gtest_main)
+target_compile_options(rift_tsan_harness PRIVATE ${RIFT_CXX_FLAGS})
+target_compile_definitions(rift_tsan_harness PRIVATE ${RIFT_SANITIZER_DEFINE})

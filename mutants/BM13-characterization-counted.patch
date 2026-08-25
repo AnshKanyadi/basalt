@@ -1,0 +1,25 @@
+# id: BM13-characterization-counted
+# blinds: CountsAsRecoveryEvidence, the single site where "what may be banked" is decided
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The defect this models is not a typo. It is the summarizer that counts a
+# characterization run -- one in which an exactness-suspending injector ran and
+# assertion (ii) was SUSPENDED -- as evidence for the recovery contract. The run
+# did not test the contract; banking it cites a check that did not happen.
+# DESIGN-B1 section 7.5.
+--- a/engine-cpp/rig/run_outcome.cc	2026-08-24 16:53:12
++++ b/engine-cpp/rig/run_outcome.cc	2026-08-24 16:53:12
+@@ -10,8 +10,9 @@
+   switch (outcome) {
+     case RunOutcome::kContractPass:
+       return true;
++    case RunOutcome::kCharacterizationOnly:   // BM13: banked as evidence
++      return true;
+     case RunOutcome::kContractViolation:      // a bug, with a kill point
+-    case RunOutcome::kCharacterizationOnly:   // the contract was not under test
+     case RunOutcome::kInconclusive:           // the check did not complete
+     case RunOutcome::kVoid:                   // adjudicated legitimate, never banked
+       return false;

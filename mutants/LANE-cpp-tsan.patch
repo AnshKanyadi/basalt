@@ -1,0 +1,33 @@
+# id: LANE-cpp-tsan
+# blinds: nothing -- it removes the lock the harness holds
+# covering-lane: cpp-tsan
+# expect: killed
+# control-lane: cpp-test
+# expect-control: alive
+#
+# Proves the cpp-tsan lane is instrumented AND that its harness actually runs
+# threads. "A TSan lane over single-threaded tests is a green lane that proves
+# nothing" (DESIGN-B1 section 6.4), and a TSan lane over no threads is worse.
+#
+# The control works because cpp-test BUILDS the harness and deliberately does
+# not RUN it: the patch compiles, so cpp-tsan's red is the race. Running it
+# under cpp-test would make cpp-test red too and there would be no control.
+#
+# The patch drops the `&mu` capture along with the lock, because -Werror turns
+# an orphaned capture into a build failure. The first version of this patch did
+# not, and its control caught it -- reporting BROKEN rather than a kill, which
+# is the control earning its place on the first mutant it was applied to.
+--- a/engine-cpp/test/tsan_harness_test.cc	2026-08-24 16:56:12
++++ b/engine-cpp/test/tsan_harness_test.cc	2026-08-24 16:56:12
+@@ -35,9 +35,9 @@
+   std::vector<std::thread> threads;
+   threads.reserve(kThreads);
+   for (int t = 0; t < kThreads; ++t) {
+-    threads.emplace_back([&mu, &counter] {
++    threads.emplace_back([&counter] {
+       for (int i = 0; i < kIncrementsPerThread; ++i) {
+-        std::lock_guard<std::mutex> guard(mu);
++        // LANE-cpp-tsan: the lock is gone, and so is the capture that held it.
+         ++counter;
+       }
+     });
