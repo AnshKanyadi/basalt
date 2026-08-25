@@ -1,0 +1,26 @@
+# id: BM17b-unregistered-wrapper
+# blinds: the other direction of the same 1:1:1 -- a wrapper with no CallSite
+# covering-lane: cpp-scan
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The second induced failure DESIGN-B1 names for B1.2a: delete one CallSite
+# registration. A public wrapper that names no CallSite is an Env call the
+# census cannot count and the sweep cannot identify -- "kill 47 failed" with
+# nothing to say what call 47 was.
+#
+# The scanner catches it as an UNPARSED LINE rather than as a missing name, and
+# that is deliberate: the grammar refuses to skip what it cannot classify, so
+# the failure arrives even for a drift nobody anticipated the shape of.
+--- a/engine-cpp/src/env/env.h	2026-08-24 17:08:27
++++ b/engine-cpp/src/env/env.h	2026-08-24 17:08:27
+@@ -172,7 +172,7 @@
+   Status GetFileSize(const std::string& path, uint64_t* out);  // RIFT_ENV_CALL kEnvGetFileSize
+   Status FileExists(const std::string& path, bool* out);  // RIFT_ENV_CALL kEnvFileExists
+   Status DeleteFile(const std::string& path);  // RIFT_ENV_CALL kEnvDeleteFile
+-  Status RenameFile(const std::string& from, const std::string& to);  // RIFT_ENV_CALL kEnvRenameFile
++  Status RenameFile(const std::string& from, const std::string& to);
+   Status CreateDir(const std::string& path);  // RIFT_ENV_CALL kEnvCreateDir
+   Status LockFile(const std::string& path, FileLockPtr* out);  // RIFT_ENV_CALL kEnvLockFile
+   Status UnlockFile(FileLockPtr lock);  // RIFT_ENV_CALL kEnvUnlockFile

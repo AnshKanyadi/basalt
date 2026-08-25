@@ -94,8 +94,12 @@ set(RIFT_CXX_FLAGS -Wall -Wextra -Werror -Werror=switch -fno-exceptions -fno-rtt
 # reachable from the thing it judges.
 add_library(rift_engine STATIC
   src/status.cc
+  src/slice.cc
+  src/env/call_site.cc
+  src/env/fault_controller.cc
+  src/env/env.cc
 )
-target_include_directories(rift_engine PUBLIC src)
+target_include_directories(rift_engine PUBLIC src src/env)
 target_compile_options(rift_engine PRIVATE ${RIFT_CXX_FLAGS})
 
 # Harness-side types. A SEPARATE archive, deliberately: it is what the rig uses
@@ -112,6 +116,7 @@ add_executable(rift_engine_test
   test/status_test.cc
   test/lane_canary_test.cc
   test/run_outcome_test.cc
+  test/env_surface_test.cc
 )
 target_link_libraries(rift_engine_test PRIVATE rift_engine rift_rig gtest_main)
 target_compile_options(rift_engine_test PRIVATE ${RIFT_CXX_FLAGS})

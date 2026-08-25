@@ -1,0 +1,28 @@
+# id: BM17a-bypassing-env-method
+# blinds: the claim that an Env call cannot skip fault interception
+# covering-lane: cpp-scan
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The mutant DESIGN-B1 section 3.2 names, in the one shape that still bypasses.
+# NVI stops an IMPLEMENTATION from exposing an unintercepted entry point; it
+# does not stop an edit to the base class itself, and this is that edit: a
+# public virtual, defined inline, calling the private Do* directly. It compiles.
+# It links. Every existing test passes. And every call through it is invisible
+# to the fault controller, so it is not a kill point, no injector can reach it,
+# and nothing anywhere says so.
+#
+# The control matters more than usual here: the whole hazard is that this
+# DOESN'T break anything, so a red that came from a broken build would be
+# exactly the wrong evidence.
+--- a/engine-cpp/src/env/env.h	2026-08-24 17:08:27
++++ b/engine-cpp/src/env/env.h	2026-08-24 17:08:27
+@@ -100,6 +100,7 @@
+   Status Flush();  // RIFT_ENV_CALL kWritableFileFlush
+   Status Sync();  // RIFT_ENV_CALL kWritableFileSync
+   Status Close();  // RIFT_ENV_CALL kWritableFileClose
++  virtual Status AppendUnchecked(Slice data) { return DoAppend(data); }
+   WritableFile(const WritableFile&) = delete;
+   WritableFile& operator=(const WritableFile&) = delete;
+  protected:
