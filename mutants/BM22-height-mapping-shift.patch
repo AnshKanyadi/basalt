@@ -1,0 +1,27 @@
+# id: BM22-height-mapping-shift
+# blinds: the tower mapping from hash bits to height
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The catalogue's BM22: shift the mapping /2 -> /3. It compiles, every memtable
+# still works, every read returns the right value, and EVERY SKIPLIST THIS
+# ENGINE HAS EVER BUILT NOW HAS A DIFFERENT SHAPE.
+#
+# The memtable's structure is a pure function of the key set, which makes this
+# on-disk-adjacent behaviour: a shape-dependent bug that reproduced from a
+# workload before this change does not reproduce after it, and nothing about
+# the engine's behaviour would say so. The golden vectors are the only thing
+# that notices, which is why the ruling attached them as a condition.
+--- a/engine-cpp/src/memtable/tower.cc	2026-08-24 19:37:57
++++ b/engine-cpp/src/memtable/tower.cc	2026-08-24 19:37:57
+@@ -23,7 +23,7 @@
+ 
+ int TowerHeight(Slice key) {
+   const int ntz = CountTrailingZeros(Fnv1a64(key));
+-  const int h = 1 + (ntz / 2);
++  const int h = 1 + (ntz / 3);  // BM22
+   return h < kMaxHeight ? h : kMaxHeight;
+ }
+ 

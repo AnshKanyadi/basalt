@@ -7,8 +7,8 @@
 # table has one rule per line: a blinding that also disturbed a neighbour would
 # make the result unattributable, which is the same failure the mutant lane's
 # direction controls exist to prevent.
---- a/scripts/cpp-scan.sh	2026-08-24 18:53:05
-+++ b/scripts/cpp-scan.sh	2026-08-24 18:53:05
+--- a/scripts/cpp-scan.sh	2026-08-24 19:37:06
++++ b/scripts/cpp-scan.sh	2026-08-24 19:37:06
 @@ -74,7 +74,6 @@
  rule A5-RANDOM  any      '<random>|[^A-Za-z_](rand|srand|random|arc4random|mt19937)[[:space:]]*\(' 'randomness in engine scope; the simulator owns the only stream'
  rule A5-CLOCK   any      '<chrono>|[^A-Za-z_](time|clock|gettimeofday|clock_gettime)[[:space:]]*\(|steady_clock|system_clock' 'a wall-clock read; the C++ analogue of clock/real.go has ZERO hatched calls'

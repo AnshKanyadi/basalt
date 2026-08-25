@@ -7,8 +7,8 @@
 # table has one rule per line: a blinding that also disturbed a neighbour would
 # make the result unattributable, which is the same failure the mutant lane's
 # direction controls exist to prevent.
---- a/scripts/cpp-scan.sh	2026-08-24 18:53:05
-+++ b/scripts/cpp-scan.sh	2026-08-24 18:53:05
+--- a/scripts/cpp-scan.sh	2026-08-24 19:37:06
++++ b/scripts/cpp-scan.sh	2026-08-24 19:37:06
 @@ -73,7 +73,6 @@
  # RIFT-SCAN-RULES-BEGIN
  rule A5-RANDOM  any      '<random>|[^A-Za-z_](rand|srand|random|arc4random|mt19937)[[:space:]]*\(' 'randomness in engine scope; the simulator owns the only stream'

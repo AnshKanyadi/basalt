@@ -1,0 +1,42 @@
+# id: DIGEST-address-heights
+# blinds: heights being a pure function of the key, WITHOUT touching <random>
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# NOT IN THE CATALOGUE. It exists because BM6's covering instrument is the scan,
+# and a claim that the structural digest ALSO catches a bad height source is
+# worth nothing until something has been seen to reach the digest.
+#
+# So this one derives the height from where the key happened to be allocated:
+# nondeterministic across instances, invisible to the golden vectors (which pin
+# the mapping, not the call site), and caught by
+# MemTable.TheSameKeySetBuildsTheSameShape -- two memtables built from the same
+# key set having different shapes.
+#
+# It also closed a gap in the scan. A5-ADDRESS caught pointer-keyed containers
+# and not address ARITHMETIC, though section 6.1 bans "address-ordered anything"
+# and a value derived from an allocation is exactly that. A5-ADDRINT was added
+# in the same change, with its own fixture and its own blind patch, so this
+# defect is now caught twice by two independent instruments -- which is the
+# outcome, not a redundancy: the covering lane here is cpp-test precisely so the
+# digest's teeth are what this patch demonstrates.#
+# The patch keeps CountTrailingZeros in use. The first version replaced the call
+# outright, which left a static function unreferenced, which -Wunused-function
+# -Werror rejects -- so the tree did not compile and the control lane reported
+# BROKEN rather than a kill. Fourth time in this catalogue a control has
+# separated "the lane caught it" from "the patch did not build".
+--- a/engine-cpp/src/memtable/tower.cc	2026-08-24 19:40:09
++++ b/engine-cpp/src/memtable/tower.cc	2026-08-24 19:40:09
+@@ -22,7 +22,9 @@
+ }  // namespace
+ 
+ int TowerHeight(Slice key) {
+-  const int ntz = CountTrailingZeros(Fnv1a64(key));
++  const int ntz = CountTrailingZeros(
++      static_cast<uint64_t>(1)
++      << (reinterpret_cast<uintptr_t>(key.data()) & 63));
+   const int h = 1 + (ntz / 2);
+   return h < kMaxHeight ? h : kMaxHeight;
+ }

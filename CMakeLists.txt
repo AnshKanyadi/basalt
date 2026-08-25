@@ -100,8 +100,11 @@ add_library(rift_engine STATIC
   src/env/env.cc
   src/env/posix/posix_raw.cc
   src/env/posix/posix_env.cc
+  src/memtable/arena.cc
+  src/memtable/tower.cc
+  src/memtable/memtable.cc
 )
-target_include_directories(rift_engine PUBLIC src src/env src/env/posix)
+target_include_directories(rift_engine PUBLIC src src/env src/env/posix src/memtable)
 target_compile_options(rift_engine PRIVATE ${RIFT_CXX_FLAGS})
 
 # Harness-side types. A SEPARATE archive, deliberately: it is what the rig uses
@@ -134,6 +137,8 @@ add_executable(rift_engine_test
   test/posix_raw_test.cc
   test/test_env_test.cc
   test/real_exit_kill_test.cc
+  test/tower_test.cc
+  test/memtable_test.cc
 )
 # rift_rig carries rift_testenv which carries rift_engine, both PUBLIC-ly;
 # naming any of them again makes the linker warn about a duplicate archive.
@@ -147,5 +152,6 @@ add_executable(rift_tsan_harness
   test/tsan_harness_test.cc
 )
 target_link_libraries(rift_tsan_harness PRIVATE rift_engine gtest_main)
+target_include_directories(rift_tsan_harness PRIVATE src/memtable)
 target_compile_options(rift_tsan_harness PRIVATE ${RIFT_CXX_FLAGS})
 target_compile_definitions(rift_tsan_harness PRIVATE ${RIFT_SANITIZER_DEFINE})

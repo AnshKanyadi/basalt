@@ -1,33 +1,53 @@
 # id: LANE-cpp-tsan
-# blinds: nothing -- it removes the lock the harness holds
+# blinds: nothing -- it races a plain counter inside the harness itself
 # covering-lane: cpp-tsan
 # expect: killed
 # control-lane: cpp-test
 # expect-control: alive
 #
-# Proves the cpp-tsan lane is instrumented AND that its harness actually runs
-# threads. "A TSan lane over single-threaded tests is a green lane that proves
-# nothing" (DESIGN-B1 section 6.4), and a TSan lane over no threads is worse.
+# THE LANE CANARY, kept deliberately independent of any engine code.
 #
-# The control works because cpp-test BUILDS the harness and deliberately does
-# not RUN it: the patch compiles, so cpp-tsan's red is the race. Running it
-# under cpp-test would make cpp-test red too and there would be no control.
+# Its first form removed a lock the harness itself held, back when the harness
+# had one and there was no engine. B1.5 replaced that harness with one driving a
+# real MemTable, and the patch rotted -- correctly, and the lane said so.
 #
-# The patch drops the `&mu` capture along with the lock, because -Werror turns
-# an orphaned capture into a build failure. The first version of this patch did
-# not, and its control caught it -- reporting BROKEN rather than a kill, which
-# is the control earning its place on the first mutant it was applied to.
---- a/engine-cpp/test/tsan_harness_test.cc	2026-08-24 16:56:12
-+++ b/engine-cpp/test/tsan_harness_test.cc	2026-08-24 16:56:12
-@@ -35,9 +35,9 @@
+# It is NOT merged into BM14, though BM14 also reddens cpp-tsan. BM14 asks "does
+# the ENGINE still hold its lock"; this asks "can this lane report a race AT
+# ALL". Those degrade independently: a refactor that moved the memtable's
+# locking somewhere BM14's anchor no longer names would take the only
+# demonstration of the lane's liveness with it, and the lane would go on being
+# green for a subject it had stopped watching. Track A lost five checklist steps
+# to exactly that shape.
+#
+# The control works because cpp-test BUILDS the harness and does not RUN it, so
+# the patch is shown to compile and cpp-tsan's red is the race.
+--- a/engine-cpp/test/tsan_harness_test.cc	2026-08-24 19:58:14
++++ b/engine-cpp/test/tsan_harness_test.cc	2026-08-24 19:58:14
+@@ -46,16 +46,18 @@
+   std::printf("  claim: %s\n", kConcurrencyClaim);
+ 
+   MemTable m;
++  long racy = 0;  // LANE: shared, unsynchronized, on purpose
+   std::atomic<uint64_t> next_seq{1};
    std::vector<std::thread> threads;
-   threads.reserve(kThreads);
-   for (int t = 0; t < kThreads; ++t) {
--    threads.emplace_back([&mu, &counter] {
-+    threads.emplace_back([&counter] {
-       for (int i = 0; i < kIncrementsPerThread; ++i) {
--        std::lock_guard<std::mutex> guard(mu);
-+        // LANE-cpp-tsan: the lock is gone, and so is the capture that held it.
-         ++counter;
+   threads.reserve(kWriters + kReaders);
+ 
+   for (int w = 0; w < kWriters; ++w) {
+-    threads.emplace_back([&m, &next_seq, w] {
++    threads.emplace_back([&m, &next_seq, &racy, w] {
+       for (int i = 0; i < kOpsPerThread; ++i) {
+         const std::string k = KeyAt(w * 7919 + i);
+         const std::string v = "v" + std::to_string(i);
+         m.Add(next_seq.fetch_add(1), ValueType::kValue, Slice(k), Slice(v));
++        ++racy;
        }
      });
+   }
+@@ -75,6 +77,7 @@
+   // flaky, which is how a concurrency lane earns a retry loop and stops meaning
+   // anything. TSan is the observer here; the assertion is only that the writers
+   // all landed.
++  EXPECT_GE(racy, 0);
+   EXPECT_EQ(m.Count(), static_cast<std::size_t>(kWriters) * kOpsPerThread);
+ }
+ 

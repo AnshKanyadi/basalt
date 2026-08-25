@@ -1,0 +1,16 @@
+# id: blind-a5-addrint
+# blinds: A5-ADDRINT
+# covering-fixture: engine-cpp/scan-fixtures/a5-addrint.fixture
+# expect: killed
+#
+# Deletes exactly one line of the rule table.
+--- a/scripts/cpp-scan.sh	2026-08-24 19:37:06
++++ b/scripts/cpp-scan.sh	2026-08-24 19:37:06
+@@ -78,7 +78,6 @@
+ rule A5-STREAM  any      '<fstream>|<iostream>|[^A-Za-z_]fopen[[:space:]]*\(' 'the engine does not open files to talk about itself'
+ rule A5-DEFAULT any      '(^|[[:space:]])default[[:space:]]*:' 'a default: arm buys back the exhaustiveness -Werror=switch gives for free'
+ rule A5-ADDRESS any      '(map|set|unordered_map|unordered_set)[[:space:]]*<[[:space:]]*[A-Za-z_][A-Za-z0-9_:[:space:]]*\*' 'a pointer-keyed container; nothing may depend on an address (section 6.1)'
+-rule A5-ADDRINT any      'reinterpret_cast[[:space:]]*<[[:space:]]*(std::)?(uintptr_t|intptr_t|uint64_t|int64_t|size_t|unsigned long)' 'address arithmetic; section 6.1 bans address-ORDERED behaviour as well as pointer-keyed containers, and a value derived from an allocation is both'
+ rule A5-SYSCALL nonposix '::[[:space:]]*(open|write|read|pread|pwrite|fsync|fdatasync|rename|unlink|mkdir|rmdir|stat|lstat|fcntl|close|_exit|opendir|readdir|closedir|ftruncate|lseek)[[:space:]]*\(' 'a syscall outside env/posix/; every syscall goes through Env for the reason every clock read goes through Clock'
+ # RIFT-SCAN-RULES-END
+ 

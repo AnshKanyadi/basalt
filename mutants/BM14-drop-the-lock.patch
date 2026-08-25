@@ -1,0 +1,34 @@
+# id: BM14-drop-the-lock
+# blinds: the DB mutex on the write path
+# covering-lane: cpp-tsan
+# expect: killed
+# control-lane: cpp-test
+# expect-control: alive
+#
+# The catalogue's BM14. This is what proves the cpp-tsan lane is not decoration:
+# a TSan lane over single-threaded tests is a green lane that proves nothing,
+# and until this patch has been seen to redden it, green there is
+# indistinguishable from a lane with no threads in it.
+#
+# The control is cpp-test, which BUILDS the harness and deliberately does not
+# RUN it, so the patch is shown to compile and the red under TSan is the race
+# rather than a broken build. Running the harness under cpp-test would redden it
+# too -- an unlocked skiplist corrupts under four threads often enough -- and
+# there would be no control.
+#
+# B1-D6c is why this matters more than a normal lock bug. The ruling chose a
+# mutex over a lock-free skiplist precisely because the lock-free failure mode
+# is "a bug that appears on one machine, at one core count, one run in ten
+# thousand, and does not replay". Removing the mutex reintroduces exactly that
+# failure mode, and TSan is the only instrument in this project that sees it.
+--- a/engine-cpp/src/memtable/memtable.cc	2026-08-24 19:37:57
++++ b/engine-cpp/src/memtable/memtable.cc	2026-08-24 19:37:57
+@@ -101,7 +101,7 @@
+   const uint32_t ikey_len = static_cast<uint32_t>(user_key.size() + 8);
+   const std::size_t bytes = 4 + ikey_len + 4 + value.size();
+ 
+-  std::lock_guard<std::mutex> guard(mu_);
++  // BM14: the write path no longer takes the lock
+ 
+   if (head_ == nullptr) {
+     // The head has no entry and full height; nothing ever compares against it.

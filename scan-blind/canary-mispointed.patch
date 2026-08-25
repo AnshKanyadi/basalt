@@ -14,8 +14,8 @@
 # nothing. `make blind` on the Go side carries the same canary for the same
 # reason, and it was added there after a lane reported seven kills while one of
 # the tests doing the killing was failing for its own reasons.
---- a/scripts/cpp-scan.sh	2026-08-24 18:53:05
-+++ b/scripts/cpp-scan.sh	2026-08-24 18:53:05
+--- a/scripts/cpp-scan.sh	2026-08-24 19:37:06
++++ b/scripts/cpp-scan.sh	2026-08-24 19:37:06
 @@ -74,7 +74,6 @@
  rule A5-RANDOM  any      '<random>|[^A-Za-z_](rand|srand|random|arc4random|mt19937)[[:space:]]*\(' 'randomness in engine scope; the simulator owns the only stream'
  rule A5-CLOCK   any      '<chrono>|[^A-Za-z_](time|clock|gettimeofday|clock_gettime)[[:space:]]*\(|steady_clock|system_clock' 'a wall-clock read; the C++ analogue of clock/real.go has ZERO hatched calls'

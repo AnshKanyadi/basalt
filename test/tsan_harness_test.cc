@@ -1,49 +1,82 @@
 // The cpp-tsan lane's harness.
 //
-// THIS MAKES NO CLAIM ABOUT ANY ENGINE CODE, because at B1.1 there is none.
-// Its only claim is that the lane is instrumented and actually runs threads:
-// "a TSan lane over single-threaded tests is a green lane that proves nothing"
-// (DESIGN-B1 section 6.4), and a TSan lane over no threads at all is worse.
+// TSan is required regardless of the lock, because a locked structure with a
+// WRONG lock is still a race. And "a TSan lane over single-threaded tests is a
+// green lane that proves nothing" (DESIGN-B1 section 6.4) -- so this lane runs
+// this harness and not the ordinary unit suite.
 //
-// The engine's real concurrency harness -- Apply/Get on one thread against
-// Sync on another -- lands at B1.5 with the memtable, together with
-// kConcurrencyClaim, the single sanctioned wording of what such a lane
-// establishes. No wording of that kind is landed here, deliberately: there is
-// nothing yet for it to be about, and a claim that outruns its subject is the
-// thing kConcurrencyClaim exists to prevent.
+// WHAT IT ESTABLISHES IS EXACTLY kConcurrencyClaim AND NOTHING WIDER. One
+// authored interleaving pattern. Not a search. TSan reports the races it
+// observes, not the ones that exist. The sentence lives in one constant, is
+// printed below, and is pinned by a test, so strengthening it requires failing
+// that test -- and the rule is that the harness must be strengthened in the
+// same diff that strengthens the claim.
+//
+// BM14 removes the lock from the write path and this harness must report a
+// race. That is what proves the lane is not decoration; without it, green here
+// is indistinguishable from a lane that is not instrumented at all, which is
+// why sanitizer_lane_test.cc separately asserts at COMPILE TIME that TSan is
+// on. Two independent checks, because one of them can be defeated by an edit
+// and the other cannot.
 #include <atomic>
-#include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
 
+#include "concurrency_claim.h"
+#include "memtable.h"
+#include "slice.h"
+
+namespace rift {
 namespace {
 
-constexpr int kThreads = 4;
-constexpr int kIncrementsPerThread = 20000;
+constexpr int kWriters = 2;
+constexpr int kReaders = 2;
+constexpr int kOpsPerThread = 4000;
 
-// Under a lock, so TSan must report nothing. The canary patch that removes the
-// lock is what proves TSan would report something if there were something to
-// report -- without it, this test's green is indistinguishable from a lane that
-// is not instrumented at all, which is why the static_assert in
-// sanitizer_lane_test.cc exists as well. Two independent checks, because one of
-// them can be defeated by an edit and the other cannot.
-TEST(TSanLane, IsInstrumentedAndActuallyRunsThreads) {
-  std::mutex mu;
-  long counter = 0;
+std::string KeyAt(int i) { return "key" + std::to_string(i % 512); }
+
+// Concurrent Add against concurrent Get, which is the shape the frozen
+// interface forces: Apply runs on the node loop while a separate thread owns
+// the blocking Sync, so the engine IS called from two threads and must be
+// internally synchronized. B1-D6c ruled that synchronization is a mutex.
+TEST(TSanLane, ConcurrentAddAndGetAreRaceFreeAcrossThisInterleaving) {
+  std::printf("  claim: %s\n", kConcurrencyClaim);
+
+  MemTable m;
+  std::atomic<uint64_t> next_seq{1};
   std::vector<std::thread> threads;
-  threads.reserve(kThreads);
-  for (int t = 0; t < kThreads; ++t) {
-    threads.emplace_back([&mu, &counter] {
-      for (int i = 0; i < kIncrementsPerThread; ++i) {
-        std::lock_guard<std::mutex> guard(mu);
-        ++counter;
+  threads.reserve(kWriters + kReaders);
+
+  for (int w = 0; w < kWriters; ++w) {
+    threads.emplace_back([&m, &next_seq, w] {
+      for (int i = 0; i < kOpsPerThread; ++i) {
+        const std::string k = KeyAt(w * 7919 + i);
+        const std::string v = "v" + std::to_string(i);
+        m.Add(next_seq.fetch_add(1), ValueType::kValue, Slice(k), Slice(v));
       }
     });
   }
-  for (std::thread& th : threads) th.join();
-  EXPECT_EQ(counter, static_cast<long>(kThreads) * kIncrementsPerThread);
+  for (int r = 0; r < kReaders; ++r) {
+    threads.emplace_back([&m, &next_seq, r] {
+      std::string value;
+      for (int i = 0; i < kOpsPerThread; ++i) {
+        const std::string k = KeyAt(r * 104729 + i);
+        (void)m.Get(Slice(k), next_seq.load(), &value);
+      }
+    });
+  }
+  for (std::thread& t : threads) t.join();
+
+  // The count is the only thing asserted, and deliberately so: WHAT the readers
+  // saw depends on the interleaving and asserting it would make this test
+  // flaky, which is how a concurrency lane earns a retry loop and stops meaning
+  // anything. TSan is the observer here; the assertion is only that the writers
+  // all landed.
+  EXPECT_EQ(m.Count(), static_cast<std::size_t>(kWriters) * kOpsPerThread);
 }
 
 }  // namespace
+}  // namespace rift
