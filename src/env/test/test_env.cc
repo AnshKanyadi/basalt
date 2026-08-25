@@ -21,6 +21,7 @@ const char* InjectionName(Injection injection) {
     case Injection::kSectorSubsetTornSync: return "sector-subset-torn-sync";
     case Injection::kTornFlush: return "torn-flush";
     case Injection::kKill:      return "kill";
+    case Injection::kKillAfterEffect: return "kill-after-effect";
   }
   RIFT_UNREACHABLE("Injection holds a value no enumerator names");
 }
@@ -52,6 +53,7 @@ bool SuspendsExactness(Injection injection) {
     case Injection::kTornSync:
     case Injection::kTornFlush:
     case Injection::kKill:
+    case Injection::kKillAfterEffect:
       return false;
   }
   RIFT_UNREACHABLE("Injection holds a value no enumerator names");
@@ -165,6 +167,11 @@ class TestEnvironment::Impl {
       case Injection::kKill:
         d.kill = true;
         break;
+      case Injection::kKillAfterEffect:
+        // The implementation RUNS. The kill happens in End(), after the effect
+        // has landed and before its Status reaches the caller.
+        pending_after_kill_ = true;
+        break;
     }
 
     LedgerEntry e;
@@ -190,6 +197,15 @@ class TestEnvironment::Impl {
     ledger_.back().promoted = promoted;
     ledger_.back().durable_bytes_after = durable_bytes;
     RIFT_CHECK(ledger_.back().path == path);
+  }
+
+  // The second half of an Env call. Consumes no ordinal.
+  Status End(Status s) {
+    if (!pending_after_kill_) return s;
+    pending_after_kill_ = false;
+    DoKill();
+    // The effect is durable and the caller is told nothing but that it died.
+    return Status::Killed("killed after the effect landed");
   }
 
   bool TakeSuppressPromotion() {
@@ -378,6 +394,7 @@ class TestEnvironment::Impl {
   int post_kill_calls_ = 0;
   TestEnvironment::PromotionHook hook_ = nullptr;
   void* hook_ctx_ = nullptr;
+  bool pending_after_kill_ = false;
   bool suppress_next_promotion_ = false;
   bool exactness_suspended_ = false;
   ExactnessSuspendingInjector suspending_ = ExactnessSuspendingInjector::kLyingSync;
@@ -394,6 +411,7 @@ class TestController final : public FaultController {
     last_ = impl_->Begin(site, handle);
     return last_.status;
   }
+  Status AfterEffect(CallSite, HandleId, Status s) override { return impl_->End(s); }
   const TestEnvironment::Impl::Decision& last() const { return last_; }
 
  private:

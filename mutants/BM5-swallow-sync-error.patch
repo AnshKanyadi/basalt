@@ -1,0 +1,26 @@
+# id: BM5-swallow-sync-error
+# blinds: an fsync error preventing the watermark from advancing
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The catalogue's BM5. fsync reports EIO and the engine advances the watermark
+# anyway -- so a device that refused to write is indistinguishable from one that
+# wrote.
+#
+# It is BM1's shape arriving through a different door: BM1 advances the
+# watermark too EARLY, this advances it after an operation that did not happen.
+# Both fail assertion (ii) and neither fails anything else, which is why (ii) is
+# checked structurally rather than only when a state comparison succeeds.
+--- a/engine-cpp/src/wal/wal.cc	2026-08-25 00:05:23
++++ b/engine-cpp/src/wal/wal.cc	2026-08-25 00:05:23
+@@ -144,7 +144,7 @@
+   s = file_->Flush();
+   if (!s.ok()) return s;
+   s = file_->Sync();
+-  if (!s.ok()) return s;
++  (void)s;  // BM5: an fsync error is treated as success
+ 
+   // AND ONLY NOW. The watermark advances when, and only when, the Sync covering
+   // this group's GROUP_END has returned success.

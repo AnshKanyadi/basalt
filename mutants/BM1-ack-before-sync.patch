@@ -1,0 +1,29 @@
+# id: BM1-ack-before-sync
+# blinds: the watermark advancing only after Sync returns
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The catalogue's BM1, and ASSERTION (ii) IS THE ASSERTION THE WHOLE RIG EXISTS
+# FOR. The watermark advances before the Append and before the fsync, so the
+# engine reports data durable that is still only in a buffer.
+#
+# Nothing about the happy path changes: with no kill, every byte reaches the
+# disk moments later and every test that only writes and reads passes. The
+# defect is visible only at a kill, and only to an oracle that HOLDS THE ENGINE
+# TO WHAT IT SAID rather than asking it what it thinks it holds.
+--- a/engine-cpp/src/wal/wal.cc	2026-08-25 00:05:23
++++ b/engine-cpp/src/wal/wal.cc	2026-08-25 00:05:23
+@@ -130,6 +130,11 @@
+     buffered_bytes_ = 0;
+     high = high_seq_;
+   }
++  // BM1: the watermark advances before any of this happens.
++  {
++    wal::DbLock early(mu_);
++    durable_ = high;
++  }
+   // MUTEX RELEASED. Everything below makes Env calls, and every one of them
+   // would trip the guard if the lock were still held.
+ 

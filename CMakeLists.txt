@@ -133,6 +133,7 @@ add_library(rift_rig STATIC
   rig/durable_mirror.cc
   rig/cap_adjudication.cc
   rig/regime.cc
+  rig/exactness_oracle.cc
 )
 target_include_directories(rift_rig PUBLIC rig src src/env src/env/test src/wal)
 target_link_libraries(rift_rig PUBLIC rift_testenv)
@@ -155,6 +156,7 @@ add_executable(rift_engine_test
   test/rig_caps_test.cc
   test/recovery_test.cc
   test/db_test.cc
+  test/oracle_test.cc
 )
 # rift_rig carries rift_testenv which carries rift_engine, both PUBLIC-ly;
 # naming any of them again makes the linker warn about a duplicate archive.

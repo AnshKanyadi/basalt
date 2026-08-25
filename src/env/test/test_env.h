@@ -83,6 +83,16 @@ enum class Injection : uint8_t {
   kSectorSubsetTornSync,
   kTornFlush,     // a kill INSIDE Flush: a prefix of the flushed extent lands
   kKill,          // the plain kill point
+  // The call SUCCEEDS -- the effect lands, durably -- and the process dies
+  // before the answer reaches the caller.
+  //
+  // This is section 7.4's second element and it cannot be expressed by an
+  // injector that runs before the effect. "A Sync can complete on the device
+  // with the kill preempting its return: the bytes are durable, the caller
+  // never learned it." Recovery then lands on G_k while the harness's own
+  // record shows only G_{k-1} promised, which is the direction that makes the
+  // recovery set a SET rather than a value.
+  kKillAfterEffect,
 };
 const char* InjectionName(Injection injection);
 

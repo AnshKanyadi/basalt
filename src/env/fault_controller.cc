@@ -8,6 +8,7 @@ namespace {
 class NoFaults final : public FaultController {
  public:
   Status Intercept(CallSite, HandleId) override { return Status::Ok(); }
+  Status AfterEffect(CallSite, HandleId, Status s) override { return s; }
 };
 }  // namespace
 

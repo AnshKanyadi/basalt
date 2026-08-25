@@ -39,6 +39,25 @@ class FaultController {
   // that created the handle, so the same workload produces the same ids on
   // every run and on every machine.
   virtual Status Intercept(CallSite site, HandleId handle) = 0;
+
+  // Called AFTER the implementation ran and BEFORE its Status reaches the
+  // caller. Returns the Status the caller will see.
+  //
+  // WHY THE CHOKE POINT HAS TWO HALVES. Section 7.4: "A Sync can complete on
+  // the device with the kill preempting its return: the bytes are durable, the
+  // caller never learned it. No design removes that -- it is 'did the RPC
+  // commit?', one layer down." That case is one of the TWO ELEMENTS of the
+  // recovery set, and section 7.4 condition 3 requires each element to be
+  // individually induced, because a two-element set where only one element has
+  // ever been observed is a one-element contract with a spare excuse attached.
+  //
+  // Intercept alone cannot express it: it runs before the effect, so it can
+  // suppress a Sync or tear it, but it cannot let one SUCCEED and then take the
+  // process before the answer gets home. This hook can.
+  //
+  // It consumes NO ordinal and is not a kill point of its own. It is the second
+  // half of one Env call, not a second call.
+  virtual Status AfterEffect(CallSite site, HandleId handle, Status s) = 0;
 };
 
 // The controller that injects nothing. PosixEnv uses it; TestEnv (B1.3) does

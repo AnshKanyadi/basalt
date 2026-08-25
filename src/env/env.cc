@@ -28,6 +28,12 @@ namespace {
 // EVERY Env call enters here, because every public wrapper is non-virtual and
 // lives in this file. Section 8.3's two assertions therefore cannot be bypassed
 // for the same reason the fault controller cannot.
+// The second half of the same choke point. It consumes no ordinal: one Env call
+// enters once and leaves once.
+Status Leave(FaultController* faults, CallSite site, HandleId id, Status s) {
+  return faults->AfterEffect(site, id, s);
+}
+
 Status Enter(FaultController* faults, CallSite site, HandleId id) {
   NoteEnvCall();
   if (MutexDepthOnThisThread() != 0) {
@@ -49,19 +55,19 @@ WritableFile::~WritableFile() = default;
 Status WritableFile::Append(Slice data) {
   Status s = Enter(faults_, CallSite::kWritableFileAppend, id_);
   if (!s.ok()) return s;
-  return DoAppend(data);
+  return Leave(faults_, CallSite::kWritableFileAppend, id_, DoAppend(data));
 }
 
 Status WritableFile::Flush() {
   Status s = Enter(faults_, CallSite::kWritableFileFlush, id_);
   if (!s.ok()) return s;
-  return DoFlush();
+  return Leave(faults_, CallSite::kWritableFileFlush, id_, DoFlush());
 }
 
 Status WritableFile::Sync() {
   Status s = Enter(faults_, CallSite::kWritableFileSync, id_);
   if (!s.ok()) return s;
-  return DoSync();
+  return Leave(faults_, CallSite::kWritableFileSync, id_, DoSync());
 }
 
 Status WritableFile::Close() {
@@ -76,7 +82,7 @@ Status WritableFile::Close() {
   // EIO for writeback that failed after the last Sync, which is the last
   // moment anyone can learn that the data is gone (mutant BM7).
   closed_ = true;
-  return DoClose();
+  return Leave(faults_, CallSite::kWritableFileClose, id_, DoClose());
 }
 
 SequentialFile::SequentialFile(FaultController* faults, HandleId id) : faults_(faults), id_(id) {}
@@ -85,7 +91,7 @@ SequentialFile::~SequentialFile() = default;
 Status SequentialFile::Read(std::size_t n, Slice* result, char* scratch) {
   Status s = Enter(faults_, CallSite::kSequentialFileRead, id_);
   if (!s.ok()) return s;
-  return DoRead(n, result, scratch);
+  return Leave(faults_, CallSite::kSequentialFileRead, id_, DoRead(n, result, scratch));
 }
 
 Status SequentialFile::Close() {
@@ -93,7 +99,7 @@ Status SequentialFile::Close() {
   Status s = Enter(faults_, CallSite::kSequentialFileClose, id_);
   if (!s.ok()) return s;
   closed_ = true;
-  return DoClose();
+  return Leave(faults_, CallSite::kSequentialFileClose, id_, DoClose());
 }
 
 RandomAccessFile::RandomAccessFile(FaultController* faults, HandleId id) : faults_(faults), id_(id) {}
@@ -102,7 +108,7 @@ RandomAccessFile::~RandomAccessFile() = default;
 Status RandomAccessFile::Read(uint64_t offset, std::size_t n, Slice* result, char* scratch) {
   Status s = Enter(faults_, CallSite::kRandomAccessFileRead, id_);
   if (!s.ok()) return s;
-  return DoRead(offset, n, result, scratch);
+  return Leave(faults_, CallSite::kRandomAccessFileRead, id_, DoRead(offset, n, result, scratch));
 }
 
 Status RandomAccessFile::Close() {
@@ -110,7 +116,7 @@ Status RandomAccessFile::Close() {
   Status s = Enter(faults_, CallSite::kRandomAccessFileClose, id_);
   if (!s.ok()) return s;
   closed_ = true;
-  return DoClose();
+  return Leave(faults_, CallSite::kRandomAccessFileClose, id_, DoClose());
 }
 
 Directory::Directory(FaultController* faults, HandleId id) : faults_(faults), id_(id) {}
@@ -123,7 +129,7 @@ Status Directory::Sync() {
   // loss into a failed open instead of silence.
   Status s = Enter(faults_, CallSite::kDirectorySync, id_);
   if (!s.ok()) return s;
-  return DoSync();
+  return Leave(faults_, CallSite::kDirectorySync, id_, DoSync());
 }
 
 Status Directory::Close() {
@@ -131,7 +137,7 @@ Status Directory::Close() {
   Status s = Enter(faults_, CallSite::kDirectoryClose, id_);
   if (!s.ok()) return s;
   closed_ = true;
-  return DoClose();
+  return Leave(faults_, CallSite::kDirectoryClose, id_, DoClose());
 }
 
 Env::Env(FaultController* faults, HandleId id) : faults_(faults), id_(id) {}
@@ -148,73 +154,73 @@ Env::~Env() = default;
 Status Env::NewWritableFile(const std::string& path, WritableFilePtr* out) {
   Status s = Enter(faults_, CallSite::kEnvNewWritableFile, id_);
   if (!s.ok()) return s;
-  return DoNewWritableFile(path, out);
+  return Leave(faults_, CallSite::kEnvNewWritableFile, id_, DoNewWritableFile(path, out));
 }
 
 Status Env::NewSequentialFile(const std::string& path, SequentialFilePtr* out) {
   Status s = Enter(faults_, CallSite::kEnvNewSequentialFile, id_);
   if (!s.ok()) return s;
-  return DoNewSequentialFile(path, out);
+  return Leave(faults_, CallSite::kEnvNewSequentialFile, id_, DoNewSequentialFile(path, out));
 }
 
 Status Env::NewRandomAccessFile(const std::string& path, RandomAccessFilePtr* out) {
   Status s = Enter(faults_, CallSite::kEnvNewRandomAccessFile, id_);
   if (!s.ok()) return s;
-  return DoNewRandomAccessFile(path, out);
+  return Leave(faults_, CallSite::kEnvNewRandomAccessFile, id_, DoNewRandomAccessFile(path, out));
 }
 
 Status Env::NewDirectory(const std::string& path, DirectoryPtr* out) {
   Status s = Enter(faults_, CallSite::kEnvNewDirectory, id_);
   if (!s.ok()) return s;
-  return DoNewDirectory(path, out);
+  return Leave(faults_, CallSite::kEnvNewDirectory, id_, DoNewDirectory(path, out));
 }
 
 Status Env::GetChildren(const std::string& dir, std::vector<std::string>* out) {
   Status s = Enter(faults_, CallSite::kEnvGetChildren, id_);
   if (!s.ok()) return s;
-  return DoGetChildren(dir, out);
+  return Leave(faults_, CallSite::kEnvGetChildren, id_, DoGetChildren(dir, out));
 }
 
 Status Env::GetFileSize(const std::string& path, uint64_t* out) {
   Status s = Enter(faults_, CallSite::kEnvGetFileSize, id_);
   if (!s.ok()) return s;
-  return DoGetFileSize(path, out);
+  return Leave(faults_, CallSite::kEnvGetFileSize, id_, DoGetFileSize(path, out));
 }
 
 Status Env::FileExists(const std::string& path, bool* out) {
   Status s = Enter(faults_, CallSite::kEnvFileExists, id_);
   if (!s.ok()) return s;
-  return DoFileExists(path, out);
+  return Leave(faults_, CallSite::kEnvFileExists, id_, DoFileExists(path, out));
 }
 
 Status Env::DeleteFile(const std::string& path) {
   Status s = Enter(faults_, CallSite::kEnvDeleteFile, id_);
   if (!s.ok()) return s;
-  return DoDeleteFile(path);
+  return Leave(faults_, CallSite::kEnvDeleteFile, id_, DoDeleteFile(path));
 }
 
 Status Env::RenameFile(const std::string& from, const std::string& to) {
   Status s = Enter(faults_, CallSite::kEnvRenameFile, id_);
   if (!s.ok()) return s;
-  return DoRenameFile(from, to);
+  return Leave(faults_, CallSite::kEnvRenameFile, id_, DoRenameFile(from, to));
 }
 
 Status Env::CreateDir(const std::string& path) {
   Status s = Enter(faults_, CallSite::kEnvCreateDir, id_);
   if (!s.ok()) return s;
-  return DoCreateDir(path);
+  return Leave(faults_, CallSite::kEnvCreateDir, id_, DoCreateDir(path));
 }
 
 Status Env::LockFile(const std::string& path, FileLockPtr* out) {
   Status s = Enter(faults_, CallSite::kEnvLockFile, id_);
   if (!s.ok()) return s;
-  return DoLockFile(path, out);
+  return Leave(faults_, CallSite::kEnvLockFile, id_, DoLockFile(path, out));
 }
 
 Status Env::UnlockFile(FileLockPtr lock) {
   Status s = Enter(faults_, CallSite::kEnvUnlockFile, id_);
   if (!s.ok()) return s;
-  return DoUnlockFile(std::move(lock));
+  return Leave(faults_, CallSite::kEnvUnlockFile, id_, DoUnlockFile(std::move(lock)));
 }
 
 }  // namespace rift

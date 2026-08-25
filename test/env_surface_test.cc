@@ -59,6 +59,7 @@ class RecordingController : public FaultController {
     if (fail_) return Status::Killed("injected");
     return Status::Ok();
   }
+  Status AfterEffect(CallSite, HandleId, Status s) override { return s; }
   void FailEverything() { fail_ = true; }
 
  private:
