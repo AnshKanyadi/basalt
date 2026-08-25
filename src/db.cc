@@ -265,9 +265,28 @@ class IterImpl final : public Iterator {
     return false;
   }
 
+  // THE TWO LOOPS BELOW TERMINATE BECAUSE THE CURSOR STRICTLY MOVES, and that
+  // rests entirely on the comparator being the order it claims to be. The
+  // invariant is now ASSERTED rather than commented.
+  //
+  // BM35 inverts the tag half of the internal key order, and under it this loop
+  // never advances: it HUNG A MUTANT LANE FOR ELEVEN HOURS, spinning at 99% of
+  // a core, because a hang is not a failure and nothing was watching for one.
+  // The lane learned a timeout from that (HARNESS-013); this is the other half.
+  //
+  // A HANG IS STRICTLY WORSE THAN AN ABORT, in a lane and in production both: an
+  // abort names its cause at the point of the mistake, and a hang is
+  // indistinguishable from work. The user key is compared bytewise, which is a
+  // property of the merged order that does NOT depend on the tag comparator --
+  // so this assertion can catch the comparator being wrong.
   bool AdvanceToVisible() {
+    std::string previous_key;
+    bool have_previous = false;
     while (it_.Valid()) {
       const std::string k = it_.user_key().ToString();
+      RIFT_CHECK(!have_previous || k > previous_key);
+      previous_key = k;
+      have_previous = true;
       if (o_.upper.bounded() && Slice(k).compare(o_.upper.key()) >= 0) break;
       if (SettleOnCurrentKey(k)) {
         if ((it_.tag() & 0xff) != 0) {  // a live value, not a deletion
@@ -285,8 +304,13 @@ class IterImpl final : public Iterator {
   }
 
   bool RetreatToVisible() {
+    std::string previous_key;
+    bool have_previous = false;
     while (it_.Valid()) {
       const std::string k = it_.user_key().ToString();
+      RIFT_CHECK(!have_previous || k < previous_key);
+      previous_key = k;
+      have_previous = true;
       if (o_.lower.bounded() && Slice(k).compare(o_.lower.key()) < 0) break;
       const bool above_upper =
           o_.upper.bounded() && Slice(k).compare(o_.upper.key()) >= 0;

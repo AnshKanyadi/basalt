@@ -7,23 +7,32 @@
 #
 # The catalogue's BM23, and the mutation is a SUMMARIZER'S EDIT rather than a
 # programmer's: nothing about the harness changed, only the sentence describing
-# it. The lane still drives one authored interleaving; TSan still reports the
-# races it observes rather than the ones that exist.
+# it. The lane still drives authored interleavings; TSan still reports the races
+# it observes rather than the ones that exist.
 #
 # Ruled: do not let a future summarizer upgrade this to "race-free". So the
 # claim lives in one constant and is pinned by a test, which means strengthening
 # the sentence requires failing a test -- and the standing rule is that the
 # harness must be strengthened in the SAME DIFF that strengthens the claim. A
 # systematic interleaving search would earn a stronger sentence. This does not.
---- a/engine-cpp/src/concurrency_claim.h	2026-08-24 19:37:57
-+++ b/engine-cpp/src/concurrency_claim.h	2026-08-24 19:37:57
-@@ -26,8 +26,7 @@
+#
+# REGENERATED AT B2, AND THE ROT IS THE RULE WORKING. B2 widened the sentence to
+# two authored patterns because it widened the harness to two -- a writer against
+# a Sync that flushes, which is the first operation this engine has that replaces
+# the WAL and the memtable underneath a concurrent writer. The patch rotted
+# because the constant moved, in exactly the diff the rule says is the only one
+# allowed to move it. A mutant that did NOT rot here would have meant the
+# sentence had been widened without the harness.
+--- a/engine-cpp/src/concurrency_claim.h	2026-08-25 15:40:05
++++ b/engine-cpp/src/concurrency_claim.h	2026-08-25 15:40:05
+@@ -29,9 +29,7 @@
  namespace rift {
  
  inline constexpr char kConcurrencyClaim[] =
--    "TSan observed no data race across one authored interleaving pattern "
--    "(concurrent MemTable Add and Get); this is not a proof of race-freedom.";
-+    "TSan verified the MemTable is race-free.";
+-    "TSan observed no data race across two authored interleaving patterns "
+-    "(concurrent MemTable Add and Get; concurrent DB Write and Sync across "
+-    "a flush); this is not a proof of race-freedom.";
++    "TSan verified the engine is race-free.";
  
  }  // namespace rift
  
