@@ -31,7 +31,7 @@ enum class RunOutcome : uint8_t {
 // and the recovery contract was therefore NOT under test. Counting such a run
 // as evidence is not a rounding error; it is citing a run that did not check
 // the thing being claimed.
-bool CountsAsRecoveryEvidence(RunOutcome outcome);
+bool CountsAsRecoveryEvidence(RunOutcome outcome);  // RIFT_EVIDENCE_DECIDER
 
 // THE MECHANICAL LINK between an enabled exactness-suspending injector and the
 // outcome it forces (DESIGN-B1 section 7.5).
@@ -43,7 +43,7 @@ bool CountsAsRecoveryEvidence(RunOutcome outcome);
 // function the suppression would be a thing somebody remembers to do, and the
 // run it would be forgotten on is the one where assertion (ii) was suspended
 // and the recovery contract was therefore not under test at all.
-RunOutcome OutcomeFloor(bool exactness_suspended);
+RunOutcome OutcomeFloor(bool exactness_suspended);  // RIFT_EVIDENCE_DECIDER
 
 // Total over RunOutcome. Same closed-switch discipline as CodeName.
 const char* RunOutcomeName(RunOutcome outcome);

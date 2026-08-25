@@ -1,0 +1,27 @@
+# id: DECIDER-unregistered
+# blinds: the enumeration of evidentiary deciders
+# covering-lane: cpp-scan
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# THE SEVENTH ARRIVING UNASSERTED, which is exactly what enumerating the six was
+# for. HARNESS-006, -008 and -009 were one defect in three functions -- a
+# conservative misclassification, the direction nothing notices -- and the
+# response was a named category rather than three fixes.
+#
+# This lands a new member with a marker and no registry entry, so no test names
+# either of its directions. Without the lane it would sit there deciding what
+# counts as evidence with nobody having asked which way it decides.
+--- a/engine-cpp/rig/run_outcome.h	2026-08-24 23:41:28
++++ b/engine-cpp/rig/run_outcome.h	2026-08-24 23:41:28
+@@ -48,6 +48,9 @@
+ // Total over RunOutcome. Same closed-switch discipline as CodeName.
+ const char* RunOutcomeName(RunOutcome outcome);
+ 
++// DECIDER: a seventh evidentiary decider, landed without a registry entry.
++bool CountsAsSoakEvidence(RunOutcome outcome);  // RIFT_EVIDENCE_DECIDER
++
+ // The ledger heading a run of this kind is reported under. Two of them say
+ // "(not evidence)" in the heading itself, which cannot be misread by someone
+ // skimming a table -- Amendment A4's shape, one language over.

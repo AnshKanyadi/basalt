@@ -58,7 +58,7 @@ struct Tally {
 // AGGREGATION IS KEYED ON REGIME. Returns false -- and fills nothing -- if the
 // rows span more than one regime. A summarizer that combined them would be
 // producing a number about no regime at all.
-bool AggregateRuns(const std::vector<RunRecord>& rows, Tally* out);
+bool AggregateRuns(const std::vector<RunRecord>& rows, Tally* out);  // RIFT_EVIDENCE_DECIDER
 
 }  // namespace rig
 }  // namespace rift

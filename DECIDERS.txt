@@ -1,0 +1,44 @@
+# Functions that decide EVIDENTIARY STATUS, and the tests asserting both of
+# their directions.
+#
+# WHY THIS FILE EXISTS. HARNESS-006 was not an incident, it was a class. Six
+# functions in Track B decide whether a run counts as evidence; three of them had
+# an untested direction and two of those were reachable defects. All three were
+# CONSERVATIVE -- suspend too much, bank too little -- which is exactly the
+# direction nothing notices: the engine stays correct, every assertion holds,
+# every lane stays green, and the only symptom is a number that never appears.
+# The cost lands one or two steps downstream as a gate nothing can satisfy, and
+# there it looks like a bug in the engine rather than in the classifier.
+#
+# THE RULE, and it is a lane and not a habit:
+#
+#   A decider of evidentiary status is a NAMED CATEGORY. Every member is
+#   asserted in BOTH directions. A member that lands without both assertions
+#   fails cpp-scan.
+#
+# Six is small enough to enumerate, and enumerating it is what stops the seventh
+# arriving in B2 and this audit being re-run by hand.
+#
+# THE RESIDUAL, stated rather than implied: a new decider that lands WITHOUT the
+# RIFT_EVIDENCE_DECIDER marker on its declaration is invisible to this lane, the
+# same way section 3.2.1's bypass is invisible until the count assertion catches
+# it. What covers it is the same thing: the blind patch set, which fails this
+# rule's own mutation test if it stops checking. The claim is "adding an
+# unasserted decider requires defeating two checks in one diff", not "is
+# impossible".
+#
+# Format, pipe-separated:
+#
+#   <function> | <test asserting the TRUE/suspending/positive direction>
+#              | <test asserting the FALSE/bankable/negative direction>
+#
+# The two tests may be the same one if it asserts both, which is the common and
+# preferable case: a single test that reads "these count and those do not" is
+# harder to half-delete than two that can drift apart.
+
+SuspendsExactness       | TestEnvRegistry.EveryInjectorIsClassifiedAndOnlyRegistryMembersSuspend | TestEnvRegistry.EveryInjectorIsClassifiedAndOnlyRegistryMembersSuspend
+CountsAsRecoveryEvidence | RunOutcome.ExactlyOneKindCountsAsRecoveryEvidence | RunOutcome.ViolationInconclusiveAndVoidAreNotEvidence
+OutcomeFloor            | RunOutcome.TheFloorSuspendsOnlyWhenSomethingSuspendedIt | RunOutcome.TheFloorSuspendsOnlyWhenSomethingSuspendedIt
+IsDivergence            | CapAdjudication.BothDivergencesFailTheRunAndNeitherVoidsIt | CapAdjudication.BothDivergencesFailTheRunAndNeitherVoidsIt
+OutcomeForCapVerdict    | CapAdjudication.BothDivergencesFailTheRunAndNeitherVoidsIt | CapAdjudication.BothDivergencesFailTheRunAndNeitherVoidsIt
+AggregateRuns           | Regime.RunsOfOneRegimeAggregate | Regime.RunsOfDifferentRegimesRefuseToAggregate

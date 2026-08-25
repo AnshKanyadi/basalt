@@ -64,7 +64,7 @@ const char* CapVerdictName(CapVerdict v);
 // True only for the two divergences. Both directions fail the run; neither
 // voids it, because a void is a legitimate engine error and a divergence is a
 // bug.
-bool IsDivergence(CapVerdict v);
+bool IsDivergence(CapVerdict v);  // RIFT_EVIDENCE_DECIDER
 
 // `engine_reported` is whether the engine returned the cap's error code. It is
 // the only engine input, and it is held to the harness's own computation rather
@@ -73,7 +73,7 @@ CapVerdict AdjudicateCap(uint64_t harness_bytes, uint64_t cap, bool engine_repor
 
 // The outcome a verdict forces. A divergence is a contract violation; a void is
 // its own kind and is never banked.
-RunOutcome OutcomeForCapVerdict(CapVerdict v);
+RunOutcome OutcomeForCapVerdict(CapVerdict v);  // RIFT_EVIDENCE_DECIDER
 
 }  // namespace rig
 }  // namespace rift

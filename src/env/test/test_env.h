@@ -104,7 +104,7 @@ enum class ExactnessSuspendingInjector : uint8_t {
 // run's outcome at the POINT OF ENABLING, not at the point of reporting, so a
 // run cannot be enabled into characterization mode and then summarized as
 // something else.
-bool SuspendsExactness(Injection injection);
+bool SuspendsExactness(Injection injection);  // RIFT_EVIDENCE_DECIDER
 
 // How a kill point kills (B1-D12, ruled: (c) -- (b) for the sweep, (a) for a
 // stated sample, so the blind spot is measured rather than assumed).
