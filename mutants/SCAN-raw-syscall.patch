@@ -12,8 +12,8 @@
 # Env seam -- so it is not a kill point, no injector can reach it, and Amendment
 # A5's "every syscall on the C++ side through Env" is false with nothing
 # anywhere saying so. That sentence is one of the six in engine-cpp/CLAIMS.txt.
---- a/engine-cpp/src/env/env.cc	2026-08-24 18:55:56
-+++ b/engine-cpp/src/env/env.cc	2026-08-24 18:55:56
+--- a/engine-cpp/src/env/env.cc	2026-08-24 21:42:23
++++ b/engine-cpp/src/env/env.cc	2026-08-24 21:42:23
 @@ -1,5 +1,7 @@
  #include "env.h"
  
@@ -21,13 +21,13 @@
 +
  #include <utility>
  
- namespace rift {
-@@ -192,6 +194,8 @@
+ #include "env_guard.h"
+@@ -212,6 +214,8 @@
  }
  
  Status Env::UnlockFile(FileLockPtr lock) {
 +  int fd = ::open("/dev/null", O_RDONLY);  // SCAN: a syscall that never went through Env
 +  (void)fd;
-   Status s = faults_->Intercept(CallSite::kEnvUnlockFile, id_);
+   Status s = Enter(faults_, CallSite::kEnvUnlockFile, id_);
    if (!s.ok()) return s;
    return DoUnlockFile(std::move(lock));
