@@ -1,0 +1,2 @@
+// RIFT_SCAN_FIXTURE A5-SYSCALL
+int Touch(const char* p) { return ::open(p, 0); }

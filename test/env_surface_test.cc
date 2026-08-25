@@ -54,7 +54,7 @@ class Recorder {
 class RecordingController : public FaultController {
  public:
   explicit RecordingController(Recorder* r) : rec_(r) {}
-  Status Intercept(CallSite site, const void*) override {
+  Status Intercept(CallSite site, HandleId) override {
     rec_->Intercepted(site);
     if (fail_) return Status::Killed("injected");
     return Status::Ok();
@@ -68,7 +68,7 @@ class RecordingController : public FaultController {
 
 class StubWritableFile final : public WritableFile {
  public:
-  StubWritableFile(FaultController* f, Recorder* r) : WritableFile(f), rec_(r) {}
+  StubWritableFile(FaultController* f, Recorder* r) : WritableFile(f, HandleId()), rec_(r) {}
   ~StubWritableFile() override = default;
 
  private:
@@ -81,7 +81,7 @@ class StubWritableFile final : public WritableFile {
 
 class StubSequentialFile final : public SequentialFile {
  public:
-  StubSequentialFile(FaultController* f, Recorder* r) : SequentialFile(f), rec_(r) {}
+  StubSequentialFile(FaultController* f, Recorder* r) : SequentialFile(f, HandleId()), rec_(r) {}
   ~StubSequentialFile() override = default;
 
  private:
@@ -92,7 +92,7 @@ class StubSequentialFile final : public SequentialFile {
 
 class StubRandomAccessFile final : public RandomAccessFile {
  public:
-  StubRandomAccessFile(FaultController* f, Recorder* r) : RandomAccessFile(f), rec_(r) {}
+  StubRandomAccessFile(FaultController* f, Recorder* r) : RandomAccessFile(f, HandleId()), rec_(r) {}
   ~StubRandomAccessFile() override = default;
 
  private:
@@ -103,7 +103,7 @@ class StubRandomAccessFile final : public RandomAccessFile {
 
 class StubDirectory final : public Directory {
  public:
-  StubDirectory(FaultController* f, Recorder* r) : Directory(f), rec_(r) {}
+  StubDirectory(FaultController* f, Recorder* r) : Directory(f, HandleId()), rec_(r) {}
   ~StubDirectory() override = default;
 
  private:
@@ -114,7 +114,7 @@ class StubDirectory final : public Directory {
 
 class StubEnv final : public Env {
  public:
-  StubEnv(FaultController* f, Recorder* r) : Env(f), rec_(r) {}
+  StubEnv(FaultController* f, Recorder* r) : Env(f, HandleId()), rec_(r) {}
   ~StubEnv() override = default;
 
  private:

@@ -1,0 +1,41 @@
+# id: SCAN-thick-posix-method
+# blinds: nothing -- it thickens a PosixEnv method past the statement cap
+# covering-lane: cpp-scan
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# B1-Q12 MEASURE 1'S OWN INDUCED FAILURE: thicken a PosixEnv method past the
+# cap and the lane must fail.
+#
+# Section 11 item 9 states that PosixEnv's correctness rests on exactly two
+# things, (a) the thinness of the implementation and (b) the seam tests, and
+# nothing else. (b) was already a checked property. Before B1.4, (a) -- the
+# load-bearing half -- was a belief about a person. This patch is what proves
+# it is now a property of the lane: logic can no longer accumulate in the one
+# component no B1 test executes.
+--- a/engine-cpp/src/env/posix/posix_env.cc	2026-08-24 18:55:56
++++ b/engine-cpp/src/env/posix/posix_env.cc	2026-08-24 18:55:56
+@@ -302,6 +302,22 @@
+   }
+ 
+   Status DoCreateDir(const std::string& path) override {
++    int pad = 0;
++    pad = pad + 1;
++    pad = pad + 2;
++    pad = pad + 3;
++    pad = pad + 4;
++    pad = pad + 5;
++    pad = pad + 6;
++    pad = pad + 7;
++    pad = pad + 8;
++    pad = pad + 9;
++    pad = pad + 10;
++    pad = pad + 11;
++    pad = pad + 12;
++    pad = pad + 13;
++    pad = pad + 14;
++    (void)pad;
+     if (::mkdir(path.c_str(), 0755) != 0) return FromErrno("mkdir", path);
+     return Status::Ok();
+   }

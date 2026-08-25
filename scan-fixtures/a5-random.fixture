@@ -1,0 +1,5 @@
+// RIFT_SCAN_FIXTURE A5-RANDOM
+// Exactly one violation, and nothing else the scan can trip on. A fixture that
+// trips two rules cannot prove which one is still alive.
+#include <random>
+int PickAHeight() { return 7; }

@@ -1,0 +1,25 @@
+# id: SCAN-unmarked-loop
+# blinds: nothing -- it puts an undocumented loop in PosixEnv
+# covering-lane: cpp-scan
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The other half of the thinness rule: "no branching beyond a DOCUMENTED retry
+# loop". `documented` is made mechanical by requiring the RIFT_POSIX_RETRY
+# marker on the loop's own line, so an enumeration loop or a state machine
+# cannot appear in PosixEnv without someone writing down that it is neither.
+#
+# The marker is not paperwork. It is the difference between a loop whose
+# correctness is "retry until the syscall stops being interrupted" -- which the
+# seam tests cover -- and a loop that does something nothing in B1 executes.
+--- a/engine-cpp/src/env/posix/posix_env.cc	2026-08-24 18:55:56
++++ b/engine-cpp/src/env/posix/posix_env.cc	2026-08-24 18:55:56
+@@ -292,6 +292,7 @@
+   }
+ 
+   Status DoDeleteFile(const std::string& path) override {
++    for (int i = 0; i < 1; ++i) { (void)i; }
+     if (::unlink(path.c_str()) != 0) return FromErrno("unlink", path);
+     return Status::Ok();
+   }

@@ -61,6 +61,7 @@
 #include <vector>
 
 #include "call_site.h"
+#include "env_handle.h"
 #include "fault_controller.h"
 #include "slice.h"
 #include "status.h"
@@ -103,13 +104,14 @@ class WritableFile {
   WritableFile(const WritableFile&) = delete;
   WritableFile& operator=(const WritableFile&) = delete;
  protected:
-  explicit WritableFile(FaultController* faults);  // RIFT_ENV_CTOR
+  WritableFile(FaultController* faults, HandleId id);  // RIFT_ENV_CTOR
  private:
   virtual Status DoAppend(Slice data) = 0;  // RIFT_ENV_IMPL kWritableFileAppend
   virtual Status DoFlush() = 0;  // RIFT_ENV_IMPL kWritableFileFlush
   virtual Status DoSync() = 0;  // RIFT_ENV_IMPL kWritableFileSync
   virtual Status DoClose() = 0;  // RIFT_ENV_IMPL kWritableFileClose
   FaultController* faults_;  // RIFT_ENV_STATE
+  HandleId id_;  // RIFT_ENV_STATE
   bool closed_ = false;  // RIFT_ENV_STATE
 };
 
@@ -121,11 +123,12 @@ class SequentialFile {
   SequentialFile(const SequentialFile&) = delete;
   SequentialFile& operator=(const SequentialFile&) = delete;
  protected:
-  explicit SequentialFile(FaultController* faults);  // RIFT_ENV_CTOR
+  SequentialFile(FaultController* faults, HandleId id);  // RIFT_ENV_CTOR
  private:
   virtual Status DoRead(std::size_t n, Slice* result, char* scratch) = 0;  // RIFT_ENV_IMPL kSequentialFileRead
   virtual Status DoClose() = 0;  // RIFT_ENV_IMPL kSequentialFileClose
   FaultController* faults_;  // RIFT_ENV_STATE
+  HandleId id_;  // RIFT_ENV_STATE
   bool closed_ = false;  // RIFT_ENV_STATE
 };
 
@@ -137,11 +140,12 @@ class RandomAccessFile {
   RandomAccessFile(const RandomAccessFile&) = delete;
   RandomAccessFile& operator=(const RandomAccessFile&) = delete;
  protected:
-  explicit RandomAccessFile(FaultController* faults);  // RIFT_ENV_CTOR
+  RandomAccessFile(FaultController* faults, HandleId id);  // RIFT_ENV_CTOR
  private:
   virtual Status DoRead(uint64_t offset, std::size_t n, Slice* result, char* scratch) = 0;  // RIFT_ENV_IMPL kRandomAccessFileRead
   virtual Status DoClose() = 0;  // RIFT_ENV_IMPL kRandomAccessFileClose
   FaultController* faults_;  // RIFT_ENV_STATE
+  HandleId id_;  // RIFT_ENV_STATE
   bool closed_ = false;  // RIFT_ENV_STATE
 };
 
@@ -153,11 +157,12 @@ class Directory {
   Directory(const Directory&) = delete;
   Directory& operator=(const Directory&) = delete;
  protected:
-  explicit Directory(FaultController* faults);  // RIFT_ENV_CTOR
+  Directory(FaultController* faults, HandleId id);  // RIFT_ENV_CTOR
  private:
   virtual Status DoSync() = 0;  // RIFT_ENV_IMPL kDirectorySync
   virtual Status DoClose() = 0;  // RIFT_ENV_IMPL kDirectoryClose
   FaultController* faults_;  // RIFT_ENV_STATE
+  HandleId id_;  // RIFT_ENV_STATE
   bool closed_ = false;  // RIFT_ENV_STATE
 };
 
@@ -179,7 +184,8 @@ class Env {
   Env(const Env&) = delete;
   Env& operator=(const Env&) = delete;
  protected:
-  explicit Env(FaultController* faults);  // RIFT_ENV_CTOR
+  Env(FaultController* faults, HandleId id);  // RIFT_ENV_CTOR
+  HandleId NextHandleId();  // RIFT_ENV_HELPER
  private:
   virtual Status DoNewWritableFile(const std::string& path, WritableFilePtr* out) = 0;  // RIFT_ENV_IMPL kEnvNewWritableFile
   virtual Status DoNewSequentialFile(const std::string& path, SequentialFilePtr* out) = 0;  // RIFT_ENV_IMPL kEnvNewSequentialFile
@@ -194,6 +200,8 @@ class Env {
   virtual Status DoLockFile(const std::string& path, FileLockPtr* out) = 0;  // RIFT_ENV_IMPL kEnvLockFile
   virtual Status DoUnlockFile(FileLockPtr lock) = 0;  // RIFT_ENV_IMPL kEnvUnlockFile
   FaultController* faults_;  // RIFT_ENV_STATE
+  HandleId id_;  // RIFT_ENV_STATE
+  uint64_t next_handle_ = 0;  // RIFT_ENV_STATE
 };
 
 // RIFT-ENV-SURFACE-END

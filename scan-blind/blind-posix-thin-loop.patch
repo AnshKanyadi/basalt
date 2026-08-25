@@ -1,0 +1,19 @@
+# id: blind-posix-thin-loop
+# blinds: POSIX-THIN-LOOP
+# covering-fixture: engine-cpp/scan-fixtures/posix-thin-loop.fixture
+# expect: killed
+#
+# The loop rule stops emitting. An unmarked loop in PosixEnv then passes, and
+# the "no branching beyond a documented retry loop" half of the thinness
+# argument becomes a sentence in a header again.
+--- a/scripts/cpp-scan-rules.awk	2026-08-24 18:53:05
++++ b/scripts/cpp-scan-rules.awk	2026-08-24 18:53:05
+@@ -29,7 +29,7 @@
+   # the logic the thinness argument claims is not there.
+   if (code ~ /(^|[^a-zA-Z_])(while|for)[ \t]*\(/ && raw !~ /RIFT_POSIX_RETRY/) {
+     a = raw; sub(/^[ \t]*/, "", a); sub(/[ \t]*$/, "", a)
+-    printf "POSIX-THIN-LOOP|%s|%s\n", FILENAME, a
++    a = a
+   }
+ 
+   o = gsub(/\{/, "{", code); c = gsub(/\}/, "}", code); depth += o - c

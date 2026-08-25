@@ -1,0 +1,20 @@
+# id: blind-posix-thin-lines
+# blinds: POSIX-THIN-LINES
+# covering-fixture: engine-cpp/scan-fixtures/posix-thin-lines.fixture
+# expect: killed
+#
+# The statement cap stops being applied. PosixEnv can then thicken without
+# limit, which is the direct induced failure B1-Q12's measure 1 names.
+--- a/scripts/cpp-scan-rules.awk	2026-08-24 18:53:05
++++ b/scripts/cpp-scan-rules.awk	2026-08-24 18:53:05
+@@ -34,9 +34,7 @@
+ 
+   o = gsub(/\{/, "{", code); c = gsub(/\}/, "}", code); depth += o - c
+   if (depth <= 0) {
+-    if (lines > CAP) {
+-      printf "POSIX-THIN-LINES|%s|%s\n", FILENAME, name
+-    }
++    lines = lines
+     inm = 0
+     next
+   }

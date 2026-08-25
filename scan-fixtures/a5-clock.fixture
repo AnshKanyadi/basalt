@@ -1,0 +1,2 @@
+// RIFT_SCAN_FIXTURE A5-CLOCK
+int Stamp() { return steady_clock::now(); }

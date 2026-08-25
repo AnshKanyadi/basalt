@@ -95,7 +95,7 @@ class TestEnvironment::Impl {
     bool kill = false;
   };
 
-  Decision Begin(CallSite site, const void* object) {
+  Decision Begin(CallSite site, HandleId handle) {
     Decision d;
     if (dead_) {
       post_kill_calls_++;
@@ -121,7 +121,7 @@ class TestEnvironment::Impl {
                         : ExactnessSuspendingInjector::kSectorSubsetTornSync;
     }
 
-    const std::string path = PathOf(object);
+    const std::string path = PathOf(handle);
     switch (f.injection) {  // NO default: arm
       case Injection::kNone:
         break;
@@ -183,13 +183,13 @@ class TestEnvironment::Impl {
     return v;
   }
 
-  void RegisterHandle(const void* object, const std::string& path) {
-    handles_[object] = path;
+  void RegisterHandle(HandleId handle, const std::string& path) {
+    handles_[handle.value] = path;
   }
-  void ForgetHandle(const void* object) { handles_.erase(object); }
+  void ForgetHandle(HandleId handle) { handles_.erase(handle.value); }
 
-  std::string PathOf(const void* object) const {
-    auto it = handles_.find(object);
+  std::string PathOf(HandleId handle) const {
+    auto it = handles_.find(handle.value);
     return it == handles_.end() ? std::string() : it->second;
   }
 
@@ -324,7 +324,12 @@ class TestEnvironment::Impl {
  private:
   FaultPlan plan_;
   std::map<std::string, FileState> files_;
-  std::map<const void*, std::string> handles_;
+  // Keyed by the handle's INTEGER id, not by its address. Section 6.1 bans
+  // pointer-keyed containers outright, and the reason bites here rather than
+  // abstractly: this map decides which path a fault is injected against, so
+  // an address-ordered version would make a fault schedule depend on the
+  // allocator the first time anyone iterated it.
+  std::map<uint64_t, std::string> handles_;
   std::map<CallSite, uint64_t> observed_;
   std::vector<LedgerEntry> ledger_;
   uint64_t ordinal_ = 0;
@@ -344,8 +349,8 @@ namespace {
 class TestController final : public FaultController {
  public:
   explicit TestController(TestEnvironment::Impl* impl) : impl_(impl) {}
-  Status Intercept(CallSite site, const void* object) override {
-    last_ = impl_->Begin(site, object);
+  Status Intercept(CallSite site, HandleId handle) override {
+    last_ = impl_->Begin(site, handle);
     return last_.status;
   }
   const TestEnvironment::Impl::Decision& last() const { return last_; }
@@ -357,11 +362,11 @@ class TestController final : public FaultController {
 
 class TestWritableFile final : public WritableFile {
  public:
-  TestWritableFile(FaultController* f, TestEnvironment::Impl* impl, std::string path)
-      : WritableFile(f), impl_(impl), path_(std::move(path)) {
-    impl_->RegisterHandle(this, path_);
+  TestWritableFile(FaultController* f, HandleId id, TestEnvironment::Impl* impl, std::string path)
+      : WritableFile(f, id), handle_(id), impl_(impl), path_(std::move(path)) {
+    impl_->RegisterHandle(handle_, path_);
   }
-  ~TestWritableFile() override { impl_->ForgetHandle(this); }
+  ~TestWritableFile() override { impl_->ForgetHandle(handle_); }
 
  private:
   Status DoAppend(Slice data) override {
@@ -383,17 +388,19 @@ class TestWritableFile final : public WritableFile {
   }
   Status DoClose() override { impl_->Flush(path_); return Status::Ok(); }
 
+  HandleId id_;
+  HandleId handle_;
   TestEnvironment::Impl* impl_;
   std::string path_;
 };
 
 class TestSequentialFile final : public SequentialFile {
  public:
-  TestSequentialFile(FaultController* f, TestEnvironment::Impl* impl, std::string path)
-      : SequentialFile(f), impl_(impl), path_(std::move(path)) {
-    impl_->RegisterHandle(this, path_);
+  TestSequentialFile(FaultController* f, HandleId id, TestEnvironment::Impl* impl, std::string path)
+      : SequentialFile(f, id), handle_(id), impl_(impl), path_(std::move(path)) {
+    impl_->RegisterHandle(handle_, path_);
   }
-  ~TestSequentialFile() override { impl_->ForgetHandle(this); }
+  ~TestSequentialFile() override { impl_->ForgetHandle(handle_); }
 
  private:
   Status DoRead(std::size_t n, Slice* result, char* scratch) override {
@@ -409,6 +416,7 @@ class TestSequentialFile final : public SequentialFile {
   }
   Status DoClose() override { return Status::Ok(); }
 
+  HandleId handle_;
   TestEnvironment::Impl* impl_;
   std::string path_;
   std::size_t pos_ = 0;
@@ -416,11 +424,11 @@ class TestSequentialFile final : public SequentialFile {
 
 class TestRandomAccessFile final : public RandomAccessFile {
  public:
-  TestRandomAccessFile(FaultController* f, TestEnvironment::Impl* impl, std::string path)
-      : RandomAccessFile(f), impl_(impl), path_(std::move(path)) {
-    impl_->RegisterHandle(this, path_);
+  TestRandomAccessFile(FaultController* f, HandleId id, TestEnvironment::Impl* impl, std::string path)
+      : RandomAccessFile(f, id), handle_(id), impl_(impl), path_(std::move(path)) {
+    impl_->RegisterHandle(handle_, path_);
   }
-  ~TestRandomAccessFile() override { impl_->ForgetHandle(this); }
+  ~TestRandomAccessFile() override { impl_->ForgetHandle(handle_); }
 
  private:
   Status DoRead(uint64_t offset, std::size_t n, Slice* result, char* scratch) override {
@@ -436,17 +444,18 @@ class TestRandomAccessFile final : public RandomAccessFile {
   }
   Status DoClose() override { return Status::Ok(); }
 
+  HandleId handle_;
   TestEnvironment::Impl* impl_;
   std::string path_;
 };
 
 class TestDirectory final : public Directory {
  public:
-  TestDirectory(FaultController* f, TestEnvironment::Impl* impl, std::string path)
-      : Directory(f), impl_(impl), path_(std::move(path)) {
-    impl_->RegisterHandle(this, path_);
+  TestDirectory(FaultController* f, HandleId id, TestEnvironment::Impl* impl, std::string path)
+      : Directory(f, id), handle_(id), impl_(impl), path_(std::move(path)) {
+    impl_->RegisterHandle(handle_, path_);
   }
-  ~TestDirectory() override { impl_->ForgetHandle(this); }
+  ~TestDirectory() override { impl_->ForgetHandle(handle_); }
 
  private:
   Status DoSync() override {
@@ -456,6 +465,7 @@ class TestDirectory final : public Directory {
   }
   Status DoClose() override { return Status::Ok(); }
 
+  HandleId handle_;
   TestEnvironment::Impl* impl_;
   std::string path_;
 };
@@ -472,27 +482,27 @@ class TestFileLock final : public FileLock {
 class TestEnv final : public Env {
  public:
   TestEnv(FaultController* f, TestEnvironment::Impl* impl)
-      : Env(f), faults_(f), impl_(impl) {}
+      : Env(f, HandleId()), faults_(f), impl_(impl) {}
   ~TestEnv() override = default;
 
  private:
   Status DoNewWritableFile(const std::string& path, WritableFilePtr* out) override {
     impl_->Create(path);
-    *out = WritableFilePtr(new TestWritableFile(faults_, impl_, path));
+    *out = WritableFilePtr(new TestWritableFile(faults_, NextHandleId(), impl_, path));
     return Status::Ok();
   }
   Status DoNewSequentialFile(const std::string& path, SequentialFilePtr* out) override {
     if (impl_->Find(path) == nullptr) return Status::IoError("no such file: " + path);
-    *out = SequentialFilePtr(new TestSequentialFile(faults_, impl_, path));
+    *out = SequentialFilePtr(new TestSequentialFile(faults_, NextHandleId(), impl_, path));
     return Status::Ok();
   }
   Status DoNewRandomAccessFile(const std::string& path, RandomAccessFilePtr* out) override {
     if (impl_->Find(path) == nullptr) return Status::IoError("no such file: " + path);
-    *out = RandomAccessFilePtr(new TestRandomAccessFile(faults_, impl_, path));
+    *out = RandomAccessFilePtr(new TestRandomAccessFile(faults_, NextHandleId(), impl_, path));
     return Status::Ok();
   }
   Status DoNewDirectory(const std::string& path, DirectoryPtr* out) override {
-    *out = DirectoryPtr(new TestDirectory(faults_, impl_, path));
+    *out = DirectoryPtr(new TestDirectory(faults_, NextHandleId(), impl_, path));
     return Status::Ok();
   }
 

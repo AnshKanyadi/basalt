@@ -1,0 +1,7 @@
+// RIFT_SCAN_FIXTURE A5-DEFAULT
+int Name(int code) {
+  switch (code) {
+    case 0: return 1;
+    default: return 2;
+  }
+}

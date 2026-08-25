@@ -25,6 +25,8 @@
 #include <sys/types.h>
 
 #include <cstddef>
+#include <string>
+#include <vector>
 
 #include "status.h"
 
@@ -48,6 +50,34 @@ constexpr int kMaxConsecutiveZeroWrites = 16;
 // Writes all n bytes or returns an error. EINTR is retried; a short count is
 // resumed from the offset actually written.
 Status WriteFully(int fd, const char* data, std::size_t n, RawWriteFn raw);
+
+// ------------------------------------------------------- the readdir seam
+//
+// The second loop in PosixEnv, and it got a seam for the same reason the first
+// one did: it is real logic in the component no B1 lane verifies, and
+// readdir(3)'s error protocol is a classic. readdir returns NULL both at
+// end-of-directory and on error, and the ONLY way to tell them apart is to
+// clear errno before the call and read it after. Get that wrong and a
+// directory listing truncated by an IO error is indistinguishable from a
+// complete one -- which, at section 7.2's gapless-file-number check, becomes a
+// missing WAL and a refused open with no explanation.
+//
+// The handle is a void* so <dirent.h> stays out of this header; posix_raw.cc
+// casts it back. That is contained ugliness in the one file allowed to talk to
+// the kernel, not a general pattern.
+
+// Clears errno, then returns the next entry's name, or nullptr. nullptr with
+// errno == 0 is end-of-directory; nullptr with errno != 0 is an error.
+using RawReadDirFn = const char* (*)(void* dir);
+const char* RawReadDir(void* dir);
+
+// Every name in an open directory except "." and "..", in whatever order the
+// filesystem gives -- deliberately unsorted, because recovery must sort by
+// parsed file number and hiding that here would hide the bug.
+//
+// On error `out` is left EMPTY rather than partially filled: a truncated
+// listing that looks complete is the failure mode this whole seam exists for.
+Status ReadAllNames(void* dir, std::vector<std::string>* out, RawReadDirFn raw);
 
 }  // namespace posix
 }  // namespace rift

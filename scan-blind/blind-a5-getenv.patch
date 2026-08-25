@@ -1,0 +1,19 @@
+# id: blind-a5-getenv
+# blinds: A5-GETENV
+# covering-fixture: engine-cpp/scan-fixtures/a5-getenv.fixture
+# expect: killed
+#
+# Deletes exactly one line of the rule table. That is the entire reason the
+# table has one rule per line: a blinding that also disturbed a neighbour would
+# make the result unattributable, which is the same failure the mutant lane's
+# direction controls exist to prevent.
+--- a/scripts/cpp-scan.sh	2026-08-24 18:53:05
++++ b/scripts/cpp-scan.sh	2026-08-24 18:53:05
+@@ -74,7 +74,6 @@
+ rule A5-RANDOM  any      '<random>|[^A-Za-z_](rand|srand|random|arc4random|mt19937)[[:space:]]*\(' 'randomness in engine scope; the simulator owns the only stream'
+ rule A5-CLOCK   any      '<chrono>|[^A-Za-z_](time|clock|gettimeofday|clock_gettime)[[:space:]]*\(|steady_clock|system_clock' 'a wall-clock read; the C++ analogue of clock/real.go has ZERO hatched calls'
+ rule A5-FLOAT   any      '(^|[^A-Za-z_0-9])(float|double)([^A-Za-z_0-9]|$)' 'a float on a path that can reach on-disk bytes'
+-rule A5-GETENV  any      '[^A-Za-z_]getenv[[:space:]]*\(' 'ambient environment; a run must be a function of its inputs'
+ rule A5-STREAM  any      '<fstream>|<iostream>|[^A-Za-z_]fopen[[:space:]]*\(' 'the engine does not open files to talk about itself'
+ rule A5-DEFAULT any      '(^|[[:space:]])default[[:space:]]*:' 'a default: arm buys back the exhaustiveness -Werror=switch gives for free'
+ rule A5-ADDRESS any      '(map|set|unordered_map|unordered_set)[[:space:]]*<[[:space:]]*[A-Za-z_][A-Za-z0-9_:[:space:]]*\*' 'a pointer-keyed container; nothing may depend on an address (section 6.1)'

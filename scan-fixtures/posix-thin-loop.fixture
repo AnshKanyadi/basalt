@@ -1,0 +1,12 @@
+// RIFT_SCAN_FIXTURE POSIX-THIN-LOOP
+// RIFT_SCAN_SCOPE yes
+// A loop with no RIFT_POSIX_RETRY marker: an enumeration or a state machine
+// hiding in the component whose correctness argument is that it has neither.
+int Count(int n) {
+  int total = 0;
+  while (n > 0) {
+    total = total + n;
+    n = n - 1;
+  }
+  return total;
+}

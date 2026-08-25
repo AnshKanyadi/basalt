@@ -7,7 +7,7 @@ FaultController::~FaultController() = default;
 namespace {
 class NoFaults final : public FaultController {
  public:
-  Status Intercept(CallSite, const void*) override { return Status::Ok(); }
+  Status Intercept(CallSite, HandleId) override { return Status::Ok(); }
 };
 }  // namespace
 

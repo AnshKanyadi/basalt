@@ -155,6 +155,88 @@ TEST_F(RawWriteTest, ZeroReturnsThatMakeProgressAreNotFatal) {
   EXPECT_EQ(fake_.calls, 6);
 }
 
+// ------------------------------------------------------------- readdir
+//
+// readdir(3) returns NULL both at end-of-directory and on error, and the only
+// way to tell them apart is to clear errno before the call and read it after.
+// The defect this catches is treating every NULL as end-of-directory: a
+// listing truncated by an IO error then looks complete, and at section 7.2's
+// gapless-file-number check a complete-looking listing that is missing a WAL
+// becomes a refused open with no explanation of why.
+
+struct FakeDir {
+  std::vector<std::string> names;  // "" means NULL; errno decides which NULL
+  std::vector<int> errnos;         // errno to set when returning NULL
+  std::size_t at = 0;
+  int calls = 0;
+};
+
+FakeDir* g_dir = nullptr;
+
+const char* FakeReadDir(void*) {
+  FakeDir* d = g_dir;
+  d->calls++;
+  if (d->at >= d->names.size()) { errno = 0; return nullptr; }
+  const std::size_t i = d->at++;
+  if (d->names[i].empty()) {
+    errno = d->errnos[i];
+    return nullptr;
+  }
+  errno = 0;
+  return d->names[i].c_str();
+}
+
+class ReadDirTest : public ::testing::Test {
+ protected:
+  void SetUp() override { g_dir = &dir_; }
+  void TearDown() override { g_dir = nullptr; }
+  FakeDir dir_;
+};
+
+TEST_F(ReadDirTest, ReturnsEveryNameAndSkipsDotAndDotDot) {
+  dir_.names = {".", "000002.log", "..", "000001.log"};
+  dir_.errnos = {0, 0, 0, 0};
+  std::vector<std::string> out;
+  Status s = ReadAllNames(nullptr, &out, FakeReadDir);
+  ASSERT_TRUE(s.ok()) << s.ToString();
+  ASSERT_EQ(out.size(), 2u);
+  // Unsorted, in the order the directory gave. Sorting here would hide the bug
+  // recovery's sort-by-parsed-number exists to make impossible.
+  EXPECT_EQ(out[0], "000002.log");
+  EXPECT_EQ(out[1], "000001.log");
+}
+
+TEST_F(ReadDirTest, AnEmptyDirectoryIsNotAnError) {
+  dir_.names = {};
+  std::vector<std::string> out;
+  Status s = ReadAllNames(nullptr, &out, FakeReadDir);
+  EXPECT_TRUE(s.ok());
+  EXPECT_TRUE(out.empty());
+  EXPECT_EQ(dir_.calls, 1);
+}
+
+TEST_F(ReadDirTest, ANullWithErrnoSetIsAnErrorAndNotEndOfDirectory) {
+  dir_.names = {"000001.log", ""};
+  dir_.errnos = {0, EIO};
+  std::vector<std::string> out;
+  Status s = ReadAllNames(nullptr, &out, FakeReadDir);
+  EXPECT_FALSE(s.ok()) << "a NULL with errno set was read as end-of-directory";
+  EXPECT_EQ(s.code(), Status::Code::kIoError);
+}
+
+// The partial list is DISCARDED, not returned. A caller that ignored the Status
+// would otherwise receive a directory listing that is short by an unknown
+// number of entries and looks exactly like a complete one.
+TEST_F(ReadDirTest, APartialListingIsClearedOnError) {
+  dir_.names = {"000001.log", "000002.log", ""};
+  dir_.errnos = {0, 0, EIO};
+  std::vector<std::string> out;
+  Status s = ReadAllNames(nullptr, &out, FakeReadDir);
+  ASSERT_FALSE(s.ok());
+  EXPECT_TRUE(out.empty())
+      << "a listing truncated by an IO error was handed back looking complete";
+}
+
 }  // namespace
 }  // namespace posix
 }  // namespace rift

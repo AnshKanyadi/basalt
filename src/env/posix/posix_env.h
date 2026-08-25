@@ -65,7 +65,8 @@ namespace rift {
 // parameter exists because the kill mechanism is a property of the Env seam
 // rather than of TestEnv, not because PosixEnv is ever meant to inject.
 std::unique_ptr<Env> NewPosixEnv(FaultController* faults = NoFaultController(),
-                                 posix::RawWriteFn raw = posix::RawWrite);
+                                 posix::RawWriteFn raw_write = posix::RawWrite,
+                                 posix::RawReadDirFn raw_readdir = posix::RawReadDir);
 
 }  // namespace rift
 

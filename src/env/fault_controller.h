@@ -9,6 +9,7 @@
 #define RIFT_ENV_FAULT_CONTROLLER_H_
 
 #include "call_site.h"
+#include "env_handle.h"
 #include "status.h"
 
 namespace rift {
@@ -27,10 +28,17 @@ class FaultController {
   // only touch a frozen Env, so it cannot affect what recovery reads -- the
   // only dimension a crash has (DESIGN-B1 section 9.5).
   //
-  // `object` identifies the file handle for handle-scoped injection. It is a
-  // const void* on purpose: this interface must not be able to reach into the
-  // object it is intercepting.
-  virtual Status Intercept(CallSite site, const void* object) = 0;
+  // `handle` identifies the file handle for handle-scoped injection. It is an
+  // INTEGER and not a pointer, for two reasons that both matter.
+  //
+  // This interface must not be able to reach into the object it is
+  // intercepting -- an integer cannot. And section 6.1 bans anything that
+  // depends on an address: a controller keeping a pointer-to-path map is a
+  // pointer-keyed container, and the day someone iterates it the fault schedule
+  // starts depending on the allocator. Ids are assigned sequentially by the Env
+  // that created the handle, so the same workload produces the same ids on
+  // every run and on every machine.
+  virtual Status Intercept(CallSite site, HandleId handle) = 0;
 };
 
 // The controller that injects nothing. PosixEnv uses it; TestEnv (B1.3) does

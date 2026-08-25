@@ -15,7 +15,9 @@
 namespace rift {
 namespace {
 
+using posix::RawReadDirFn;
 using posix::RawWriteFn;
+using posix::ReadAllNames;
 using posix::WriteFully;
 
 // THE ONE PLACE errno BECOMES A Status. Concentrated here so the mapping is a
@@ -46,8 +48,8 @@ int CloseIgnoringEintr(int fd) {
 
 class PosixWritableFile final : public WritableFile {
  public:
-  PosixWritableFile(FaultController* f, int fd, std::string path, RawWriteFn raw)
-      : WritableFile(f), fd_(fd), path_(std::move(path)), raw_(raw) {}
+  PosixWritableFile(FaultController* f, HandleId id, int fd, std::string path, RawWriteFn raw)
+      : WritableFile(f, id), fd_(fd), path_(std::move(path)), raw_(raw) {}
   ~PosixWritableFile() override {
     if (fd_ >= 0) CloseIgnoringEintr(fd_);
   }
@@ -113,15 +115,15 @@ class PosixWritableFile final : public WritableFile {
 
 class PosixSequentialFile final : public SequentialFile {
  public:
-  PosixSequentialFile(FaultController* f, int fd, std::string path)
-      : SequentialFile(f), fd_(fd), path_(std::move(path)) {}
+  PosixSequentialFile(FaultController* f, HandleId id, int fd, std::string path)
+      : SequentialFile(f, id), fd_(fd), path_(std::move(path)) {}
   ~PosixSequentialFile() override {
     if (fd_ >= 0) CloseIgnoringEintr(fd_);
   }
 
  private:
   Status DoRead(std::size_t n, Slice* result, char* scratch) override {
-    while (true) {
+    while (true) {  // RIFT_POSIX_RETRY: read(2) is retried on EINTR
       const ssize_t r = ::read(fd_, scratch, n);
       if (r < 0) {
         if (errno == EINTR) continue;
@@ -146,15 +148,15 @@ class PosixSequentialFile final : public SequentialFile {
 
 class PosixRandomAccessFile final : public RandomAccessFile {
  public:
-  PosixRandomAccessFile(FaultController* f, int fd, std::string path)
-      : RandomAccessFile(f), fd_(fd), path_(std::move(path)) {}
+  PosixRandomAccessFile(FaultController* f, HandleId id, int fd, std::string path)
+      : RandomAccessFile(f, id), fd_(fd), path_(std::move(path)) {}
   ~PosixRandomAccessFile() override {
     if (fd_ >= 0) CloseIgnoringEintr(fd_);
   }
 
  private:
   Status DoRead(uint64_t offset, std::size_t n, Slice* result, char* scratch) override {
-    while (true) {
+    while (true) {  // RIFT_POSIX_RETRY: pread(2) is retried on EINTR
       const ssize_t r = ::pread(fd_, scratch, n, static_cast<off_t>(offset));
       if (r < 0) {
         if (errno == EINTR) continue;
@@ -178,8 +180,8 @@ class PosixRandomAccessFile final : public RandomAccessFile {
 
 class PosixDirectory final : public Directory {
  public:
-  PosixDirectory(FaultController* f, int fd, std::string path)
-      : Directory(f), fd_(fd), path_(std::move(path)) {}
+  PosixDirectory(FaultController* f, HandleId id, int fd, std::string path)
+      : Directory(f, id), fd_(fd), path_(std::move(path)) {}
   ~PosixDirectory() override {
     if (fd_ >= 0) CloseIgnoringEintr(fd_);
   }
@@ -222,35 +224,36 @@ class PosixFileLock final : public FileLock {
 
 class PosixEnv final : public Env {
  public:
-  PosixEnv(FaultController* f, RawWriteFn raw) : Env(f), faults_(f), raw_(raw) {}
+  PosixEnv(FaultController* f, RawWriteFn raw, RawReadDirFn readdir)
+      : Env(f, HandleId()), faults_(f), raw_(raw), readdir_(readdir) {}
   ~PosixEnv() override = default;
 
  private:
   Status DoNewWritableFile(const std::string& path, WritableFilePtr* out) override {
     const int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0) return FromErrno("open", path);
-    *out = WritableFilePtr(new PosixWritableFile(faults_, fd, path, raw_));
+    *out = WritableFilePtr(new PosixWritableFile(faults_, NextHandleId(), fd, path, raw_));
     return Status::Ok();
   }
 
   Status DoNewSequentialFile(const std::string& path, SequentialFilePtr* out) override {
     const int fd = ::open(path.c_str(), O_RDONLY);
     if (fd < 0) return FromErrno("open", path);
-    *out = SequentialFilePtr(new PosixSequentialFile(faults_, fd, path));
+    *out = SequentialFilePtr(new PosixSequentialFile(faults_, NextHandleId(), fd, path));
     return Status::Ok();
   }
 
   Status DoNewRandomAccessFile(const std::string& path, RandomAccessFilePtr* out) override {
     const int fd = ::open(path.c_str(), O_RDONLY);
     if (fd < 0) return FromErrno("open", path);
-    *out = RandomAccessFilePtr(new PosixRandomAccessFile(faults_, fd, path));
+    *out = RandomAccessFilePtr(new PosixRandomAccessFile(faults_, NextHandleId(), fd, path));
     return Status::Ok();
   }
 
   Status DoNewDirectory(const std::string& path, DirectoryPtr* out) override {
     const int fd = ::open(path.c_str(), O_RDONLY);
     if (fd < 0) return FromErrno("opendir", path);
-    *out = DirectoryPtr(new PosixDirectory(faults_, fd, path));
+    *out = DirectoryPtr(new PosixDirectory(faults_, NextHandleId(), fd, path));
     return Status::Ok();
   }
 
@@ -261,26 +264,11 @@ class PosixEnv final : public Env {
   // engine that forgot fails on the first test rather than on someone else's
   // filesystem. This is the C++ analogue of the map-iteration rule.
   Status DoGetChildren(const std::string& dir, std::vector<std::string>* out) override {
-    out->clear();
     DIR* d = ::opendir(dir.c_str());
     if (d == nullptr) return FromErrno("opendir", dir);
-    while (true) {
-      errno = 0;
-      struct dirent* e = ::readdir(d);
-      if (e == nullptr) {
-        if (errno != 0) {
-          Status s = FromErrno("readdir", dir);
-          ::closedir(d);
-          return s;
-        }
-        break;
-      }
-      const std::string name(e->d_name);
-      if (name == "." || name == "..") continue;
-      out->push_back(name);
-    }
-    if (::closedir(d) != 0) return FromErrno("closedir", dir);
-    return Status::Ok();
+    Status s = ReadAllNames(d, out, readdir_);
+    if (::closedir(d) != 0 && s.ok()) return FromErrno("closedir", dir);
+    return s;
   }
 
   Status DoGetFileSize(const std::string& path, uint64_t* out) override {
@@ -355,13 +343,15 @@ class PosixEnv final : public Env {
 
   FaultController* faults_;
   RawWriteFn raw_;
+  RawReadDirFn readdir_;
 };
 
 }  // namespace
 
-std::unique_ptr<Env> NewPosixEnv(FaultController* faults, posix::RawWriteFn raw) {
+std::unique_ptr<Env> NewPosixEnv(FaultController* faults, posix::RawWriteFn raw_write,
+                                 posix::RawReadDirFn raw_readdir) {
   RIFT_CHECK(faults != nullptr);
-  return std::unique_ptr<Env>(new PosixEnv(faults, raw));
+  return std::unique_ptr<Env>(new PosixEnv(faults, raw_write, raw_readdir));
 }
 
 }  // namespace rift

@@ -1,0 +1,61 @@
+# id: COLD-fetch-despite-isolation
+# blinds: the cold-cache "after" check -- that nothing was fetched during the run
+# covering-lane: cpp-ci
+# expect: killed
+# control-lane: cpp-vendor-build
+# expect-control: alive
+#
+# HARNESS-002'S GENERAL FORM, INDUCED FAITHFULLY RATHER THAN SYNTHETICALLY.
+#
+# A lane that verifies an ABSENCE must run in a state where the thing could
+# actually be present. cpp-ci has two independent guards for that: the isolation
+# wrapper, which proves it isolated before trusting itself, and this check,
+# which looks for the artifact of a fetch downstream of the isolation. The
+# second exists precisely so that a failure of the first is still visible.
+#
+# The defect here is a plausible one and not a strawman. The wrapper reports
+# UNTESTED when the machine appears to have no network -- an honest outcome --
+# and someone then reasons that a sandbox is pointless in that case and skips
+# it. The probe is wrong (it points at a host that does not resolve), the
+# machine is online, the fetch succeeds, and the wrapper's own output still says
+# something reasonable. Nothing in the isolation half notices.
+#
+# The _deps tree appears, the after check finds it, and cpp-ci goes red naming
+# the directory. That is the layered defence doing the one job that justifies
+# having two.
+--- a/scripts/cpp-no-network.sh	2026-08-24 19:01:26
++++ b/scripts/cpp-no-network.sh	2026-08-24 19:01:26
+@@ -29,7 +29,7 @@
+   exit 2
+ fi
+ 
+-PROBE_URL=${RIFT_NET_PROBE_URL:-https://github.com/}
++PROBE_URL=${RIFT_NET_PROBE_URL:-https://rift-no-such-host.invalid/}
+ probe() { curl -sS --max-time 8 -o /dev/null "$PROBE_URL" >/dev/null 2>&1; }
+ 
+ scratch=$(mktemp -d)
+@@ -106,4 +106,6 @@
+ fi
+ printf '   running: %s\n\n' "$*"
+ 
++# COLD: "the machine is offline anyway, why pay for the sandbox"
++if [ "$verdict" = UNTESTED ]; then exec "$@"; fi
+ isolate "$@"
+--- a/engine-cpp/CMakeLists.txt	2026-08-24 19:01:26
++++ b/engine-cpp/CMakeLists.txt	2026-08-24 19:01:26
+@@ -80,6 +80,15 @@
+ target_compile_definitions(gtest      PUBLIC GTEST_HAS_EXCEPTIONS=0 GTEST_HAS_RTTI=0)
+ target_compile_definitions(gtest_main PUBLIC GTEST_HAS_EXCEPTIONS=0 GTEST_HAS_RTTI=0)
+ 
++include(FetchContent)
++FetchContent_Declare(
++  cold_probe
++  GIT_REPOSITORY https://github.com/google/googletest.git
++  GIT_TAG        52eb8108c5bdec04579160ae17225d66034bd723
++  SOURCE_SUBDIR  rift-cold-no-such-dir
++)
++FetchContent_MakeAvailable(cold_probe)
++
+ # ------------------------------------------------------------ our own flags
+ #
+ # -Werror=switch is named explicitly even though -Werror already implies it.

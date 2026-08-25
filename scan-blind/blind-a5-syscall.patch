@@ -1,0 +1,19 @@
+# id: blind-a5-syscall
+# blinds: A5-SYSCALL
+# covering-fixture: engine-cpp/scan-fixtures/a5-syscall.fixture
+# expect: killed
+#
+# Deletes exactly one line of the rule table. That is the entire reason the
+# table has one rule per line: a blinding that also disturbed a neighbour would
+# make the result unattributable, which is the same failure the mutant lane's
+# direction controls exist to prevent.
+--- a/scripts/cpp-scan.sh	2026-08-24 18:53:05
++++ b/scripts/cpp-scan.sh	2026-08-24 18:53:05
+@@ -78,7 +78,6 @@
+ rule A5-STREAM  any      '<fstream>|<iostream>|[^A-Za-z_]fopen[[:space:]]*\(' 'the engine does not open files to talk about itself'
+ rule A5-DEFAULT any      '(^|[[:space:]])default[[:space:]]*:' 'a default: arm buys back the exhaustiveness -Werror=switch gives for free'
+ rule A5-ADDRESS any      '(map|set|unordered_map|unordered_set)[[:space:]]*<[[:space:]]*[A-Za-z_][A-Za-z0-9_:[:space:]]*\*' 'a pointer-keyed container; nothing may depend on an address (section 6.1)'
+-rule A5-SYSCALL nonposix '::[[:space:]]*(open|write|read|pread|pwrite|fsync|fdatasync|rename|unlink|mkdir|rmdir|stat|lstat|fcntl|close|_exit|opendir|readdir|closedir|ftruncate|lseek)[[:space:]]*\(' 'a syscall outside env/posix/; every syscall goes through Env for the reason every clock read goes through Clock'
+ # RIFT-SCAN-RULES-END
+ 
+ # The statement cap for engine-cpp/src/env/posix, chosen against the code rather

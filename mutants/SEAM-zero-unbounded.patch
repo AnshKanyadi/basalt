@@ -25,17 +25,17 @@
 # the three seam tests. This patch is that induction, made repeatable rather
 # than performed once by hand -- there is no CI here, so an induction nobody can
 # re-run is an induction that decays into a sentence in a commit message.
---- a/engine-cpp/src/env/posix/posix_raw.cc	2026-08-24 17:19:58
-+++ b/engine-cpp/src/env/posix/posix_raw.cc	2026-08-24 17:19:58
-@@ -14,7 +14,6 @@
+--- a/engine-cpp/src/env/posix/posix_raw.cc	2026-08-24 19:17:27
++++ b/engine-cpp/src/env/posix/posix_raw.cc	2026-08-24 19:17:27
+@@ -16,7 +16,6 @@
  
  Status WriteFully(int fd, const char* data, std::size_t n, RawWriteFn raw) {
    std::size_t done = 0;
 -  int zeros = 0;
-   while (done < n) {
+   while (done < n) {  // RIFT_POSIX_RETRY: resumes on a short count, retries on EINTR
      const ssize_t w = raw(fd, data + done, n - done);
      if (w < 0) {
-@@ -22,13 +21,8 @@
+@@ -24,13 +23,8 @@
        return Status::IoError("write: errno " + std::to_string(errno));
      }
      if (w == 0) {

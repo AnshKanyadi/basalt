@@ -1,0 +1,3 @@
+// RIFT_SCAN_FIXTURE A5-ADDRESS
+#include <map>
+std::map<const void*, int> g_by_address;

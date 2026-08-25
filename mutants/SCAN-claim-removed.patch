@@ -1,0 +1,29 @@
+# id: SCAN-claim-removed
+# blinds: the pairing between this lane and the sentences it makes true
+# covering-lane: cpp-scan
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# B1.4 is mechanically a leaf and epistemically a chokepoint. Nothing consumes
+# the scope scan, so deleting it breaks no build and reddens no test -- and it
+# reduces every sentence in engine-cpp/CLAIMS.txt from a checked property to
+# programmer discipline. No mechanism can catch that direction: a lane that is
+# gone cannot fail.
+#
+# The OTHER direction can be caught, and this is it. A claim quietly reworded
+# while the lane stays reddens cpp-scan, naming the file and the sentence. So
+# the pair can only come apart deliberately, in a diff that touches both -- and
+# "delete this line of CLAUDE.md" is an instruction that shows up in review,
+# where "retract the claim" is one nobody can be held to.
+--- a/CLAUDE.md	2026-08-24 18:55:56
++++ b/CLAUDE.md	2026-08-24 18:55:56
+@@ -68,7 +68,7 @@
+ 
+ Env is the C++ side of the same boundary the Go determinism pass enforces: every syscall goes through it for the reason every clock read goes through `Clock` `[A5]`.
+ 
+-- The engine performs all file operations through an `Env` abstraction (open, read, write, sync, rename, list), LevelDB style. Production Env hits the real filesystem. TestEnv injects: sync loss windows, torn writes at arbitrary byte offsets, IO errors, disk-full via quota, and kill points at any syscall boundary.
++- The engine performs file operations through an Env abstraction where practical. Production Env hits the real filesystem. TestEnv injects: sync loss windows, torn writes at arbitrary byte offsets, IO errors, disk-full via quota, and kill points at any syscall boundary.
+ - Crash-consistency rig: run a randomized workload, kill at a swept set of Env call points, reopen, verify recovered state against the operation log. Every recovery invariant violation gets a BUGS.md entry like any sim bug.
+ - Differential testing: apply identical operation sequences to `engine/model` and the C++ engine; full iterator output must be byte-identical. Run this under randomized workloads continuously.
+ - Deterministic-replay guarantees are scoped to sim runs on `engine/model`; C++ engine correctness comes from the Env fault rig, differential tests, corpus reruns in verification mode, and real chaos. State this scoping honestly everywhere claims appear.
