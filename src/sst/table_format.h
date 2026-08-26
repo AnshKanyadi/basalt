@@ -60,7 +60,7 @@
 //     filter_offset:u64   filter_size:u32
 //     index_offset:u64    index_size:u32
 //     format_version:u32
-//     reserved:[8]u8 = 0
+//     range_offset:u64    B3, spent out of the reserve. 0 = no range block
 //     magic:[8]u8 = "RIFTSST\0"
 //     crc32c:u32          covering the 44 bytes above it
 //
@@ -68,9 +68,35 @@
 // read without trusting anything else in the file, so every other offset is
 // reached through a checksum that has already been verified.
 //
-// `reserved` is zero and never written otherwise, for the same reason
-// DELETE_RANGE is a reserved op kind from day one: eight bytes now are free, a
-// format version bump at B3 is not.
+// THE RESERVE WAS SPENT AT B3, AND IT FIT FOR ONE REASON WORTH KNOWING.
+//
+// B2 left eight bytes here so that B3 could add a block without a version bump:
+// "eight bytes now are free, a format version bump at B3 is not." A
+// `BlockHandle` is TWELVE bytes -- offset:u64 plus size:u32 -- so the natural
+// shape did not fit, and only one trick made it work:
+//
+//   THE RANGE BLOCK IS WRITTEN LAST, immediately before the footer, so its SIZE
+//   IS DERIVABLE: range_size = file_size - kFooterBytes - range_offset. Only the
+//   offset has to be stored, and eight bytes hold it.
+//
+// `range_offset == 0` means NO RANGE BLOCK, and zero is a safe sentinel because
+// offset zero is where the first data block lives -- no range block can ever be
+// there.
+//
+// WHY THE DERIVATION IS SAFE RATHER THAN CLEVER: a wrong size does not produce a
+// wrong answer, it produces a FAILED CHECKSUM. The block's crc32c covers exactly
+// the bytes the derived size names, so any disagreement is loud. That is B1's
+// property -- the CRC covering the length, so a corrupted length is rejected
+// rather than believed -- reused one format over.
+//
+// AND THE LAYOUT RULE IS ASSERTED, NOT STATED. `TableBuilder::Finish` checks
+// that nothing follows the range block but the footer, because a writer that
+// ever emitted another block after it would silently corrupt the derivation for
+// every reader. See `BM85`.
+//
+// THE HONEST ACCOUNTING: the reserve did NOT avoid the version bump. It
+// POSTPONED IT BY ONE, and only because this extension's size happened to be
+// derivable. The next one pays. See BUGS.md GF-17.
 // NAMED table_format.h AND NOT format.h. Every source directory under src/ is on
 // the include path, so two headers with one basename are resolved by SEARCH
 // ORDER rather than by name: a quoted include finds the includer's own
@@ -113,6 +139,8 @@ struct Footer {
   BlockHandle filter;
   BlockHandle index;
   uint32_t format_version = 0;
+  // 0 = no range block. Its SIZE is derived from the file length; see above.
+  uint64_t range_offset = 0;
 };
 
 void EncodeHandle(const BlockHandle& h, std::string* out);

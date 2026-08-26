@@ -43,6 +43,7 @@
 #include <cstdint>
 #include <string>
 
+#include "range_tombstone.h"
 #include "table_format.h"
 #include "slice.h"
 
@@ -66,6 +67,8 @@ enum class TableFault : uint8_t {
   kIndexNotAscending,
   kIndexSeparatorMismatch,
   kEmptyTable,
+  kBadRangeBlock,
+  kTombstoneOutsideTheTableBounds,
 };
 const char* TableFaultName(TableFault fault);
 
@@ -87,6 +90,9 @@ struct TableCheck {
   // the two are unrelated, and BM46 is the mutant that says so.
   uint64_t data_blocks = 0;
   uint64_t entries = 0;
+  // Range tombstones the table carries. Zero for every table written before
+  // B3.5, which is what `range_offset == 0` decodes to.
+  uint64_t range_tombstones = 0;
   std::string smallest_key;
   std::string largest_key;
   uint64_t largest_seq = 0;

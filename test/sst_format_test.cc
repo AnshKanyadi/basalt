@@ -643,23 +643,37 @@ TEST(SstClassifier, EveryByteOfACanonicalTableMatters) {
   EXPECT_GT(checked, kFooterBytes);
 }
 
-TEST(SstClassifier, ReservedFooterBytesAreWrittenZeroAndNotRead) {
-  // BOTH DIRECTIONS, because only both together make the eight bytes safe to
-  // spend at B3 without a format version bump. The writer must write them zero,
-  // so an old file is recognisable; the reader must not read them, so a file
-  // from a future build that uses them still validates on this one.
+// THE RESERVE, SPENT AT B3.5 -- AND THIS TEST IS REWRITTEN RATHER THAN LOOSENED.
+//
+// B2 asserted TWO properties of the eight reserved bytes, and only one of them
+// could survive the reserve being spent:
+//
+//   WRITTEN ZERO  -- still true, and now load-bearing for a different reason: a
+//                    B2-era table decodes as `range_offset == 0`, which means
+//                    "no range block", so it reads correctly on this build.
+//   NOT READ      -- GONE, necessarily. The reader now reads those bytes as a
+//                    range-block offset, so a file "from a future build" that
+//                    put something else there is REFUSED rather than ignored.
+//
+// The second property was forward compatibility, and **spending a reserve is
+// exactly the act that ends it.** That is the half of the reserve's cost B2 did
+// not price, and it is recorded in BUGS.md GF-17 rather than quietly dropped.
+TEST(SstClassifier, TheSpentReserveIsZeroWithNoRangeBlockAndRefusedWhenItLies) {
   const Canonical c = Good();
   const std::size_t reserved_begin = c.image.size() - 20;
   for (std::size_t i = 0; i < 8; ++i) {
-    EXPECT_EQ('\0', c.image[reserved_begin + i]) << "reserved byte " << i;
+    EXPECT_EQ('\0', c.image[reserved_begin + i])
+        << "byte " << i << " of the range offset, with no range block";
   }
-  std::string from_the_future = c.image;
+
+  std::string lying = c.image;
   for (std::size_t i = 0; i < 8; ++i) {
-    from_the_future[reserved_begin + i] = static_cast<char>(0xFF);
+    lying[reserved_begin + i] = static_cast<char>(0xFF);
   }
-  RestampFooterCrc(&from_the_future);
-  const TableCheck v = ValidateTable(Slice(from_the_future));
-  EXPECT_TRUE(v.ok()) << TableFaultName(v.fault) << ": " << v.why;
+  RestampFooterCrc(&lying);
+  const TableCheck v = ValidateTable(Slice(lying));
+  EXPECT_FALSE(v.ok()) << "a range offset past the footer must be refused, not ignored";
+  EXPECT_EQ(TableFault::kHandleOutOfRange, v.fault);
 }
 
 }  // namespace

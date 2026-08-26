@@ -51,7 +51,11 @@ void EncodeFooter(const Footer& f, std::string* out) {
   PutU64(out, f.index.offset);
   PutU32(out, f.index.size);
   PutU32(out, f.format_version);
-  out->append(8, '\0');  // reserved, and never written otherwise
+  // THE RESERVE, SPENT. Zero when there is no range block, which is exactly
+  // what every B2-era file already holds -- so a B2 table decodes as "no range
+  // block" rather than as a newer format. That is the whole of what the reserve
+  // bought, and it worked only because zero was a usable sentinel.
+  PutU64(out, f.range_offset);
   out->append(kMagic, sizeof(kMagic));
   RIFT_CHECK(out->size() - before == kFooterCrcCovers);
   PutU32(out, wal::Crc32c(out->data() + before, kFooterCrcCovers));
@@ -81,6 +85,7 @@ bool DecodeFooter(Slice image, Footer* out, std::string* why) {
   out->index.offset = GetU64(p + 12);
   out->index.size = GetU32(p + 20);
   out->format_version = GetU32(p + 24);
+  out->range_offset = GetU64(p + 28);
   return true;
 }
 

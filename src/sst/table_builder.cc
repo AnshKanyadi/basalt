@@ -57,6 +57,49 @@ void TableBuilder::FlushDataBlock() {
   block_entries_ = 0;
 }
 
+void TableBuilder::AddRangeTombstone(Slice start, Slice end, uint64_t tag) {
+  RIFT_CHECK(!finished_);
+  // Every rule the classifier refuses on, refused HERE too -- at the writer,
+  // where the mistake is. A table that reaches the classifier already broken is
+  // a table nobody can act on; a RIFT_CHECK names the caller.
+  RIFT_CHECK(end.compare(start) > 0);
+  RIFT_CHECK(TypeOfTag(tag) == ValueType::kDeletion);
+  if (range_count_ > 0) {
+    const int c = start.compare(Slice(last_range_start_));
+    RIFT_CHECK(c >= 0);
+    RIFT_CHECK(c != 0 || tag != last_range_tag_);
+  }
+  std::string encoded;
+  EncodeRangeTombstone(start, end, tag, &encoded);
+  range_.Add(Slice(encoded), Slice());
+  last_range_start_.assign(start.data(), start.size());
+  last_range_tag_ = tag;
+  ++range_count_;
+
+  // THE BOUNDS THE MANIFEST RECORDS MUST ADMIT THIS TOMBSTONE. Input selection
+  // reads them, and clause 2 of the drop claim is only sound if the inputs hold
+  // every version of every key they contain -- a tombstone outside its own
+  // table's bounds is one no compaction will read.
+  //
+  // The end bound is EXCLUSIVE and is widened to `end` anyway: over-covering
+  // costs a file that did not need to be read, UNDER-covering resurrects data.
+  // The two directions are not symmetric, so the safe one is taken.
+  std::string lo;
+  AppendInternalKey(&lo, start, tag);
+  if (range_count_ == 1 && entries_ == 0) {
+    smallest_ = lo;
+  } else if (smallest_.empty() || CompareInternalKey(Slice(lo), Slice(smallest_)) < 0) {
+    smallest_ = lo;
+  }
+  std::string hi;
+  AppendInternalKey(&hi, end, tag);
+  if (largest_.empty() || CompareInternalKey(Slice(hi), Slice(largest_)) > 0) {
+    largest_ = hi;
+  }
+  const SeqNum seq = SeqOfTag(tag);
+  if (seq > largest_seq_) largest_seq_ = seq;
+}
+
 Status TableBuilder::Finish() {
   RIFT_CHECK(!finished_);
   RIFT_CHECK(entries_ > 0);  // an empty flush SKIPS; it does not write a table
@@ -76,10 +119,29 @@ Status TableBuilder::Finish() {
   index_handle.size = static_cast<uint32_t>(index.size());
   if (!Append(Slice(index)).ok()) return status_;
 
+  // THE RANGE BLOCK IS LAST, and the assertion below is what makes that a rule
+  // rather than a habit. Its size is DERIVED from the file length, so a writer
+  // that emitted anything after it would corrupt every reader's derivation
+  // silently -- and a stated layout rule with no enforcement is the class this
+  // project has spent six phases finding.
+  uint64_t range_offset = 0;
+  uint64_t range_end = 0;
+  if (range_count_ > 0) {
+    const std::string range = range_.Finish();
+    range_offset = offset_;
+    if (!Append(Slice(range)).ok()) return status_;
+    range_end = offset_;
+  }
+
   Footer footer;
   footer.filter = filter_handle;
   footer.index = index_handle;
   footer.format_version = kFormatVersion;
+  footer.range_offset = range_offset;
+  // NOTHING BETWEEN THE RANGE BLOCK AND THE FOOTER. This is the derivation
+  // `file_size - kFooterBytes - range_offset` stated as an assertion at the one
+  // place that could break it.
+  RIFT_CHECK(range_offset == 0 || offset_ == range_end);
   std::string tail;
   EncodeFooter(footer, &tail);
   return Append(Slice(tail));

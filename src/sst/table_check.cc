@@ -22,6 +22,9 @@ const char* TableFaultName(TableFault fault) {
     case TableFault::kEntriesNotAscending:   return "entries not ascending";
     case TableFault::kIndexNotAscending:     return "index not ascending";
     case TableFault::kIndexSeparatorMismatch:return "index separator is not the block's last key";
+    case TableFault::kBadRangeBlock:            return "malformed range-tombstone block";
+    case TableFault::kTombstoneOutsideTheTableBounds:
+      return "a range tombstone the table's own bounds do not admit";
     case TableFault::kEmptyTable:            return "table has no data blocks";
   }
   RIFT_UNREACHABLE("TableFault holds a value no enumerator names");
@@ -163,6 +166,57 @@ TableCheck ValidateTable(Slice image) {
     }
     ok.data_blocks++;
     ok.entries += entries.size();
+  }
+
+  // ------------------------------------------------------- the range block
+  //
+  // ITS SIZE IS DERIVED, NOT STORED: the reserve held eight bytes and a handle
+  // is twelve, so only the offset is written and the block must be LAST. See
+  // table_format.h. A wrong derivation cannot produce a wrong answer -- the
+  // block's crc32c covers exactly the bytes the derived size names, so any
+  // disagreement fails the checksum. B1's CRC-covering-the-length property,
+  // reused one format over: corruption the reader REJECTS rather than believes.
+  if (footer.range_offset != 0) {
+    if (footer.range_offset >= footer_at) {
+      return Fail(TableFault::kHandleOutOfRange, footer_at,
+                  "range block offset runs past the footer");
+    }
+    // It must not overlap what is already spoken for. Every other handle was
+    // range-checked before it was followed; this one is checked against them.
+    if (footer.range_offset < footer.index.offset + footer.index.size ||
+        (footer.filter.size != 0 &&
+         footer.range_offset < footer.filter.offset + footer.filter.size)) {
+      return Fail(TableFault::kHandleOutOfRange, footer_at,
+                  "range block overlaps the index or the filter");
+    }
+    const uint64_t range_size = footer_at - footer.range_offset;
+    std::vector<RangeTombstone> tombstones;
+    const Slice range_block(image.data() + footer.range_offset,
+                            static_cast<std::size_t>(range_size));
+    const RangeCheck rc = ParseRangeBlock(range_block, &tombstones);
+    if (!rc.ok()) {
+      return Fail(TableFault::kBadRangeBlock, footer.range_offset + rc.offset,
+                  std::string("range block: ") + RangeFaultName(rc.fault) + " (" +
+                      rc.why + ")");
+    }
+    ok.range_tombstones = tombstones.size();
+
+    // SECTION 6.1's REFUSAL THAT IS NOT ABOUT THE BLOCK. The manifest records
+    // this table's bounds and COMPACTION CHOOSES ITS INPUTS BY THEM, so a
+    // tombstone the bounds do not admit is one no compaction will read -- and
+    // clause 2 of the drop claim then permits dropping a deletion while
+    // something it masked survives elsewhere. Input selection is a correctness
+    // concern, so the bounds that drive it are one too.
+    const Slice lo = ExtractUserKey(Slice(ok.smallest_key));
+    const Slice hi = ExtractUserKey(Slice(ok.largest_key));
+    for (const RangeTombstone& t : tombstones) {
+      if (t.start.compare(lo) < 0 || t.end.compare(hi) > 0) {
+        return Fail(TableFault::kTombstoneOutsideTheTableBounds,
+                    footer.range_offset + t.offset,
+                    "tombstone range lies outside the table's own key bounds");
+      }
+      if (t.seq() > ok.largest_seq) ok.largest_seq = t.seq();
+    }
   }
   return ok;
 }

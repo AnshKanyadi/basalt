@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -19,6 +20,8 @@
 #include "internal_key.h"
 #include "memtable.h"
 #include "sha256.h"
+#include "crc32c.h"
+#include "range_tombstone.h"
 #include "table_check.h"
 #include "test_env.h"
 
@@ -234,6 +237,141 @@ TEST(SstWriter, AFailedAppendIsReportedAndNotSwallowed) {
   EXPECT_FALSE(w.status.ok());
   // And the writer stopped: nothing after the failed append reached the file.
   EXPECT_LT(w.bytes.size(), clean.bytes.size());
+}
+
+// ------------------------------------------------------- range tombstones
+//
+// THE WRITER, CHECKED AGAINST RULES FIXED BEFORE IT EXISTED. B3.2 landed the
+// range-block format and its seven refusals with no writer in the tree; these
+// assert that what this writer emits is what that classifier accepts, and that
+// the two facts the format DERIVES rather than stores are true of real output.
+
+uint64_t RangeTag(SeqNum seq) { return MakeTag(seq, ValueType::kDeletion); }
+
+struct RangeBounds {
+  uint64_t file_bytes = 0;
+  std::string smallest;
+  std::string largest;
+  uint64_t largest_seq = 0;
+};
+
+std::string BuiltWithRanges(
+    const std::vector<std::pair<std::string, std::string>>& points,
+    const std::vector<std::tuple<std::string, std::string, SeqNum>>& ranges,
+    RangeBounds* meta) {
+  testenv::TestEnvironment t;
+  EXPECT_TRUE(t.env()->CreateDir("w").ok());
+  const std::string path = "w/000001.sst";
+  WritableFilePtr f;
+  EXPECT_TRUE(t.env()->NewWritableFile(path, &f).ok());
+  TableBuilder b(f.get());
+  for (const auto& kv : points) b.Add(Slice(kv.first), Slice(kv.second));
+  for (const auto& r : ranges) {
+    b.AddRangeTombstone(Slice(std::get<0>(r)), Slice(std::get<1>(r)),
+                        RangeTag(std::get<2>(r)));
+  }
+  EXPECT_TRUE(b.Finish().ok());
+  if (meta != nullptr) {
+    meta->file_bytes = b.file_size();
+    meta->smallest = b.smallest().ToString();
+    meta->largest = b.largest().ToString();
+    meta->largest_seq = b.largest_seq();
+  }
+  EXPECT_TRUE(f->Sync().ok());
+  EXPECT_TRUE(f->Close().ok());
+  return t.ContentNow(path);
+}
+
+TEST(SstWriter, ATableWithRangeTombstonesIsOneTheClassifierAccepts) {
+  RangeBounds meta;
+  const std::string image = BuiltWithRanges(
+      {{IKey("a", 1), "1"}, {IKey("m", 2), "2"}, {IKey("z", 3), "3"}},
+      {{"a", "n", 7}, {"n", "z", 8}}, &meta);
+  const TableCheck v = ValidateTable(Slice(image));
+  ASSERT_TRUE(v.ok()) << TableFaultName(v.fault) << ": " << v.why;
+  EXPECT_EQ(2u, v.range_tombstones);
+  EXPECT_EQ(3u, v.entries);
+  // The tombstones' sequences count toward the table's largest, because the
+  // manifest's number is re-derived from the file and a tombstone is a version.
+  EXPECT_EQ(8u, v.largest_seq);
+}
+
+TEST(SstWriter, ATableWithoutThemLeavesTheRangeOffsetZero) {
+  const std::string image =
+      BuiltWithRanges({{IKey("a", 1), "1"}}, {}, nullptr);
+  Footer footer;
+  std::string why;
+  ASSERT_TRUE(DecodeFooter(Slice(image), &footer, &why)) << why;
+  EXPECT_EQ(0u, footer.range_offset)
+      << "zero is what makes a B2-era table decode as having no range block";
+}
+
+// THE LAYOUT RULE, ASSERTED FROM THE BYTES. The size is DERIVED as
+// `file_size - kFooterBytes - range_offset`, so the block must end exactly
+// where the footer begins. A writer that emitted anything after it would
+// corrupt that derivation for every reader; `BM85` is the mutant.
+TEST(SstWriter, TheRangeBlockEndsExactlyWhereTheFooterBegins) {
+  const std::string image = BuiltWithRanges(
+      {{IKey("a", 1), "1"}, {IKey("z", 2), "2"}}, {{"a", "z", 5}}, nullptr);
+  Footer footer;
+  std::string why;
+  ASSERT_TRUE(DecodeFooter(Slice(image), &footer, &why)) << why;
+  ASSERT_NE(0u, footer.range_offset);
+  const uint64_t footer_at = image.size() - kFooterBytes;
+  const uint64_t derived = footer_at - footer.range_offset;
+  std::vector<RangeTombstone> out;
+  const RangeCheck rc = ParseRangeBlock(
+      Slice(image.data() + footer.range_offset, static_cast<std::size_t>(derived)),
+      &out);
+  ASSERT_TRUE(rc.ok()) << RangeFaultName(rc.fault) << ": " << rc.why;
+  EXPECT_EQ(1u, out.size());
+  EXPECT_EQ("a", out[0].start.ToString());
+  EXPECT_EQ("z", out[0].end.ToString());
+}
+
+// AND A WRONG DERIVATION IS LOUD, NOT WRONG. Shifting the recorded offset by one
+// byte makes the derived size one larger; the block's crc32c covers exactly the
+// bytes the size names, so the disagreement fails the checksum rather than
+// producing a tombstone that covers something else. B1's CRC-covering-the-length
+// property, one format over.
+TEST(SstWriter, AShiftedRangeOffsetFailsTheChecksumRatherThanReadingWrong) {
+  std::string image = BuiltWithRanges(
+      {{IKey("a", 1), "1"}, {IKey("z", 2), "2"}}, {{"a", "z", 5}}, nullptr);
+  Footer footer;
+  std::string why;
+  ASSERT_TRUE(DecodeFooter(Slice(image), &footer, &why)) << why;
+  // FORWARD BY ONE, and the direction matters. Backwards, the offset lands
+  // inside the index block and the OVERLAP check refuses it -- also correct,
+  // also loud, and a different guard. Forwards leaves the offset legal and
+  // makes the derived SIZE one byte short, which is the case this test is for.
+  const std::size_t at = image.size() - 20;  // the range offset's first byte
+  uint64_t shifted = footer.range_offset + 1;
+  for (int i = 0; i < 8; ++i) {
+    image[at + i] = static_cast<char>((shifted >> (8 * i)) & 0xff);
+  }
+  {  // the footer's own CRC must still pass, or this tests the wrong refusal
+    char* f = &image[image.size() - kFooterBytes];
+    const uint32_t crc = wal::Crc32c(f, kFooterCrcCovers);
+    for (int i = 0; i < 4; ++i) {
+      f[kFooterCrcCovers + i] = static_cast<char>((crc >> (8 * i)) & 0xff);
+    }
+  }
+  const TableCheck v = ValidateTable(Slice(image));
+  EXPECT_FALSE(v.ok());
+  EXPECT_EQ(TableFault::kBadRangeBlock, v.fault) << v.why;
+}
+
+// THE BOUNDS THE MANIFEST RECORDS MUST ADMIT THE TOMBSTONE, and the writer
+// widens them to make it so. Compaction chooses inputs by these bounds, and
+// clause 2 of the drop claim is only sound if the inputs hold every version of
+// every key they contain.
+TEST(SstWriter, ARangeTombstoneWidensTheTablesRecordedBounds) {
+  RangeBounds meta;
+  BuiltWithRanges({{IKey("m", 1), "1"}}, {{"a", "z", 9}}, &meta);
+  EXPECT_EQ("a", ExtractUserKey(Slice(meta.smallest)).ToString());
+  EXPECT_EQ("z", ExtractUserKey(Slice(meta.largest)).ToString())
+      << "the end bound is exclusive and is widened anyway: over-covering costs "
+         "a file that did not need reading, under-covering resurrects data";
 }
 
 }  // namespace

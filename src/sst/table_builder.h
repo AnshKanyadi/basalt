@@ -15,6 +15,7 @@
 #include "env.h"
 #include "table_format.h"
 #include "internal_key.h"
+#include "range_tombstone.h"
 #include "slice.h"
 #include "status.h"
 
@@ -55,6 +56,27 @@ class TableBuilder {
   // useful place to stop is here rather than in a table nobody can read.
   void Add(Slice internal_key, Slice value);
 
+  // A RANGE TOMBSTONE, `[start, end)` over USER keys. `tag` is a full internal
+  // tag whose ValueType must be a deletion -- the classifier refuses anything
+  // else, and it refused it before this method existed.
+  //
+  // Tombstones must arrive ASCENDING BY START, and no two may share a start and
+  // a tag. Same discipline as `Add`, same reason: the block is binary-searched,
+  // so an unsorted one does not fail -- it returns the wrong answer.
+  //
+  // IT WIDENS THE TABLE'S RECORDED BOUNDS, and that is a correctness link
+  // rather than bookkeeping. The manifest records those bounds and compaction
+  // CHOOSES ITS INPUTS BY THEM (B3-D1 clause 2), so a tombstone reachable only
+  // through a table whose bounds do not admit it is a tombstone no read will
+  // consult -- which resurrects everything it was supposed to mask.
+  void AddRangeTombstone(Slice start, Slice end, uint64_t tag);
+
+  // Writes the last data block, the filter, the index, THE RANGE BLOCK and the
+  // footer -- in that order, and the range block's position is load-bearing:
+  // its size is derived as `file_size - kFooterBytes - range_offset`, so
+  // anything written between it and the footer corrupts the derivation for
+  // every reader. Asserted here, not merely stated (`BM85`).
+  //
   // Writes the last data block, the filter, the index and the footer. The
   // caller Syncs. RIFT_CHECKs that at least one entry was added: an SSTable
   // with no data is a file the classifier refuses, and a flush with nothing to
@@ -80,12 +102,16 @@ class TableBuilder {
   WritableFile* file_;
   BlockBuilder data_;
   BlockBuilder index_;
+  BlockBuilder range_;
   FilterBuilder filter_;
   Status status_;
   uint64_t offset_ = 0;
   uint64_t entries_ = 0;
   std::size_t block_entries_ = 0;
   std::string last_key_;
+  std::string last_range_start_;
+  uint64_t last_range_tag_ = 0;
+  std::size_t range_count_ = 0;
   std::string smallest_;
   std::string largest_;
   SeqNum largest_seq_ = 0;

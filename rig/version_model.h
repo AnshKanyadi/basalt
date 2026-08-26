@@ -65,11 +65,23 @@ struct ModelRange {
   std::string end;
   ModelSeq seq = 0;
 
-  // The ONE place this question is answered on the harness side, mirroring
-  // `sst::RangeTombstone::Covers` on the engine side. Two implementations of a
-  // half-open test is a boundary-key bug waiting to happen, and they are kept
-  // apart on purpose: B3-D2b says the harness may not derive its expectation
-  // from the engine, and a shared predicate would be exactly that.
+  // DELIBERATELY A SECOND IMPLEMENTATION OF `sst::RangeTombstone::Covers`, AND
+  // IT MUST NOT BE REFACTORED INTO ONE.
+  //
+  // The obvious next change is to share the predicate, and it arrives wearing a
+  // DRY argument: two copies of a half-open test is a boundary-key bug waiting
+  // to happen. THAT ARGUMENT IS RIGHT ABOUT ORDINARY CODE AND WRONG HERE.
+  //
+  // B3-D2b: the harness may not derive its EXPECTATION from the engine. A
+  // shared `Covers` is exactly that -- the checker would then agree with the
+  // engine about which keys a range deletes BY CONSTRUCTION, and the one bug it
+  // exists to catch, an off-by-one at the boundary, would be invisible from
+  // both sides at once. That is GF-10's shape: a set of assertions all pointing
+  // the same way has a blind spot the size of its agreement.
+  //
+  // The cost is real and is accepted: two half-open tests can drift. What keeps
+  // them honest is that they are checked AGAINST EACH OTHER by every run, and a
+  // drift shows up as a disagreement rather than as a shared silence.
   bool Covers(const std::string& user_key) const {
     return user_key >= start && user_key < end;
   }
