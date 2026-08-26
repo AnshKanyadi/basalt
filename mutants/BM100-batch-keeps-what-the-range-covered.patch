@@ -1,0 +1,28 @@
+# id: BM100-batch-keeps-what-the-range-covered
+# blinds: a DeleteRange covering keys written EARLIER IN THE SAME BATCH
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# THE HALF OF THE INTRA-BATCH RULE THE TOMBSTONE CANNOT EXPRESS. Every op in one
+# batch shares a sequence, and the tombstone hides only sequences BELOW its own
+# -- so a Set issued before the DeleteRange, at the same sequence, is not hidden
+# by it and must be removed here or it survives.
+#
+# The result is a batch that is not atomic in the way the caller asked for: part
+# of it was undone by a later op in the same batch and part was not.
+--- a/engine-cpp/src/db.cc
++++ b/engine-cpp/src/db.cc
+@@ -265,10 +265,7 @@
+         // ceases to exist. B2 turned these into point deletions; there is no
+         // need now, because the tombstone at this sequence hides whatever the
+         // key held before the batch, and nothing in the batch survives it.
+-        for (auto it = pending.begin(); it != pending.end();) {
+-          it = InRange(Slice(it->first), start, e.end) ? pending.erase(it)
+-                                                       : std::next(it);
+-        }
++        // BM100: earlier ops in this batch are left alone.
+         // AN UNBOUNDED START IS THE EMPTY KEY. The empty user key is the
+         // minimum, so `["", end)` and `[unbounded, end)` cover the same set --
+         // which is why only the END needed a representation (B3-Q4).

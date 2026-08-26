@@ -523,6 +523,65 @@ TEST(RangeDelete, AnUnboundedClearEverythingSurvivesAFlushAndAReopen) {
   ASSERT_TRUE(db->Close().ok());
 }
 
+// THE CRASH-ONLY HALF: the range is still IN THE LIVE WAL at reopen.
+//
+// Every other test here flushes before closing, so by the time anything
+// reopens, the tombstone is in a TABLE and replay never sees a `kDeleteRange`
+// record at all. That leaves the recovery path -- the one section 8.1's whole
+// argument was about -- unexercised, and `BM99` proved it: a mutant that
+// replays a range as nothing SURVIVED every test above.
+//
+// So this one syncs and closes WITHOUT flushing, which is the only way the log
+// still carries the range when the next Open reads it.
+TEST(RangeDelete, ARangeStillInTheWalIsReplayedAtOpen) {
+  TestEnvironment t;
+  {
+    std::unique_ptr<DB> db;
+    ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+    for (int i = 0; i < 20; ++i) Put(db.get(), KeyAt(i), Value(i, 8));
+    WriteBatch b;
+    b.DeleteRange(BoundAt(5), BoundAt(10));
+    SeqNum s = 0;
+    ASSERT_TRUE(db->Write(b, &s).ok());
+    SeqNum mark = 0;
+    ASSERT_TRUE(db->Sync(&mark).ok());
+    ASSERT_EQ(0u, Tables(&t).size())
+        << "this test is only about replay if nothing was flushed";
+    ASSERT_TRUE(db->Close().ok());
+  }
+  std::unique_ptr<DB> db;
+  ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+  EXPECT_EQ(Value(4, 8), Get(*db, KeyAt(4))) << "below the range";
+  EXPECT_EQ("<absent>", Get(*db, KeyAt(5))) << "the start is INCLUSIVE";
+  EXPECT_EQ("<absent>", Get(*db, KeyAt(9)));
+  EXPECT_EQ(Value(10, 8), Get(*db, KeyAt(10))) << "the end is EXCLUSIVE";
+  ASSERT_TRUE(db->Close().ok());
+}
+
+// AND THE UNBOUNDED FORM THROUGH THE SAME PATH, because an empty end is how
+// unboundedness travels in the log and nothing else asserts that round trip.
+TEST(RangeDelete, AnUnboundedRangeStillInTheWalIsReplayedAtOpen) {
+  TestEnvironment t;
+  {
+    std::unique_ptr<DB> db;
+    ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+    for (int i = 0; i < 20; ++i) Put(db.get(), KeyAt(i), Value(i, 8));
+    WriteBatch b;
+    b.DeleteRange(BoundAt(5), Bound::Unbounded());
+    SeqNum s = 0;
+    ASSERT_TRUE(db->Write(b, &s).ok());
+    SeqNum mark = 0;
+    ASSERT_TRUE(db->Sync(&mark).ok());
+    ASSERT_TRUE(db->Close().ok());
+  }
+  std::unique_ptr<DB> db;
+  ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+  EXPECT_EQ(Value(4, 8), Get(*db, KeyAt(4)));
+  EXPECT_EQ("<absent>", Get(*db, KeyAt(5)));
+  EXPECT_EQ("<absent>", Get(*db, KeyAt(19))) << "and everything above it";
+  ASSERT_TRUE(db->Close().ok());
+}
+
 // THE SAME RULE AT EVERY PLACE IT IS WRITTEN, AND THE RESIDUAL IT CANNOT CLOSE.
 //
 // "A tombstone at S hides sequences strictly below S" is spelled three times.
