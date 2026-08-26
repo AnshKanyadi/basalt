@@ -806,6 +806,19 @@ class DBImpl final : public DB {
     // pinned, so keeping its versions required would make compaction unable to
     // reclaim space nothing can see -- the same over-requirement `keep(k)` had.
     observable = ObservableNow();
+    // AND READING IT LATER WOULD ALSO BE SAFE, WHICH IS WORTH KNOWING RATHER
+    // THAN GUESSING AT. `BM84` planted the obvious future optimization -- read
+    // S as late as possible so it is as small as possible so more can be
+    // dropped -- and it SURVIVED, correctly: a release only makes the kept set
+    // larger than required, and an acquisition lands above every sequence the
+    // inputs hold. The timing is not what carries the correctness.
+    //
+    // WHAT CARRIES IT is the assertion in DoCompact, `pin_seq <= max(S)`, and
+    // that is where a future change would break. The mutant was deleted rather
+    // than kept as a class that can never fail; this comment is its record.
+    //
+    // It is read here anyway, because ONCE-AT-THE-START is the property that
+    // stays true if the inputs ever stop being frozen at selection time.
     const Status s = DoCompact(in_l0, in_l1, keep_l1, observable);
     { wal::DbLock lock(mu_); compacting_ = false; }
     return s;
