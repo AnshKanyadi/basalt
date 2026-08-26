@@ -52,10 +52,43 @@ struct ModelVersion {
 // drop is about.
 using VersionId = std::pair<std::string, ModelSeq>;
 
+// One range deletion, as the harness submitted it. `[start, end)`, half-open,
+// agreeing with engine.InRange by construction.
+//
+// IT IS NOT A `ModelVersion` AND NOT A `VersionId`, deliberately. A version has
+// one user key; a range tombstone has none of its own and shadows many. Folding
+// it into the version space would mean inventing a key for it, and every set
+// operation downstream would then be over a space with a fictional member in
+// it.
+struct ModelRange {
+  std::string start;
+  std::string end;
+  ModelSeq seq = 0;
+
+  // The ONE place this question is answered on the harness side, mirroring
+  // `sst::RangeTombstone::Covers` on the engine side. Two implementations of a
+  // half-open test is a boundary-key bug waiting to happen, and they are kept
+  // apart on purpose: B3-D2b says the harness may not derive its expectation
+  // from the engine, and a shared predicate would be exactly that.
+  bool Covers(const std::string& user_key) const {
+    return user_key >= start && user_key < end;
+  }
+};
+
 class VersionModel {
  public:
   void NoteWrite(const std::string& user_key, ModelSeq seq, bool deletion,
                  const std::string& value);
+
+  // A range deletion at `seq` covering `[start, end)`.
+  void NoteDeleteRange(const std::string& start, const std::string& end,
+                       ModelSeq seq);
+
+  // Every submitted range tombstone covering `user_key`, NEWEST FIRST.
+  std::vector<ModelRange> RangesCovering(const std::string& user_key) const;
+
+  // Every range tombstone submitted, in submission order.
+  const std::vector<ModelRange>& Ranges() const { return ranges_; }
 
   // Snapshots are recorded by SEQUENCE. A snapshot is live until released.
   void NoteSnapshotTaken(ModelSeq seq);
@@ -85,6 +118,26 @@ class VersionModel {
   // outlive it -- is checked separately, as the resurrection rule. A claim that
   // forbade dropping a tombstone with nothing left to mask would forbid the one
   // drop that makes compaction terminate in space.
+  //
+  // ---------------------------------------------------------------------
+  // AND THE SAME CORRECTION EXTENDS OVER RANGES, WHICH IS THE POINT OF
+  // WRITING THIS BEFORE THE WRITER EXISTS.
+  //
+  // A range tombstone at sequence `d` covering `[start, end)` shadows every
+  // version of every key it covers with a sequence BELOW `d`. So at an
+  // observable `s`, the answer for key `k` is decided by whichever is NEWER:
+  // the newest point version of `k` at or below `s`, or the newest range
+  // tombstone covering `k` at or below `s`.
+  //
+  //   newest thing is a VALUE      -> that value is required
+  //   newest thing is a DELETION   -> the answer is kNotFound, nothing required
+  //   newest thing is a RANGE TOMB -> the answer is kNotFound, nothing required
+  //
+  // A RANGE TOMBSTONE IS NEVER ITSELF REQUIRED, for the reason a point deletion
+  // is not: the requirement is on the ANSWER at each observable sequence, never
+  // on a particular entry surviving. What a range tombstone owes is the
+  // resurrection rule -- nothing it masks may outlive it -- and that is checked
+  // separately, over a RANGE rather than over a key.
   std::set<VersionId> Required() const;
 
   // Every version ever submitted. `Required()` is a subset.
@@ -102,6 +155,10 @@ class VersionModel {
   // user key -> versions, ascending by sequence. std::map so iteration order is
   // a property of the keys and never of insertion (section 6.1).
   std::map<std::string, std::vector<ModelVersion>> by_key_;
+  // Submission order, never sorted: two range tombstones can share a sequence
+  // (one batch, several DeleteRange ops) so there is no total order to impose,
+  // and every query below is a filter rather than a lookup.
+  std::vector<ModelRange> ranges_;
   std::set<ModelSeq> live_snapshots_;
   ModelSeq visible_ = 0;
 };

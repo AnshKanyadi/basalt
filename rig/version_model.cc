@@ -23,6 +23,31 @@ void VersionModel::NoteWrite(const std::string& user_key, ModelSeq seq,
   if (seq > visible_) visible_ = seq;
 }
 
+void VersionModel::NoteDeleteRange(const std::string& start, const std::string& end,
+                                  ModelSeq seq) {
+  // The harness may not submit a range no writer could mean -- the same refusal
+  // the classifier makes about the bytes, made here about the submission, so a
+  // fixture cannot describe something the engine would refuse to write and then
+  // hold the engine to it.
+  RIFT_CHECK(start < end);
+  ModelRange r;
+  r.start = start;
+  r.end = end;
+  r.seq = seq;
+  ranges_.push_back(r);
+  if (seq > visible_) visible_ = seq;
+}
+
+std::vector<ModelRange> VersionModel::RangesCovering(const std::string& user_key) const {
+  std::vector<ModelRange> out;
+  for (const ModelRange& r : ranges_) {
+    if (r.Covers(user_key)) out.push_back(r);
+  }
+  std::sort(out.begin(), out.end(),
+            [](const ModelRange& a, const ModelRange& b) { return a.seq > b.seq; });
+  return out;
+}
+
 void VersionModel::NoteSnapshotTaken(ModelSeq seq) { live_snapshots_.insert(seq); }
 void VersionModel::NoteSnapshotReleased(ModelSeq seq) { live_snapshots_.erase(seq); }
 void VersionModel::NoteVisibleSeq(ModelSeq seq) {
@@ -43,17 +68,35 @@ std::set<VersionId> VersionModel::Required() const {
   std::set<VersionId> out;
   for (const auto& entry : by_key_) {
     const std::vector<ModelVersion>& versions = entry.second;  // ascending
+    const std::vector<ModelRange> covering = RangesCovering(entry.first);
     for (ModelSeq s : observable) {
       // The NEWEST version at or below s. Ascending order, so walk backwards
       // and stop at the first one that fits.
+      const ModelVersion* newest = nullptr;
       for (auto it = versions.rbegin(); it != versions.rend(); ++it) {
         if (it->seq > s) continue;
-        // A DELETION IS NOT REQUIRED -- see the header. The answer at `s` is
-        // kNotFound, and dropping the deletion preserves it provided nothing
-        // older survives, which the resurrection rule checks instead.
-        if (!it->deletion) out.insert({entry.first, it->seq});
+        newest = &*it;
         break;
       }
+      if (newest == nullptr) continue;  // nothing of this key is visible at s
+      // AND THE NEWEST RANGE TOMBSTONE AT OR BELOW s, which competes with it.
+      // `covering` is newest first, so the first one that fits is the winner.
+      ModelSeq shadow = 0;
+      bool shadowed = false;
+      for (const ModelRange& r : covering) {
+        if (r.seq > s) continue;
+        shadow = r.seq;
+        shadowed = true;
+        break;
+      }
+      // WHICHEVER IS NEWER DECIDES THE ANSWER. A range tombstone above the
+      // version hides it exactly as a point deletion would, so nothing is
+      // required at this `s`.
+      if (shadowed && shadow > newest->seq) continue;
+      // A DELETION IS NOT REQUIRED -- see the header. The answer at `s` is
+      // kNotFound, and dropping the deletion preserves it provided nothing
+      // older survives, which the resurrection rule checks instead.
+      if (!newest->deletion) out.insert({entry.first, newest->seq});
     }
   }
   return out;

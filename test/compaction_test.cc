@@ -293,6 +293,86 @@ TEST(Compaction, TheModelDropsAReleasedSnapshotFromS) {
   EXPECT_EQ(1u, m.Required().size()) << "and stops being required once it is not";
 }
 
+// ---------------------------------------- range tombstones, in the model first
+//
+// THE OBSERVER BEFORE THE OBSERVED, FIFTH USE, AND THE STRONGEST YET: there is
+// no range-tombstone WRITER in the tree, no memtable that holds one, and no
+// compaction that merges one. These assert what a range deletion MEANS for the
+// drop claim, and the engine will be checked against them.
+//
+// The rule they encode: at each observable sequence, whichever is NEWER decides
+// the answer -- the newest point version at or below it, or the newest range
+// tombstone covering the key at or below it.
+
+TEST(RangeModel, ARangeTombstoneAboveAValueMakesItUnrequired) {
+  VersionModel m;
+  m.NoteWrite("b", 4, false, "old");
+  m.NoteDeleteRange("a", "c", 9);
+  m.NoteVisibleSeq(9);
+  EXPECT_TRUE(m.Required().empty())
+      << "the answer at 9 is kNotFound, so no entry has to survive to produce it";
+}
+
+TEST(RangeModel, ARangeTombstoneBelowAValueHidesNothing) {
+  VersionModel m;
+  m.NoteDeleteRange("a", "c", 4);
+  m.NoteWrite("b", 9, false, "new");
+  m.NoteVisibleSeq(9);
+  const std::set<rig::VersionId> req = m.Required();
+  ASSERT_EQ(1u, req.size());
+  EXPECT_EQ(9u, req.begin()->second) << "the write is newer than the tombstone";
+}
+
+// THE HALF-OPEN BOUND, ASSERTED AT BOTH ENDS. `[start, end)` -- and a fixture
+// that only checked the inside would pass with either convention.
+TEST(RangeModel, TheEndBoundIsExclusiveAndTheStartBoundIsNot) {
+  VersionModel m;
+  m.NoteWrite("a", 1, false, "at-start");
+  m.NoteWrite("c", 2, false, "at-end");
+  m.NoteDeleteRange("a", "c", 9);
+  m.NoteVisibleSeq(9);
+  const std::set<rig::VersionId> req = m.Required();
+  ASSERT_EQ(1u, req.size()) << "\"a\" is covered and \"c\" is not";
+  EXPECT_EQ("c", req.begin()->first);
+}
+
+// A SNAPSHOT BELOW THE TOMBSTONE STILL SEES WHAT IT HID, which is the same
+// shape as ASnapshotBelowATombstoneKeepsIt one level up -- and the reason the
+// range tombstone cannot simply be applied to the model at submission time.
+TEST(RangeModel, ASnapshotBelowARangeTombstoneStillRequiresTheValue) {
+  VersionModel m;
+  m.NoteWrite("b", 4, false, "old");
+  m.NoteDeleteRange("a", "c", 9);
+  m.NoteVisibleSeq(9);
+  m.NoteSnapshotTaken(5);
+  const std::set<rig::VersionId> req = m.Required();
+  ASSERT_EQ(1u, req.size());
+  EXPECT_EQ(4u, req.begin()->second)
+      << "at 5 the tombstone is not yet visible and the value is the answer";
+}
+
+TEST(RangeModel, AKeyOutsideTheRangeIsUntouched) {
+  VersionModel m;
+  m.NoteWrite("z", 4, false, "outside");
+  m.NoteDeleteRange("a", "c", 9);
+  m.NoteVisibleSeq(9);
+  const std::set<rig::VersionId> req = m.Required();
+  ASSERT_EQ(1u, req.size());
+  EXPECT_EQ("z", req.begin()->first);
+}
+
+// TWO TOMBSTONES, AND THE NEWEST COVERING ONE IS THE ONE THAT COMPETES. Written
+// because "the newest range tombstone" is easy to implement as "the last one
+// submitted", and the two differ exactly when an older range is submitted last.
+TEST(RangeModel, TheNewestCoveringTombstoneDecidesAndNotTheLastSubmitted) {
+  VersionModel m;
+  m.NoteWrite("b", 7, false, "v7");
+  m.NoteDeleteRange("a", "c", 9);
+  m.NoteDeleteRange("a", "c", 5);  // submitted later, OLDER sequence
+  m.NoteVisibleSeq(9);
+  EXPECT_TRUE(m.Required().empty()) << "9 shadows the value; 5 does not undo it";
+}
+
 // ------------------------------------------------------- B3-D7a's two halves
 
 // THE TERMINATION ASSERTION, AND ITS BOUND IS EXACT. A correct compaction
