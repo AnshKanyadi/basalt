@@ -799,15 +799,13 @@ class DBImpl final : public DB {
         const bool overlaps = a.compare(Slice(hi)) <= 0 && b.compare(Slice(lo)) >= 0;
         (overlaps ? in_l1 : keep_l1).push_back(t);
       }
-      observable = snapshots_->Live();
-      // `S` = the live snapshots PLUS the sequence a caller reads at with no
-      // snapshot. Without the second member the newest version of every key
-      // would be droppable, which is the one drop no compaction may make.
-      if (observable.empty() || observable.back() != seq_) observable.push_back(seq_);
-      std::sort(observable.begin(), observable.end());
-      observable.erase(std::unique(observable.begin(), observable.end()),
-                       observable.end());
     }
+    // `S`, READ ONCE, BEFORE THE FIRST INPUT ENTRY IS CONSUMED. B3-Q2 is ruled:
+    // S is the LIVE snapshots, plus the sequence a caller reads at with no
+    // snapshot. A retired snapshot has no reader that can observe what it
+    // pinned, so keeping its versions required would make compaction unable to
+    // reclaim space nothing can see -- the same over-requirement `keep(k)` had.
+    observable = ObservableNow();
     const Status s = DoCompact(in_l0, in_l1, keep_l1, observable);
     { wal::DbLock lock(mu_); compacting_ = false; }
     return s;
@@ -892,6 +890,21 @@ class DBImpl final : public DB {
     std::vector<sst::TableMeta> outputs_;
   };
 
+  // `S`. Takes the lock itself, so it is called OUTSIDE one.
+  std::vector<wal::SeqNum> ObservableNow() const {
+    std::vector<wal::SeqNum> s = snapshots_->Live();
+    wal::DbLock lock(mu_);
+    // WITHOUT THE VISIBLE SEQUENCE, `S` CAN BE EMPTY -- and an empty S makes
+    // every version of every key unobservable and therefore droppable, which is
+    // the one drop no compaction may ever make. B3-Q2's ruling is "live
+    // snapshots only"; reading it as "live snapshots ALONE" is the dangerous
+    // misreading, and `BM83` is the mutant that keeps it visible.
+    if (s.empty() || s.back() != seq_) s.push_back(seq_);
+    std::sort(s.begin(), s.end());
+    s.erase(std::unique(s.begin(), s.end()), s.end());
+    return s;
+  }
+
   Status DoCompact(const std::vector<std::shared_ptr<sst::Table>>& in_l0,
                    const std::vector<std::shared_ptr<sst::Table>>& in_l1,
                    const std::vector<std::shared_ptr<sst::Table>>& keep_l1,
@@ -916,6 +929,30 @@ class DBImpl final : public DB {
       run.push_back(t.get());
     }
     merge.AddRun(std::move(run));
+
+    // WHY `S` IS SAFE TO READ ONCE, AND THE ASSERTION THAT MAKES IT SO.
+    //
+    // `S` moves under a running compaction, in two directions, and the design's
+    // §1.3 argues both are safe. One of the two arguments rests on a fact about
+    // the INPUTS, and a fact is assertable:
+    //
+    //   A SNAPSHOT RELEASED during the compaction shrinks `S`. The compaction
+    //   then kept versions nothing can observe -- OVER-KEEPING, which the claim
+    //   permits in so many words. Safe with nothing to check.
+    //
+    //   A SNAPSHOT TAKEN during the compaction gets the CURRENT sequence, which
+    //   only ever increases. If every sequence the inputs hold is at or below
+    //   the visible sequence already in `S`, then for any later `s`, keep(k) at
+    //   `s` is the newest version of k in the inputs -- WHICH THE VISIBLE
+    //   SEQUENCE ALREADY REQUIRED. A later snapshot requires NOTHING NEW.
+    //
+    // That second argument is the whole of why no lock is held across the
+    // compaction, and it is exactly `pin_seq <= max(S)`. It is true today
+    // because tables hold only flushed data while `seq_` runs ahead of them --
+    // and it would STOP being true the day a compaction took the immutable
+    // memtable as an input, which is a change someone will propose.
+    RIFT_CHECK(!observable.empty());
+    RIFT_CHECK(pin_seq <= observable.back());
 
     // BOTTOM-MOST, COMPUTED RATHER THAN ASSUMED. The inputs hold every version
     // of every key they contain exactly when no L1 file left out of them can

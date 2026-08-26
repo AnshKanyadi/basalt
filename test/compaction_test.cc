@@ -253,6 +253,46 @@ TEST(Compaction, ASnapshotBelowATombstoneKeepsIt) {
   EXPECT_TRUE(v.ok()) << v.why;
 }
 
+// B3-Q2, RULED: `S` IS THE LIVE SNAPSHOTS.
+//
+// A retired snapshot has no reader that can observe the version it pinned, so
+// keeping that version required would make compaction unable to reclaim space
+// NOTHING CAN SEE -- the same over-requirement `keep(k)` had before §1.2a
+// corrected it, arriving a second time from a different direction.
+//
+// BOTH DIRECTIONS AGAINST ONE PAIR OF VERSIONS (GF-14). Live keeps it; released
+// drops it. Either half alone would also be satisfied by a compaction that
+// ignored `S` entirely in one direction or the other.
+TEST(Compaction, AReleasedSnapshotStopsRequiringItsVersion) {
+  const std::vector<std::vector<Cell>> in = {
+      {{"a", 9, false, "new"}, {"a", 4, false, "old"}}};
+  const CompactResult live = Compact(in, {5, 9});
+  EXPECT_EQ(2u, live.stats.emitted) << "a live snapshot at 5 must keep v@4";
+  EXPECT_EQ(0u, live.stats.dropped);
+
+  const CompactResult released = Compact(in, {9});
+  EXPECT_EQ(1u, released.stats.emitted) << "with the snapshot gone, v@4 is "
+                                           "observable by nobody";
+  EXPECT_EQ(1u, released.stats.dropped);
+}
+
+// The same ruling one level down, in the harness's own record: releasing a
+// snapshot must remove it from `S`, or every checker downstream inherits the
+// over-requirement rather than the engine.
+TEST(Compaction, TheModelDropsAReleasedSnapshotFromS) {
+  VersionModel m;
+  m.NoteWrite("a", 4, false, "old");
+  m.NoteWrite("a", 9, false, "new");
+  m.NoteVisibleSeq(9);
+  m.NoteSnapshotTaken(5);
+  EXPECT_EQ(2u, m.ObservableSequences().size());
+  EXPECT_EQ(2u, m.Required().size()) << "v@4 is required while 5 is live";
+
+  m.NoteSnapshotReleased(5);
+  EXPECT_EQ(1u, m.ObservableSequences().size());
+  EXPECT_EQ(1u, m.Required().size()) << "and stops being required once it is not";
+}
+
 // ------------------------------------------------------- B3-D7a's two halves
 
 // THE TERMINATION ASSERTION, AND ITS BOUND IS EXACT. A correct compaction
