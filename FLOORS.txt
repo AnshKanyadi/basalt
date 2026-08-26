@@ -41,6 +41,18 @@
 # A class the sweep cannot reach carries a SPLIT LABEL in the rate column --
 # covered-by: <instrument> -- naming what catches it instead. Not a silent zero.
 #
+# A CORRECTNESS INSTRUMENT IS A DIFFERENT INSTRUMENT FROM A PROGRESS ASSERTION,
+# and carries covers-correctness: rather than covered-by:. GF-12: a loop with a
+# proven progress quantity CAN ADVANCE MONOTONICALLY INTO A WRONG ANSWER --
+# BM68 terminates cleanly with its interval invariant intact while searching the
+# wrong half, and BM69's file index strictly increases while a whole table's
+# contents vanish. CF-3's assertions bound TERMINATION and say nothing about
+# whether the traversal is right.
+#
+# The label exists so that NOBODY LATER READS A GREEN PROGRESS ASSERTION AS
+# EVIDENCE ABOUT TRAVERSAL. The danger is not that CF-3 fails; it is that CF-3
+# succeeding feels like coverage it does not provide.
+#
 # AN ABORT-KILL IS A DIFFERENT INSTRUMENT FROM A TEST-KILL, and it carries a
 # DIFFERENT LABEL: killed-by-guard: <guard>. Three classes are killed by a guard
 # firing rather than by an assertion failing -- the mutex-depth guard and the
@@ -249,9 +261,9 @@ BM67-range-covers-is-closed | covered-by: RangeTombstone.TheBoundsAreHalfOpen | 
 
 # ---- B3.3: the two-level read path
 
-BM68-concat-seek-wrong-half | covered-by: ConcatIter.EverySeekTargetLandsWhereALinearScanWould | 0 | determined at B3.3 by induction | CF-3's condition induced: the loop still TERMINATES because `hi - lo` shrinks whichever half is taken, so no progress assertion fires. Caught by the seek sweep instead. Termination and correctness rest on different things, which is the separation the rule is about. | default | 0
+BM68-concat-seek-wrong-half | covers-correctness: ConcatIter.EverySeekTargetLandsWhereALinearScanWould | 0 | determined at B3.3 by induction | CF-3's condition induced: the loop still TERMINATES because `hi - lo` shrinks whichever half is taken, so no progress assertion fires. Caught by the seek sweep instead. Termination and correctness rest on different things, which is the separation the rule is about. | default | 0
 
-BM69-concat-next-skips-a-file | covered-by: ConcatIter.WalksTheWholeRunInOrder | 0 | determined at B3.3 by induction | `file_` still strictly increases, so the progress assertion holds -- a second demonstration that CF-3's assertions are about TERMINATION and say nothing about whether the traversal is right. | default | 0
+BM69-concat-next-skips-a-file | covers-correctness: ConcatIter.WalksTheWholeRunInOrder | 0 | determined at B3.3 by induction | `file_` still strictly increases, so the progress assertion holds -- a second demonstration that CF-3's assertions are about TERMINATION and say nothing about whether the traversal is right. | default | 0
 
 BM70-concat-accepts-an-overlapping-run | covered-by: ConcatIter.AnOverlappingRunIsRefusedAtConstruction | 0 | determined at B3.3 by induction | A precondition on the CALLER, which is the kind violated silently once a compaction chooses inputs. Killed by a death test, so the instrument is an ABORT that the test expects rather than one that truncates a run. | default | 0
 
