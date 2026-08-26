@@ -143,6 +143,7 @@ add_library(rift_rig STATIC
   rig/run_outcome.cc
   rig/version_model.cc
   rig/drop_check.cc
+  rig/image_fixture.cc
   rig/merge_check.cc
   rig/durable_mirror.cc
   rig/cap_adjudication.cc

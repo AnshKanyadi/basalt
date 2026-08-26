@@ -18,7 +18,7 @@
 
 #include "drop_check.h"
 #include "internal_key.h"
-#include "manifest.h"
+#include "image_fixture.h"
 #include "table_builder.h"
 #include "test_env.h"
 
@@ -59,46 +59,12 @@ std::string Table(const std::vector<Cell>& cells) {
 }
 
 
-// A durable image holding one table, WITH A MANIFEST NAMING IT -- because a
-// table the manifest does not name is an orphan, and an adjudicator that counted
-// orphans would let a compaction "keep" a record in a file nothing refers to.
+// ONE CONSTRUCTION PATH, shared with drop_check_test. See rig/image_fixture.h:
+// two fixture defects of one shape -- an undurable table name and a missing
+// manifest -- were both the fixture omitting something the engine's own
+// invariants require, and both presented as checker bugs.
 ImageBytes ImageHolding(const std::string& table_bytes) {
-  auto t = std::unique_ptr<TestEnvironment>(new TestEnvironment());
-  EXPECT_TRUE(t->env()->CreateDir(kDir).ok());
-  sst::ManifestState state;
-  std::unique_ptr<sst::Manifest> m;
-  std::vector<std::shared_ptr<sst::Table>> tables;
-  EXPECT_TRUE(sst::Manifest::Open(t->env(), kDir, &state, &tables, &m).ok());
-  const uint64_t number = state.next_file_number;
-  const std::string path = sst::TablePath(kDir, number);
-  {
-    WritableFilePtr f;
-    EXPECT_TRUE(t->env()->NewWritableFile(path, &f).ok());
-    EXPECT_TRUE(f->Append(Slice(table_bytes)).ok());
-    EXPECT_TRUE(f->Sync().ok());
-    EXPECT_TRUE(f->Close().ok());
-    DirectoryPtr d;
-    EXPECT_TRUE(t->env()->NewDirectory(kDir, &d).ok());
-    EXPECT_TRUE(d->Sync().ok());
-    EXPECT_TRUE(d->Close().ok());
-  }
-  std::shared_ptr<sst::Table> opened;
-  EXPECT_TRUE(sst::Table::Open(t->env(), path, number, &opened).ok());
-  sst::TableMeta meta;
-  meta.number = number;
-  meta.file_bytes = opened->file_bytes();
-  meta.smallest = opened->check().smallest_key;
-  meta.largest = opened->check().largest_key;
-  meta.largest_seq = opened->check().largest_seq;
-  sst::ManifestEdit add;
-  add.kind = sst::EditKind::kAddTable;
-  add.table = meta;
-  sst::ManifestEdit bump;
-  bump.kind = sst::EditKind::kNextFileNumber;
-  bump.number = number + 1;
-  EXPECT_TRUE(m->AppendGroup({add, bump}).ok());
-  EXPECT_TRUE(m->Close().ok());
-  return t->Image();
+  return ImageHoldingTables(kDir, {table_bytes});
 }
 
 VersionModel ModelOf(const std::vector<Cell>& cells) {

@@ -15,6 +15,8 @@
 // whole argument for why B2's state comparisons cannot do this job.
 #include "drop_check.h"
 
+#include "image_fixture.h"
+
 #include <memory>
 #include <string>
 #include <vector>
@@ -42,70 +44,26 @@ struct Entry {
   std::string value;
 };
 
-std::string IKey(const std::string& user, ModelSeq seq, bool deletion) {
-  std::string out;
-  AppendInternalKey(&out, Slice(user),
-                    MakeTag(seq, deletion ? ValueType::kDeletion : ValueType::kValue));
-  return out;
-}
-
-// Builds a durable image holding exactly `in_table`, with a manifest naming it.
+// Builds a durable image holding exactly `in_table`.
 //
-// THE FIXTURE MAY USE THE ENGINE'S WRITERS. The oracle may not, and does not --
-// it is handed the resulting bytes. What matters for the ordering rule is that
-// no COMPACTION exists; using a TableBuilder to produce a valid table is how the
-// fixture gets bytes worth judging.
+// ONE CONSTRUCTION PATH, in rig/image_fixture.h. The first version of this
+// fixture wrote the table, synced it, and never synced the DIRECTORY -- so the
+// name was not durable, the image did not contain the table, and the
+// adjudicator correctly reported every version as dropped. It was right about
+// the image it was given. Building through the engine's own install sequence is
+// what makes that class unreachable rather than remembered.
 ImageBytes BuildImage(const std::vector<Entry>& in_table) {
-  auto t = std::unique_ptr<TestEnvironment>(new TestEnvironment());
-  EXPECT_TRUE(t->env()->CreateDir(kDir).ok());
-  sst::ManifestState state;
-  std::unique_ptr<sst::Manifest> m;
-  std::vector<std::shared_ptr<sst::Table>> tables;
-  EXPECT_TRUE(sst::Manifest::Open(t->env(), kDir, &state, &tables, &m).ok());
-
-  if (!in_table.empty()) {
-    const uint64_t number = state.next_file_number;
-    sst::TableMeta meta;
-    meta.number = number;
-    {
-      WritableFilePtr f;
-      EXPECT_TRUE(t->env()->NewWritableFile(sst::TablePath(kDir, number), &f).ok());
-      sst::TableBuilder b(f.get());
-      // Table order: user key ascending, tag descending. The fixture supplies
-      // entries already in that order; a fixture that did not would be testing
-      // the builder's RIFT_CHECK rather than the adjudicator.
-      for (const Entry& e : in_table) {
-        const std::string k = IKey(e.user_key, e.seq, e.deletion);
-        b.Add(Slice(k), Slice(e.value));
-      }
-      EXPECT_TRUE(b.Finish().ok());
-      meta.file_bytes = b.file_size();
-      meta.smallest = b.smallest().ToString();
-      meta.largest = b.largest().ToString();
-      meta.largest_seq = b.largest_seq();
-      EXPECT_TRUE(f->Sync().ok());
-      EXPECT_TRUE(f->Close().ok());
-      // AND THE DIRECTORY, or the table's NAME never becomes durable and the
-      // image the adjudicator is handed does not contain it at all. TestEnv
-      // models per-directory-entry durability, so a fixture that skips this
-      // builds a state in which the table was never created -- and the first
-      // version of this fixture did exactly that, which the adjudicator
-      // reported as a dropped version. B2-D5 step 2, in a test.
-      DirectoryPtr d;
-      EXPECT_TRUE(t->env()->NewDirectory(kDir, &d).ok());
-      EXPECT_TRUE(d->Sync().ok());
-      EXPECT_TRUE(d->Close().ok());
-    }
-    sst::ManifestEdit add;
-    add.kind = sst::EditKind::kAddTable;
-    add.table = meta;
-    sst::ManifestEdit bump;
-    bump.kind = sst::EditKind::kNextFileNumber;
-    bump.number = number + 1;
-    EXPECT_TRUE(m->AppendGroup({add, bump}).ok());
+  if (in_table.empty()) return ImageHoldingTables(kDir, {});
+  std::vector<FixtureCell> cells;
+  for (const Entry& e : in_table) {
+    FixtureCell c;
+    c.user_key = e.user_key;
+    c.seq = e.seq;
+    c.deletion = e.deletion;
+    c.value = e.value;
+    cells.push_back(c);
   }
-  EXPECT_TRUE(m->Close().ok());
-  return t->Image();
+  return ::rift::rig::BuildImage(kDir, {cells});
 }
 
 // The WAL the fixture's Manifest::Open created holds nothing, so every version
