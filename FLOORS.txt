@@ -121,3 +121,105 @@ BM57-deleterange-reads-the-memtable-only | covered-by: Flush.DeleteRangeReachesK
 BM58-merged-iter-no-direction-switch | covered-by: Flush.ReadsSeeTheMemtableAndTheTablesTogether | 0 | measured 0/300 default, 0/985 flush | The sweep injects kills and torn syncs; this class is a property of bytes, of an ordering inside one process, or of an interleaving, and no crash schedule produces it. | default
 BM62-unnamed-wal-unchecked | covered-by: Recovery.APresentUnnamedWalHoldingUncoveredRecordsIsRefused | 0 | measured 0/300 default, 0/985 flush | The sweep injects kills and torn syncs; this class is a property of bytes, of an ordering inside one process, or of an interleaving, and no crash schedule produces it. | default
 BM63-write-apply-outside-the-lock | covered-by: TSanLane.ConcurrentWriteAndSyncAcrossAFlushAreRaceFreeAcrossThisInterleaving | 0 | measured 0/300 default, 0/985 flush | The sweep injects kills and torn syncs; this class is a property of bytes, of an ordering inside one process, or of an interleaving, and no crash schedule produces it. | default
+
+# ---- CF-2: every remaining class, with the assertion that catches it named
+# Determined by induction, one class at a time, because CF-2's whole point is that
+# a covering LANE is not a covering ASSERTION: a class killed by a lane but named
+# by nothing is a class whose covering assertion can be deleted with no lane going
+# red -- the mutant still dies, on some OTHER assertion in the same lane, and the
+# class quietly stops testing what it was written to test.
+
+BM10-crc-excludes-length | covered-by: Crc32c.TheFragmentChecksumCoversTheLengthField | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+BM12-no-buffer-cap | covered-by: WalCaps.TheBufferTripwireHaltsInsteadOfGrowing | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+BM13-characterization-counted | covered-by: RunOutcome.CharacterizationIsNotEvidence | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+BM14-drop-the-lock | covered-by: TSanLane.ConcurrentAddAndGetAreRaceFreeAcrossThisInterleaving | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Killed by the SANITIZER rather than by an assertion: TSan reports the race the missing lock creates. Its absence would leave the tsan lane green over a genuinely racing structure, which is why the lane runs a dedicated harness and not the unit suite. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+BM16-mutex-across-env | covered-by: env_guard.cc's mutex-depth guard, which ABORTS | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | THE KILL IS AN ABORT, NOT A TEST FAILURE. A naive reading of the suite reports NO failing test, because the process dies before the summary prints -- the exact misreading the RIFT PARTIAL RUN marker now prevents. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+BM17a-bypassing-env-method | covered-by: cpp-scan part 1, the Env surface correspondence | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+BM17b-unregistered-wrapper | covered-by: cpp-scan part 1, the Env surface correspondence | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+BM17c-mispointed-callsite | covered-by: EnvSurface.EveryWrapperInterceptsWithItsOwnCallSiteBeforeImplementing | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+BM17d-callsite-missing-from-list | covered-by: cpp-scan part 1, the AllCallSites() correspondence | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+BM18-regime-blind-aggregation | covered-by: Regime.RunsOfDifferentRegimesRefuseToAggregate | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+BM19-spurious-tripwire | covered-by: WalAdjudication.RecordCapBothDirections | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+BM20-missing-tripwire | covered-by: WalCaps.AnOverCapRecordIsRefusedAndAppliesNothing | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+BM21-network-in-build | covered-by: cpp-ci, the networking-disabled lane | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | The wrapper proves it isolated before trusting the result, so a false green here needs the isolation to fail AND the proof to fail with it. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+BM22-height-mapping-shift | covered-by: TestHeightVectors.EveryReachableHeight | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+BM23-upgrade-the-claim | covered-by: ConcurrencyClaim.WordingIsPinnedAndDoesNotClaimRaceFreedom | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Regenerated at B2 when the claim widened WITH the harness. A mutant that did not rot there would have meant the sentence was widened without it. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+BM6-prng-heights | covered-by: cpp-scan rule A5-RANDOM | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+BM7-drop-close-error | covered-by: DB.CloseErrorReachesTheCaller | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+BM8-skip-crc | covered-by: WalReaderSixCases.ACrcFailureWhileInsideIsATornTail | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+BM9-apply-does-io | covered-by: env_guard.cc's mutex-depth guard, which ABORTS | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | THE KILL IS AN ABORT. See BM16: the suite reports no failing test because the process dies first. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+CENSUS-extra-call | covered-by: TestEnvCensus.PerCallSiteCountsAreExactlyWhatTheWorkloadIssued | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+CENSUS-missing-drive | covered-by: TestEnvCensus.EveryCallSiteIsReachedByAWorkloadThatExercisesEveryOperation | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+COLD-fetch-despite-isolation | covered-by: cpp-ci's cold-cache check | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | HARNESS-004: the check REFUSES when its build root exists rather than deleting it, which is GF-1 recurring inside its own remedy. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+DECIDER-direction-unasserted | covered-by: cpp-scan part 5, the named-test existence check | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+DECIDER-unregistered | covered-by: cpp-scan part 5, the RIFT_EVIDENCE_DECIDER cross-check | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+DIGEST-address-heights | covered-by: MemTable.StructuralDigestIsPinned | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+EXPAND-ignores-batch-history | covered-by: DB.DeleteRangeRemovesEarlierWritesInTheSameBatchAndALaterSetReAddsThem | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+FLOOR-always-suspends | covered-by: RunOutcome.TheFloorSuspendsOnlyWhenSomethingSuspendedIt | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+FLOOR-continuation-removed | covered-by: cpp-campaign's BM2 floor | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | THE CAMPAIGN'S OWN JUSTIFICATION, MEASURED: cpp-sweep stays GREEN while cpp-campaign goes RED. The lane whose job is finding defects is perfectly healthy and its power has collapsed. DESIGN-B1 section 10.3 opens with it. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+LANE-cpp-asan | covered-by: cpp-asan's own instrumentation | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | A canary: it blinds nothing and exists to prove the lane can fail. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+LANE-cpp-test | covered-by: LaneCanary.OurOwnAssertionsRun | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | A canary: it asserts something false. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+LANE-cpp-tsan | covered-by: cpp-tsan's own instrumentation | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | A canary: it races a plain counter inside the harness itself. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+LANE-cpp-ubsan | covered-by: cpp-ubsan's own instrumentation | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | A canary: it overflows a signed int. -fno-sanitize-recover=all is what makes it a failure rather than a printed diagnostic. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+LEDGER-always-promoted | covered-by: TestEnvRegistry.ALyingSyncReturnsOkPromotesNothingAndSuspendsExactness | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Survived its first induction -- the test never created the situation it was checking. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+MODEL-append-reaches-content | covered-by: TestEnvDurability.BufferedBytesNeverReachContentBeforeFlush | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+MODEL-flush-promotes | covered-by: TestEnvDurability.KillDiscardsEverythingSinceTheLastSyncThatReturned | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+MODEL-kill-keeps-content | covered-by: TestEnvDurability.KillDiscardsEverythingSinceTheLastSyncThatReturned | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+ORACLE-includes-engine | covered-by: cpp-scan part 2b, the ARTIFACTS allow-list | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | REPOINTED AT B3: part 2b was REPLACED, not excepted, when B3-Q1 corrected the rule to parse-artifacts-never-consult-beliefs. The class is unchanged and the mechanism that catches it moved. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+REGISTRY-lying-sync-not-suspending | covered-by: test_env.cc's suspension assertion, which ABORTS | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | THE KILL IS AN ABORT. See BM16. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+SCAN-claim-removed | covered-by: cpp-scan part 4, CLAIMS.txt verbatim | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+SCAN-raw-syscall | covered-by: cpp-scan rule A5-SYSCALL | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+SCAN-thick-posix-method | covered-by: cpp-scan rule POSIX-THIN-LINES | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+SCAN-unmarked-loop | covered-by: cpp-scan rule POSIX-THIN-LOOP | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+SCAN-unused-hatch | covered-by: cpp-scan part 3, the hatch reconciliation | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+SEAM-eintr-is-fatal | covered-by: RawWriteTest.RetriesOnEintrWithoutLosingBytes | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+SEAM-ignore-short-count | covered-by: RawWriteTest.ResumesFromTheReturnedCountOneByteAtATime | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+SEAM-zero-unbounded | covered-by: RawWriteTest.GivesUpOnRepeatedZeroReturnsInsteadOfSpinning | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
+VERDICT-normal-is-void | covered-by: CapAdjudication.BothDivergencesFailTheRunAndNeitherVoidsIt | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+
