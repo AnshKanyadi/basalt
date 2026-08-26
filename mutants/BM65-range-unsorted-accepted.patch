@@ -1,0 +1,29 @@
+# id: BM65-range-unsorted-accepted
+# blinds: range tombstones being ascending by start
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# THE BLOCK IS BINARY-SEARCHED to find the tombstones covering a key, and an
+# unsorted block DOES NOT FAIL -- it returns the wrong answer. Which wrong answer
+# depends on where the search lands: a resurrected key if a covering tombstone is
+# missed, a wrongly hidden one if a non-covering tombstone is found.
+#
+# It is the same shape as BM27 and BM28 one block over, and it needs its own
+# patch for the reason every ordering rule does: an ordering checked in one
+# structure has said nothing about another.
+--- a/engine-cpp/src/sst/range_tombstone.cc	2026-08-25 21:12:59
++++ b/engine-cpp/src/sst/range_tombstone.cc	2026-08-25 21:12:59
+@@ -118,10 +118,7 @@
+       // The block is BINARY-SEARCHED to find the tombstones covering a key. An
+       // unsorted block does not fail -- it returns the WRONG ANSWER, which is a
+       // resurrected key or a wrongly hidden one.
+-      if (c < 0) {
+-        return Fail(RangeFault::kNotAscending, e.offset,
+-                    "start is below the one before it");
+-      }
++      // BM65: order is not checked.
+       if (c == 0 && t.tag == previous_tag) {
+         return Fail(RangeFault::kDuplicate, e.offset,
+                     "same start and same tag as the one before it");

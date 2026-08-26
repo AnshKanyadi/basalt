@@ -116,6 +116,7 @@ add_library(rift_engine STATIC
   src/wal/recovery.cc
   src/sst/bloom.cc
   src/sst/table_format.cc
+  src/sst/range_tombstone.cc
   src/sst/table.cc
   src/sst/table_builder.cc
   src/sst/manifest.cc
@@ -170,6 +171,7 @@ add_executable(rift_engine_test
   test/db_test.cc
   test/db_flush_test.cc
   test/sst_bloom_test.cc
+  test/range_tombstone_test.cc
   test/sst_format_test.cc
   test/sst_manifest_test.cc
   test/sst_writer_test.cc

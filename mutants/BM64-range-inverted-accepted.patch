@@ -1,0 +1,29 @@
+# id: BM64-range-inverted-accepted
+# blinds: [start, end) being a non-empty range
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# An empty or inverted range covers nothing and no writer can mean it. Accepting
+# one makes "covers nothing" and "covers everything below the start" IDENTICAL
+# at the reader -- and which of the two a reader assumes decides whether keys
+# below the start survive.
+#
+# The refusal was specified in DESIGN-B3 section 6.1 BEFORE any writer existed,
+# so this patch blinds a rule about what the format MEANS rather than a check on
+# what some writer emits.
+--- a/engine-cpp/src/sst/range_tombstone.cc	2026-08-25 21:12:59
++++ b/engine-cpp/src/sst/range_tombstone.cc	2026-08-25 21:12:59
+@@ -103,10 +103,7 @@
+     // [start, end), HALF-OPEN. An empty or inverted range covers nothing and no
+     // writer can mean it; accepting it makes "covers nothing" and "covers
+     // everything below start" indistinguishable at the reader.
+-    if (t.end.compare(t.start) <= 0) {
+-      return Fail(RangeFault::kEmptyOrInvertedRange, e.offset,
+-                  "end is not above start");
+-    }
++    // BM64: any bounds are accepted.
+     // A POINT VERSION IN THE RANGE BLOCK is data that exists and is unreachable:
+     // the point path will never look here for it.
+     if (TypeOfTag(t.tag) != ValueType::kDeletion) {

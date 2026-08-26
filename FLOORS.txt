@@ -235,3 +235,14 @@ SEAM-zero-unbounded | covered-by: RawWriteTest.GivesUpOnRepeatedZeroReturnsInste
 
 VERDICT-normal-is-void | covered-by: CapAdjudication.BothDivergencesFailTheRunAndNeitherVoidsIt | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
 
+
+# ---- B3.2: the range-tombstone format, judged before any writer exists
+
+BM64-range-inverted-accepted | covered-by: RangeTombstone.RefusesAnInvertedRange | 0 | determined at B3.2 by induction against a format WITH NO WRITER: the refusals were specified in DESIGN-B3 section 6.1 before either the classifier or this patch existed, so the label names a rule about what the format MEANS | Determined at b3.2 by induction against a format with no writer: the refusals were specified in design-b3 section 6.1 before either the classifier or this patch existed, so the label names a rule about what the format means | default | 0
+
+BM65-range-unsorted-accepted | covered-by: RangeTombstone.RefusesTombstonesThatDoNotAscendByStart | 0 | determined at B3.2 by induction against a format WITH NO WRITER: the refusals were specified in DESIGN-B3 section 6.1 before either the classifier or this patch existed, so the label names a rule about what the format MEANS | Determined at b3.2 by induction against a format with no writer: the refusals were specified in design-b3 section 6.1 before either the classifier or this patch existed, so the label names a rule about what the format means | default | 0
+
+BM66-range-accepts-a-point-tag | covered-by: RangeTombstone.RefusesATagThatIsNotADeletion | 0 | determined at B3.2 by induction against a format WITH NO WRITER: the refusals were specified in DESIGN-B3 section 6.1 before either the classifier or this patch existed, so the label names a rule about what the format MEANS | Determined at b3.2 by induction against a format with no writer: the refusals were specified in design-b3 section 6.1 before either the classifier or this patch existed, so the label names a rule about what the format means | default | 0
+
+BM67-range-covers-is-closed | covered-by: RangeTombstone.TheBoundsAreHalfOpen | 0 | determined at B3.2 by induction against a format WITH NO WRITER: the refusals were specified in DESIGN-B3 section 6.1 before either the classifier or this patch existed, so the label names a rule about what the format MEANS | Determined at b3.2 by induction against a format with no writer: the refusals were specified in design-b3 section 6.1 before either the classifier or this patch existed, so the label names a rule about what the format means | default | 0
+

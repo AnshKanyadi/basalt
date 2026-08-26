@@ -1,0 +1,27 @@
+# id: BM67-range-covers-is-closed
+# blinds: the bounds being HALF-OPEN
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# ONE CHARACTER, AND IT IS THE MOST REVIEWABLE MUTATION IN THIS FILE. `<` becomes
+# `<=`, and the range becomes closed. Every test that does not probe the exact
+# end key still passes, because the two agree everywhere except on ONE KEY.
+#
+# That key is the boundary, and boundary keys are where two range conventions in
+# one engine meet. `Bound` chose half-open at B1 and `engine.InRange` agrees by
+# construction; a closed range here would delete one key more than the caller
+# asked for, forever, silently.
+--- a/engine-cpp/src/sst/range_tombstone.h	2026-08-25 21:13:16
++++ b/engine-cpp/src/sst/range_tombstone.h	2026-08-25 21:13:16
+@@ -58,7 +58,8 @@
+   SeqNum seq() const { return SeqOfTag(tag); }
+   // Half-open, and the ONE place this question is answered.
+   bool Covers(Slice user_key) const {
+-    return user_key.compare(start) >= 0 && user_key.compare(end) < 0;
++    // BM67: closed, not half-open.
++    return user_key.compare(start) >= 0 && user_key.compare(end) <= 0;
+   }
+ };
+ 
