@@ -13,6 +13,23 @@ namespace rift {
 
 [[noreturn]] inline void Die(const char* file, int line, const char* what) {
   std::fprintf(stderr, "rift: %s:%d: %s\n", file, line, what);
+  // A RUN THAT ABORTS SAYS SO, IN ITS OWN OUTPUT, WHERE THE COUNTS ARE READ.
+  //
+  // A test binary that aborts reports FEWER FAILURES THAN EXIST, and fewer
+  // failures reported is indistinguishable from fewer failures existing. That
+  // nearly produced the opposite ruling on B3's aliasing condition: the first
+  // measurement showed no DropCheck test failing under either reader mutant --
+  // which would have meant the shared parser was unacceptable -- and the zero
+  // was an artifact of an earlier RIFT_CHECK killing the process before those
+  // tests ran.
+  //
+  // The same shape as HARNESS-013's stalled log: a signal read without its
+  // provenance. The cheap mechanical answer is to put the provenance IN the
+  // signal, so a count grepped out of this output carries the fact that it is
+  // partial.
+  std::fprintf(stderr,
+               "*** RIFT PARTIAL RUN: aborted here, so any count above this "
+               "line is a LOWER BOUND and any absence is unproven ***\n");
   std::abort();
 }
 
