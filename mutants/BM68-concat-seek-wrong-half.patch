@@ -1,0 +1,36 @@
+# id: BM68-concat-seek-wrong-half
+# blinds: the binary search taking the correct half
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# CF-3's CONDITION, INDUCED. The ordering the search relies on is inverted: it
+# takes the wrong half, so it lands on the wrong file.
+#
+# THE POINT IS WHAT DOES *NOT* HAPPEN. The loop still TERMINATES, because its
+# progress quantity is `hi - lo`, which shrinks whichever direction is taken --
+# the RIFT_CHECK on the interval holds throughout. Termination and correctness
+# are different properties resting on different things, and that separation is
+# exactly what HARNESS-013 cost eleven and a half hours to learn.
+#
+# So this mutant is caught by the SEEK SWEEP, which compares every probe against
+# what a linear scan would return, and not by any progress assertion. A search
+# wrong for one input class is wrong invisibly, because every other input still
+# works.
+--- a/engine-cpp/src/sst/concat_iter.cc	2026-08-25 21:30:38
++++ b/engine-cpp/src/sst/concat_iter.cc	2026-08-25 21:30:38
+@@ -57,10 +57,11 @@
+   while (lo < hi) {
+     const std::size_t before = hi - lo;
+     const std::size_t mid = lo + (hi - lo) / 2;
++    // BM68: the halves are swapped.
+     if (CompareInternalKey(Slice(run_[mid]->check().largest_key), target) < 0) {
+-      lo = mid + 1;
+-    } else {
+       hi = mid;
++    } else {
++      lo = mid + 1;
+     }
+     RIFT_CHECK(hi - lo < before);
+   }

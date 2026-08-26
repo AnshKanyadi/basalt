@@ -246,3 +246,12 @@ BM66-range-accepts-a-point-tag | covered-by: RangeTombstone.RefusesATagThatIsNot
 
 BM67-range-covers-is-closed | covered-by: RangeTombstone.TheBoundsAreHalfOpen | 0 | determined at B3.2 by induction against a format WITH NO WRITER: the refusals were specified in DESIGN-B3 section 6.1 before either the classifier or this patch existed, so the label names a rule about what the format MEANS | Determined at b3.2 by induction against a format with no writer: the refusals were specified in design-b3 section 6.1 before either the classifier or this patch existed, so the label names a rule about what the format means | default | 0
 
+
+# ---- B3.3: the two-level read path
+
+BM68-concat-seek-wrong-half | covered-by: ConcatIter.EverySeekTargetLandsWhereALinearScanWould | 0 | determined at B3.3 by induction | CF-3's condition induced: the loop still TERMINATES because `hi - lo` shrinks whichever half is taken, so no progress assertion fires. Caught by the seek sweep instead. Termination and correctness rest on different things, which is the separation the rule is about. | default | 0
+
+BM69-concat-next-skips-a-file | covered-by: ConcatIter.WalksTheWholeRunInOrder | 0 | determined at B3.3 by induction | `file_` still strictly increases, so the progress assertion holds -- a second demonstration that CF-3's assertions are about TERMINATION and say nothing about whether the traversal is right. | default | 0
+
+BM70-concat-accepts-an-overlapping-run | covered-by: ConcatIter.AnOverlappingRunIsRefusedAtConstruction | 0 | determined at B3.3 by induction | A precondition on the CALLER, which is the kind violated silently once a compaction chooses inputs. Killed by a death test, so the instrument is an ABORT that the test expects rather than one that truncates a run. | default | 0
+

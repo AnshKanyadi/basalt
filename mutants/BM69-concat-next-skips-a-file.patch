@@ -1,0 +1,26 @@
+# id: BM69-concat-next-skips-a-file
+# blinds: every file in the run being visited
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The forward walk advances TWO files instead of one, so an entire table's
+# contents vanish from every scan and every merge that uses this source.
+#
+# `file_` still strictly increases, so the progress assertion holds and the loop
+# still terminates -- a second demonstration that CF-3's assertions are about
+# TERMINATION and say nothing about whether the traversal is right. What catches
+# it is the traversal test and the forward-versus-backward comparison.
+--- a/engine-cpp/src/sst/concat_iter.cc	2026-08-25 21:30:38
++++ b/engine-cpp/src/sst/concat_iter.cc	2026-08-25 21:30:38
+@@ -81,7 +81,8 @@
+   while (it_ == nullptr || !it_->Valid()) {
+     if (file_ + 1 >= run_.size()) { Invalidate(); return; }
+     const std::size_t before = file_;
+-    OpenFile(file_ + 1);
++    // BM69: skip a file.
++    OpenFile(file_ + 1 < run_.size() - 1 ? file_ + 2 : file_ + 1);
+     RIFT_CHECK(file_ > before);
+     it_->SeekToFirst();
+   }
