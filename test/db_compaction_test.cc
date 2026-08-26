@@ -367,6 +367,44 @@ TEST(SyncPrecondition, ASecondConcurrentClaimAborts) {
       "");
 }
 
+// AND THAT `Sync` ITSELF CLAIMS IT -- which the two tests around this one do
+// NOT show. `BM82` removes the claim from `Sync` and leaves `SingleCaller`
+// intact, and it SURVIVED the pair above: they prove the guard works, not that
+// the guarded path uses it. BM55's question, asked again and answered the same
+// way -- *is the line this patch is aimed at actually the line that carries the
+// property?*
+//
+// DETERMINISTIC, AND NOT A RACE. The promotion hook fires inside `Sync`, on the
+// durable image changing, so re-entering `Sync` from it claims the guard a
+// second time on ONE thread. Racing two Syncs would induce this only probably;
+// this induces it every time.
+//
+// The hook fires ONCE on purpose. Without that, a build with the claim removed
+// would recurse until the stack gave out -- and a death test cannot tell a
+// guard firing from a crash, so the mutant would pass for the wrong reason.
+void ReenterSync(void* ctx, const testenv::DurableImage&) {
+  static bool fired = false;
+  if (fired) return;
+  fired = true;
+  SeqNum inner = 0;
+  (void)static_cast<DB*>(ctx)->Sync(&inner);
+}
+
+TEST(SyncPrecondition, ReEnteringSyncFromInsideItAborts) {
+  ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+  EXPECT_DEATH(
+      {
+        TestEnvironment t;
+        std::unique_ptr<DB> db;
+        if (!DB::Open(t.env(), kDir, FlushingCaps(), &db).ok()) return;
+        Put(db.get(), KeyAt(0), "1");
+        t.set_promotion_hook(&ReenterSync, db.get());
+        SeqNum w = 0;
+        (void)db->Sync(&w);
+      },
+      "");
+}
+
 TEST(SyncPrecondition, SequentialClaimsAreFine) {
   std::atomic<bool> held{false};
   { const SingleCaller first(&held); }
