@@ -16,3 +16,5 @@
 
 rig/exactness_oracle.h  | Whether a recovered state is one of the two elements of the recovery set.
 rig/exactness_oracle.cc | The same.
+rig/drop_check.h        | Whether a compaction dropped only what B3-D1 permits, and kept everything it requires.
+rig/drop_check.cc       | The same.

@@ -139,13 +139,15 @@ target_compile_options(rift_testenv PRIVATE ${RIFT_CXX_FLAGS})
 
 add_library(rift_rig STATIC
   rig/run_outcome.cc
+  rig/version_model.cc
+  rig/drop_check.cc
   rig/durable_mirror.cc
   rig/cap_adjudication.cc
   rig/regime.cc
   rig/exactness_oracle.cc
   rig/sweep.cc
 )
-target_include_directories(rift_rig PUBLIC rig src src/env src/env/test src/wal)
+target_include_directories(rift_rig PUBLIC rig src src/env src/env/test src/wal src/sst src/memtable)
 target_link_libraries(rift_rig PUBLIC rift_testenv)
 target_compile_options(rift_rig PRIVATE ${RIFT_CXX_FLAGS})
 
@@ -172,6 +174,7 @@ add_executable(rift_engine_test
   test/sst_manifest_test.cc
   test/sst_writer_test.cc
   test/oracle_test.cc
+  test/drop_check_test.cc
 )
 # rift_rig carries rift_testenv which carries rift_engine, both PUBLIC-ly;
 # naming any of them again makes the linker warn about a duplicate archive.
