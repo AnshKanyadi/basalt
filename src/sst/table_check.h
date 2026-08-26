@@ -93,8 +93,26 @@ struct TableCheck {
   // B3.5, which is what `range_offset == 0` decodes to.
   uint64_t range_tombstones = 0;
   // B3-Q4: the table holds a tombstone with NO UPPER BOUND, so its key range is
-  // `[smallest_key, infinity)` and no finite `largest_key` describes it. Input
-  // selection must read this, not just the bounds.
+  // `[smallest_key, infinity)` and no finite `largest_key` describes it.
+  //
+  // DERIVED FROM THE TABLE'S OWN BYTES, AND DELIBERATELY NOT RECORDED IN THE
+  // MANIFEST. D4 §5.1 point 2 says the manifest is never the sole authority for
+  // any number in it -- and this satisfies that rule BY NOT ADDING A NUMBER
+  // rather than by adding one and then re-deriving it carefully. Every live
+  // table is already open, so the caller that needs this fact can ask the
+  // table.
+  //
+  // INPUT SELECTION MUST READ IT, NOT ONLY THE BOUNDS -- and the failure mode if
+  // it does not is worth naming, because it does not look like a range-deletion
+  // bug. A compaction that consults `[smallest, largest]` alone UNDER-SELECTS:
+  // it does not read the files above `largest`. Clause 2 of the drop claim then
+  // permits dropping a deletion whose masked value survives in one of them, and
+  // deleted data comes back.
+  //
+  // THAT IS A CORRECTNESS FAILURE REACHABLE THROUGH AN INPUT-SELECTION
+  // SHORTCUT, NOT THROUGH THE DROP RULE ITSELF. The drop rule is obeyed exactly
+  // as written; it is the set it was applied to that was wrong. `BM91` is the
+  // mutant.
   bool unbounded_end = false;
   std::string smallest_key;
   std::string largest_key;
