@@ -15,11 +15,25 @@
 // both, and passes every other check in this tree, because the versions it
 // wrongly dropped were never visible at the sequence anyone looked at.
 //
-// So this is a comparison over DROPS, not over survivors, and it runs in BOTH
-// directions: `dropped` must be within what was permitted, AND `kept` must
-// include everything required. An engine that drops NOTHING is as wrong as one
-// that drops too much -- it is a compaction that does not compact -- and every
-// state comparison in the tree calls it correct.
+// So this is a comparison over DROPS, not over survivors, and it runs in THREE
+// directions:
+//
+//   kept >= required     nothing a reader can reach was dropped
+//   dropped <= permitted no tombstone was dropped over something it masked
+//   survived <= submitted  THE ENGINE MAY NOT HOLD A VERSION NOBODY WROTE
+//
+// An engine that drops NOTHING is as wrong as one that drops too much -- it is
+// a compaction that does not compact -- and every state comparison in the tree
+// calls it correct.
+//
+// THE THIRD DIRECTION IS THE ANSWER TO THE SHARED-PARSER ALIASING, and it is
+// deliberate rather than lucky. The dangerous aliasing is a reader that reports
+// a record the bytes do not contain: a real drop then looks survived and the
+// verdict is a FALSE PASS. Directions one and two cannot see it -- both ask
+// whether something is MISSING. The third asks whether something is PRESENT
+// THAT WAS NEVER WRITTEN, which is exactly what a fabricating reader produces,
+// and it is why READER-shows-a-dropped-record dies here rather than by luck
+// somewhere downstream.
 //
 // ---------------------------------------------------------------------------
 // WHAT IT MAY TOUCH, AND WHAT IT MAY CONCLUDE FROM. Two different questions.
@@ -61,6 +75,7 @@ struct DropVerdict {
   std::size_t survived = 0;         // versions found in tables or WALs
   std::size_t required_total = 0;   // versions no reader may lose
   std::size_t dropped = 0;          // submitted, and now nowhere durable
+  std::size_t phantom = 0;          // found durable, and never submitted
   std::size_t tables_read = 0;
   std::size_t wals_read = 0;
 

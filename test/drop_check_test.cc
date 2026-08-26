@@ -265,6 +265,43 @@ TEST(DropCheck, AVersionStillOnlyInTheWalCountsAsSurvived) {
   EXPECT_EQ(0u, v.dropped);
 }
 
+TEST(DropCheck, AVersionNobodyWroteIsRefused) {
+  // DIRECTION THREE, AND IT IS THE ONE THAT GUARDS THE OTHER TWO. Directions one
+  // and two both ask whether something is MISSING, so neither can see a reader
+  // that reports a record the bytes do not contain -- and that reader makes a
+  // real drop look survived, which is a FALSE PASS.
+  //
+  // Induced here by a model that is missing a version the image legitimately
+  // holds, which is the same observation from the other side: the checker and
+  // the harness disagree about what was ever written, and the checker says so
+  // rather than believing the bytes.
+  // Table order is user key ascending, tag DESCENDING, so the newer version
+  // comes first. The builder RIFT_CHECKs it, which is how the first draft of
+  // this fixture was caught.
+  const ImageBytes image = BuildImage({{"k", 5, false, "b"}, {"k", 1, false, "a"}});
+  VersionModel model;
+  model.NoteWrite("k", 5, false, "b");  // version 1 never submitted
+
+  const DropVerdict v = AdjudicateDrops(model, image, kDir);
+  ASSERT_FALSE(v.ok());
+  EXPECT_NE(std::string::npos, v.why.find("nobody ever wrote")) << v.why;
+  EXPECT_NE(std::string::npos, v.why.find("look survived")) << v.why;
+  EXPECT_EQ(1u, v.phantom);
+}
+
+TEST(DropCheck, EveryVersionSubmittedAndDurableIsNoPhantom) {
+  // The other direction of the same check: an image holding exactly what was
+  // submitted has no phantoms, so the guard is not simply always firing.
+  const std::vector<Entry> submitted = {{"k", 1, false, "a"}, {"k", 5, false, "b"}};
+  VersionModel model = ModelOf(submitted);
+  model.NoteSnapshotTaken(3);
+  const ImageBytes image = BuildImage({{"k", 5, false, "b"}, {"k", 1, false, "a"}});
+  const DropVerdict v = AdjudicateDrops(model, image, kDir);
+  ASSERT_TRUE(v.ok()) << v.why;
+  EXPECT_EQ(0u, v.phantom);
+  EXPECT_EQ(2u, v.survived);
+}
+
 // ------------------------------------------------------------ what it counts
 
 TEST(DropCheck, AnImageHoldingEverythingRequiredPasses) {

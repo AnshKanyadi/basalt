@@ -1,0 +1,27 @@
+# id: READER-hides-a-live-record
+# blinds: the drop checker's first direction -- kept >= required
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# THE LOUD DIRECTION, LANDED ANYWAY. A reader that hides a record makes
+# `survived` lose something `required` still demands, so the verdict is a FALSE
+# VIOLATION rather than a false pass -- self-announcing, and its kill is cheap.
+#
+# It is here because ITS ABSENCE WOULD ITSELF BE A FINDING: if nothing killed
+# the cheap direction, the expensive one's kill would mean much less, and the
+# pair is what says the adjudicator sees the bytes at all rather than agreeing
+# with them by construction.
+--- a/engine-cpp/src/sst/table_format.cc	2026-08-25 19:02:43
++++ b/engine-cpp/src/sst/table_format.cc	2026-08-25 19:02:43
+@@ -162,7 +162,8 @@
+     if (entries_end - pos < vlen) { *why = "value runs past the block"; return false; }
+     e.value = Slice(p + pos, vlen);
+     pos += vlen;
+-    entries->push_back(e);
++    // READER-hides-a-live-record: the last entry of every block vanishes.
++    if (pos < entries_end) entries->push_back(e);
+   }
+   return true;
+ }

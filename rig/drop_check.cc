@@ -166,7 +166,23 @@ DropVerdict AdjudicateDrops(const VersionModel& model, const ImageBytes& image,
   }
   v.survived = survived.size();
 
-  // 3. DIRECTION ONE -- `kept` includes everything `required`.
+  // 3. DIRECTION THREE, FIRST, BECAUSE IT GUARDS THE OTHER TWO. A version found
+  //    durable that the harness never submitted means the bytes are being read
+  //    wrongly -- and every verdict below rests on reading them rightly. A
+  //    fabricating reader makes a real drop look survived, which directions one
+  //    and two cannot see: both of them ask whether something is MISSING.
+  const std::set<VersionId> all_submitted = model.All();
+  for (const VersionId& id : survived) {
+    if (all_submitted.find(id) != all_submitted.end()) continue;
+    v.phantom++;
+    return Violation(v, "a version nobody ever wrote was found durable: key \"" + id.first +
+                            "\" at sequence " + std::to_string(id.second) +
+                            ". Either the engine invented it or the reader did, and a reader "
+                            "that reports records the bytes do not contain makes a real drop "
+                            "look survived");
+  }
+
+  // 4. DIRECTION ONE -- `kept` includes everything `required`.
   const std::set<VersionId> required = model.Required();
   v.required_total = required.size();
   for (const VersionId& id : required) {
@@ -179,12 +195,11 @@ DropVerdict AdjudicateDrops(const VersionModel& model, const ImageBytes& image,
     }
   }
 
-  // 4. DIRECTION TWO -- nothing dropped that was not permitted. The only rule a
+  // 5. DIRECTION TWO -- nothing dropped that was not permitted. The only rule a
   //    single image can express is the TOMBSTONE one, and it is the one that
   //    matters: a deletion dropped while an older version of the same key
   //    survives RESURRECTS DELETED DATA.
-  const std::set<VersionId> all = model.All();
-  for (const VersionId& id : all) {
+  for (const VersionId& id : all_submitted) {
     if (survived.find(id) != survived.end()) continue;
     v.dropped++;
     if (!model.IsDeletion(id)) continue;
