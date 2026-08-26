@@ -143,6 +143,7 @@ add_library(rift_rig STATIC
   rig/run_outcome.cc
   rig/version_model.cc
   rig/drop_check.cc
+  rig/merge_check.cc
   rig/durable_mirror.cc
   rig/cap_adjudication.cc
   rig/regime.cc
@@ -179,6 +180,7 @@ add_executable(rift_engine_test
   test/sst_writer_test.cc
   test/oracle_test.cc
   test/drop_check_test.cc
+  test/merge_check_test.cc
 )
 # rift_rig carries rift_testenv which carries rift_engine, both PUBLIC-ly;
 # naming any of them again makes the linker warn about a duplicate archive.
