@@ -1,0 +1,30 @@
+# id: BM85-range-block-is-not-last
+# blinds: nothing following the range block but the footer
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# THE LAYOUT RULE, WHICH IS THE ONLY REASON EIGHT BYTES WERE ENOUGH. The range
+# block's SIZE is not stored; it is derived as
+# `file_size - kFooterBytes - range_offset`. Anything written between the block
+# and the footer makes that derivation too large for every reader, forever, in
+# files that are otherwise perfectly well formed.
+#
+# A stated layout rule with no enforcement is the class this project has spent
+# six phases finding, so the rule is a RIFT_CHECK at the one place that could
+# break it. The kill is therefore an ABORT rather than a failing assertion --
+# and the derived block would fail its checksum anyway, which is the second
+# guard behind the first.
+--- a/engine-cpp/src/sst/table_builder.cc
++++ b/engine-cpp/src/sst/table_builder.cc
+@@ -131,6 +131,9 @@
+     range_offset = offset_;
+     if (!Append(Slice(range)).ok()) return status_;
+     range_end = offset_;
++    // BM85: one more byte after the range block. A single pad is enough --
++    // the derivation does not care how much follows, only that anything does.
++    if (!Append(Slice("\0", 1)).ok()) return status_;
+   }
+ 
+   Footer footer;
