@@ -1,0 +1,36 @@
+# id: BM80-compaction-reads-only-level-zero
+# blinds: the input set covering every L1 file the inputs OVERLAP
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The cheapest possible compaction: merge L0, leave L1 alone. It is wrong twice
+# over, and the second way is worse than the first.
+#
+#   The output OVERLAPS the L1 files it did not read, so L1 stops being a run --
+#   caught at the next Open, loudly.
+#   And `bottom_most` would be false, so no tombstone could ever be dropped --
+#   caught by nothing, quietly, as a database that never reclaims space.
+#
+# Clause 2 of the drop claim is what ties the two together: input selection is a
+# correctness concern in this engine, not a policy one.
+--- a/engine-cpp/src/db.cc
++++ b/engine-cpp/src/db.cc
+@@ -743,12 +743,10 @@ class DBImpl final : public DB {
+         if (a < lo) lo = a;
+         if (b > hi) hi = b;
+       }
+-      for (const auto& t : l1_) {
+-        const Slice a = ExtractUserKey(Slice(t->check().smallest_key));
+-        const Slice b = ExtractUserKey(Slice(t->check().largest_key));
+-        const bool overlaps = a.compare(Slice(hi)) <= 0 && b.compare(Slice(lo)) >= 0;
+-        (overlaps ? in_l1 : keep_l1).push_back(t);
+-      }
++      // BM80: L1 is left alone and L0 is merged into a new run beside it.
++      (void)lo;
++      (void)hi;
++      keep_l1 = l1_;
+       observable = snapshots_->Live();
+       // `S` = the live snapshots PLUS the sequence a caller reads at with no
+       // snapshot. Without the second member the newest version of every key

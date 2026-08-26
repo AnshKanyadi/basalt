@@ -1,0 +1,36 @@
+# id: BM77-watermark-pin-removed
+# blinds: the output carrying the highest sequence its inputs held
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# THE MUTANT IS THE CORRECT IMPLEMENTATION OF THE DROP CLAIM, which is what
+# makes it worth planting. The claim is about the ANSWER a reader gets; the
+# watermark is a PROMISE ABOUT A SEQUENCE, and Open re-derives that promise as
+# the maximum largest_seq over the live tables because the manifest may not
+# record a durable sequence (D7's forward binding).
+#
+# So a compaction free to drop the highest-sequenced entry -- a tombstone with
+# nothing left to mask, exactly what the claim permits -- lowers that maximum,
+# and DurableSeq goes BACKWARDS across a restart. Every answer is preserved and
+# a promise is broken.
+--- a/engine-cpp/src/compaction.cc
++++ b/engine-cpp/src/compaction.cc
+@@ -100,13 +100,9 @@ Status RunCompaction(MergedIter* input, const std::vector<SeqNum>& observable,
+     // the durable floor drops across a restart. One entry is enough, because
+     // `largest_seq` is a MAXIMUM over entries -- so this fires at most once and
+     // only when the rules above would have dropped every entry that holds it.
+-    if (seq == pin_seq) {
+-      if (!keep && !pin_satisfied) {
+-        keep = true;
+-        ++stats->pinned;
+-      }
+-      if (keep) pin_satisfied = true;
+-    }
++    // BM77: the drop claim is the only rule.
++    (void)pin_seq;
++    (void)pin_satisfied;
+ 
+     if (keep) {
+       ikey.clear();

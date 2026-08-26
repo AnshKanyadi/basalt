@@ -23,6 +23,17 @@
 // applies to the other loses a record with no corruption anywhere. The second
 // pattern drives exactly that: a writer against a Sync that flushes. It is
 // still ONE authored pattern per clause, and still not a search.
+// B3 DOES NOT WIDEN IT, AND THE REASON IS WORTH KEEPING.
+//
+// Compaction gave the engine a second appender to the manifest, so the obvious
+// next pattern is two concurrent Syncs. It is not authored, because the harness
+// note above already answers it: "one writer and one syncer ... NOT MORE,
+// BECAUSE MORE WOULD BE A CLAIM THE CONTRACT DOES NOT MAKE."
+//
+// A pattern for two Syncs would test behaviour the contract does not promise
+// and would quietly turn a precondition into a supported mode. So the
+// precondition is ENFORCED instead -- `SingleCaller` in `DB::Sync` -- and the
+// claim below stays exactly as wide as the harness that backs it.
 #ifndef RIFT_CONCURRENCY_CLAIM_H_
 #define RIFT_CONCURRENCY_CLAIM_H_
 

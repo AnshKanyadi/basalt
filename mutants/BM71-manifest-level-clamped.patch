@@ -1,0 +1,32 @@
+# id: BM71-manifest-level-clamped
+# blinds: an unknown level being REFUSED rather than guessed at
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# Clamping looks charitable and is the dangerous reading. A manifest written by
+# a build with more levels names a file that OVERLAPS the L1 run this build
+# would place it in -- so the run stops being a run, the binary search finds one
+# of two files holding a key, and the other's versions become unreachable. A
+# deletion that stops hiding a value reads as deleted data coming back.
+#
+# It is the same shape as the unknown-edit-kind check beside it: the one place
+# the closed-enum discipline meets untrusted input rejects before it converts.
+--- a/engine-cpp/src/sst/manifest.cc
++++ b/engine-cpp/src/sst/manifest.cc
+@@ -160,12 +160,8 @@ bool DecodeEdit(Slice payload, ManifestEdit* out, std::string* why) {
+       // from a build that had more levels, and placing its file at level 1
+       // would put an overlapping file into the run the read path binary
+       // searches -- a wrong answer with nothing structurally wrong anywhere.
+-      if (out->table.level > kMaxLevel) {
+-        *why = "table " + std::to_string(out->table.number) + " is at level " +
+-               std::to_string(out->table.level) + "; this build has " +
+-               std::to_string(kMaxLevel + 1) + " levels";
+-        return false;
+-      }
++      // BM71: a level this build cannot place is treated as the last one.
++      if (out->table.level > kMaxLevel) out->table.level = kMaxLevel;
+       break;
+     case EditKind::kDeleteTable:
+       if (!c.U64(&out->number)) { *why = "truncated delete-table edit"; return false; }

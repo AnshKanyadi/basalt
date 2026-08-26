@@ -20,6 +20,7 @@
 #include <gtest/gtest.h>
 
 #include "drop_check.h"
+#include "image_fixture.h"
 #include "internal_key.h"
 #include "manifest.h"
 #include "merge_check.h"
@@ -218,6 +219,28 @@ TEST(Compaction, ACompactionThatIsNotBottomMostKeepsEveryTombstone) {
   const CompactResult not_bottom = Compact(in, {10}, false);
   EXPECT_EQ(2u, not_bottom.stats.emitted);
   EXPECT_EQ(0u, not_bottom.stats.dropped);
+}
+
+// THE RESURRECTION RULE, JUDGED BY THE INSTRUMENT BUILT FOR IT. A count cannot
+// see this: the tombstone and the value it masks are both single entries, and
+// dropping the tombstone alone leaves an output whose SIZE is unremarkable and
+// whose meaning is that a deleted key came back.
+//
+// The tombstone is deliberately NOT at the top sequence -- "b" at 10 carries
+// that -- because the watermark pin would otherwise keep it for a reason that
+// has nothing to do with the rule under test.
+TEST(Compaction, ATombstoneIsKeptWhileAnythingItMasksSurvives) {
+  const std::vector<std::vector<Cell>> in = {
+      {{"a", 9, true, ""}, {"a", 4, false, "old"}, {"b", 10, false, "b10"}}};
+  const std::vector<SeqNum> s = {5, 10};
+  const CompactResult r = Compact(in, s);
+  ASSERT_FALSE(r.output.empty());
+  const rig::DropVerdict v =
+      AdjudicateDrops(ModelOf(in, s), rig::ImageHoldingTables(kDir, {r.output}), kDir);
+  EXPECT_TRUE(v.ok()) << v.why;
+  // A reader at 10 must still see nothing for "a": the snapshot at 5 keeps the
+  // value alive, so the deletion above it has work left to do.
+  EXPECT_EQ(3u, r.stats.emitted);
 }
 
 TEST(Compaction, ASnapshotBelowATombstoneKeepsIt) {

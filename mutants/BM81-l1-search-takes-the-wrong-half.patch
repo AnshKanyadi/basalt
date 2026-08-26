@@ -1,0 +1,119 @@
+# id: BM81-l1-search-takes-the-wrong-half
+# blinds: the binary search over the L1 run landing on the right file
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# THE PROGRESS ASSERTION STAYS TRUE. `hi - lo` shrinks on both branches, so the
+# search still terminates -- cleanly, quickly, and on the wrong file. That is
+# GF-12 in one line, and it is why this class carries `covers-correctness:`
+# rather than `covered-by:`: what catches it is a READ, not a loop invariant.
+#
+# BM68 is the same shape one level down, in ConcatIter's seek. Two loops, same
+# separation, and the separation is the whole of CF-3's point.
+--- a/engine-cpp/src/db.cc
++++ b/engine-cpp/src/db.cc
+@@ -2,6 +2,7 @@
+ 
+ #include <set>
+ 
++#include <atomic>
+ #include <algorithm>
+ #include <map>
+ #include <memory>
+@@ -15,6 +16,7 @@
+ #include "manifest.h"
+ #include "merged_iter.h"
+ #include "recovery.h"
++#include "single_caller.h"
+ #include "table.h"
+ #include "table_builder.h"
+ #include "wal.h"
+@@ -117,13 +119,25 @@ const sst::Table* L1FileFor(const std::vector<std::shared_ptr<sst::Table>>& l1,
+   // shrinks.
+   while (lo < hi) {
+     const std::size_t mid = lo + (hi - lo) / 2;
++    // BM81: the halves are exchanged.
+     if (ExtractUserKey(Slice(l1[mid]->check().largest_key)).compare(key) < 0) {
+-      lo = mid + 1;
+-    } else {
+       hi = mid;
++    } else {
++      lo = mid + 1;
+     }
+   }
+   if (lo == l1.size()) return nullptr;
++  // A COST GUARD, NOT A CORRECTNESS ONE, AND THAT WAS MEASURED RATHER THAN
++  // ASSUMED. `BM73` removed this line and NOTHING FAILED: a key falling in the
++  // GAP between two files of the run makes the search return the next file
++  // along, whose `Get` cannot find the key either, so the answer is identical
++  // and only a filter probe is wasted.
++  //
++  // GF-7's shape, found the same way. The property "a range test decides
++  // containment" IS load-bearing -- in the compaction's INPUT SELECTION, where
++  // getting it wrong resurrects deleted data -- and `BM80` is the mutant that
++  // says so. The mutant went where the property lives instead of where it
++  // merely appears; `BM73` was deleted rather than re-aimed.
+   if (ExtractUserKey(Slice(l1[lo]->check().smallest_key)).compare(key) > 0) {
+     return nullptr;
+   }
+@@ -599,6 +613,30 @@ class DBImpl final : public DB {
+   }
+ 
+   Status Sync(wal::SeqNum* watermark) override {
++    // ONE CALLER, ASSERTED RATHER THAN ASSUMED -- and B3.4 is what made the
++    // difference matter.
++    //
++    // The contract has always been single-caller: db.h says "B5's poller owns
++    // this", and the TSan harness says it in the strongest form there is --
++    // "one writer and one syncer ... NOT MORE, BECAUSE MORE WOULD BE A CLAIM
++    // THE CONTRACT DOES NOT MAKE."
++    //
++    // What changed is the cost of violating it. Until B3.4 the manifest had ONE
++    // appender; now it has two, and `Manifest::AppendGroup` takes no lock, so
++    // two maintenance paths appending at once would interleave records inside
++    // one another's groups and write a manifest no reader can replay.
++    //
++    // AND THE GUARD THAT LOOKS LIKE IT SERIALISES DOES NOT. `Flush` returns
++    // early when `imm_ != nullptr`, but `imm_` is set several steps AFTER the
++    // first AppendGroup -- so two concurrent Syncs would both pass it. That
++    // guard makes a flush a no-op while one is PENDING; it has never been a
++    // serialiser, and reading it as one is the trap.
++    //
++    // So the precondition is enforced where it is cheap and exact: a second
++    // concurrent caller aborts at the mistake instead of leaving a corrupt
++    // manifest for the next Open to refuse.
++    const SingleCaller entered(&in_sync_);
++
+     // NO LOCK HELD. Everything below makes Env calls, and the mutex-depth guard
+     // would fire if one were.
+     Status s = wal_->Sync(watermark);
+@@ -635,6 +673,19 @@ class DBImpl final : public DB {
+     return VersionGet(v, key, snap, value);
+   }
+ 
++  // AN ITERATOR IS NOT IN `S`, AND THAT IS A DELIBERATE ASYMMETRY WITH
++  // Snapshot -- stated because the two look alike and are not.
++  //
++  // The frozen interface promises pinning for `Snapshot` in so many words: "it
++  // holds its version against compaction until it is Closed." It promises
++  // nothing of the sort for `Iterator`. This one is consistent anyway, because
++  // it captures a sequence and holds shared pointers to its stores -- but that
++  // is the residency argument, and B3.5 and B3.6 both move it.
++  //
++  // So it is a NAMED GAP for B3.6's step (version lifetime, file deletion after
++  // the last reference) rather than a silent one. The drop rule does not rest
++  // on it: see SnapshotRegistry for why the promise that IS made got a registry
++  // instead of an argument.
+   std::unique_ptr<Iterator> NewIter(const IterOptions& o) const override {
+     wal::SeqNum snap;
+     Version v;
+@@ -1216,6 +1267,7 @@ class DBImpl final : public DB {
+   wal::SeqNum flushed_through_ = 0;
+   bool closed_ = false;
+   bool compacting_ = false;
++  std::atomic<bool> in_sync_{false};
+   std::shared_ptr<SnapshotRegistry> snapshots_ =
+       std::make_shared<SnapshotRegistry>();
+ };

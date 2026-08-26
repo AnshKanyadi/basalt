@@ -12,6 +12,7 @@
 
 #include <cstdio>
 #include <memory>
+#include <atomic>
 #include <set>
 #include <string>
 #include <vector>
@@ -21,6 +22,7 @@
 #include "manifest.h"
 #include "manifest_image.h"
 #include "table_check.h"
+#include "single_caller.h"
 #include "test_env.h"
 
 namespace rift {
@@ -218,6 +220,53 @@ TEST(Compact, ASecondCompactionRewritesOnlyTheOverlappingPartOfTheRun) {
   ASSERT_TRUE(db->Close().ok());
 }
 
+// A KEY'S VERSIONS MAY NOT SPLIT ACROSS TWO FILES OF THE RUN.
+//
+// The output rolls at the flush threshold, and it may roll ONLY at a user key
+// boundary. Reaching that case needs a key with MANY surviving versions, which
+// needs live snapshots -- without them the drop rule leaves one version per key
+// and no key is ever large enough to span a roll. So the snapshots here are not
+// decoration: they are what makes the situation exist at all.
+TEST(Compact, AKeysVersionsAreNeverSplitAcrossTwoFilesOfTheRun) {
+  TestEnvironment t;
+  std::unique_ptr<DB> db;
+  ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+  std::vector<std::unique_ptr<Snapshot>> held;
+  std::vector<std::string> expected;
+  for (int round = 0; round < 4; ++round) {
+    for (int rep = 0; rep < 10; ++rep) {
+      for (int i = 0; i < 2; ++i) {
+        Put(db.get(), KeyAt(i), Value(round * 10 + rep, 2048));
+      }
+      // Every version stays observable, so the compaction must carry all forty
+      // versions of each key into the run.
+      held.push_back(db->NewSnapshot());
+      expected.push_back(Value(round * 10 + rep, 2048));
+    }
+    SeqNum w = 0;
+    ASSERT_TRUE(db->Sync(&w).ok());
+  }
+  ASSERT_EQ(0, LevelCounts(&t).first);
+  ASSERT_GT(LevelCounts(&t).second, 1)
+      << "forty 2 KiB versions of two keys should not fit in one output file";
+
+  // The run check at Open is what refuses a split key, so the reopen IS the
+  // assertion -- and the versions must all still be readable through it.
+  for (std::size_t i = 0; i < held.size(); ++i) {
+    std::string v;
+    const std::string k0 = KeyAt(0);
+    ASSERT_TRUE(held[i]->Get(Slice(k0), &v).ok()) << "snapshot " << i;
+    EXPECT_EQ(expected[i], v) << "snapshot " << i << " lost its version";
+    ASSERT_TRUE(held[i]->Close().ok());
+  }
+  ASSERT_TRUE(db->Close().ok());
+  std::unique_ptr<DB> reopened;
+  const Status s = DB::Open(t.env(), kDir, FlushingCaps(), &reopened);
+  ASSERT_TRUE(s.ok()) << s.ToString();
+  EXPECT_EQ(expected.back(), Get(*reopened, KeyAt(0)));
+  ASSERT_TRUE(reopened->Close().ok());
+}
+
 // ------------------------------------------------- what a compaction may not break
 
 // THE PROMISE THE DROP CLAIM DOES NOT MENTION. `Open` re-derives the durable
@@ -290,6 +339,39 @@ TEST(Compact, ASnapshotTakenBeforeACompactionStillReadsItsVersion) {
   EXPECT_EQ("after-the-snapshot", Get(*db, KeyAt(7)));
   ASSERT_TRUE(snap->Close().ok());
   ASSERT_TRUE(db->Close().ok());
+}
+
+// ------------------------------------------------------- the Sync precondition
+//
+// SINGLE-CALLER, INDUCED IN BOTH DIRECTIONS (GF-14). One direction alone would
+// not distinguish a guard that fires from a guard that always fires.
+//
+// The contract was always single-caller -- db.h says "B5's poller owns this",
+// and the TSan harness says it in the strongest form available: "one writer and
+// one syncer ... NOT MORE, BECAUSE MORE WOULD BE A CLAIM THE CONTRACT DOES NOT
+// MAKE." What B3.4 changed is the COST of violating it: the manifest now has
+// two appenders, and AppendGroup takes no lock.
+//
+// The guard is induced HERE rather than by racing two real Syncs, because a
+// race induces it only probably and this induces it every time.
+TEST(SyncPrecondition, ASecondConcurrentClaimAborts) {
+  ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+  std::atomic<bool> held{false};
+  EXPECT_DEATH(
+      {
+        const SingleCaller first(&held);
+        const SingleCaller second(&held);
+        (void)first;
+        (void)second;
+      },
+      "");
+}
+
+TEST(SyncPrecondition, SequentialClaimsAreFine) {
+  std::atomic<bool> held{false};
+  { const SingleCaller first(&held); }
+  { const SingleCaller second(&held); }
+  SUCCEED();
 }
 
 }  // namespace

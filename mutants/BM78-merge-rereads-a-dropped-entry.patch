@@ -1,0 +1,40 @@
+# id: BM78-merge-rereads-a-dropped-entry
+# blinds: nothing -- it makes the merge LOOP FOREVER
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# THE PROGRESS ASSERTION IS WHAT THIS PROVES, and it is the only mutant in the
+# file aimed at a TERMINATION property rather than a correctness one. GF-12 says
+# those are different claims needing different instruments; this exercises the
+# first.
+#
+# Without the bound, a compaction that fails to advance past a dropped entry
+# hangs -- and a hang in a test lane is the failure mode HARNESS-013 cost eleven
+# and a half hours to find. With it, `inputs_consumed` passes the sum of the
+# input tables' entry counts and the process stops at the mistake.
+#
+# The bound cannot be raised to accommodate it: it is DERIVED from what
+# ValidateTable counted (GF-13), so raising it would mean claiming a table holds
+# more entries than the classifier says it holds.
+--- a/engine-cpp/src/compaction.cc
++++ b/engine-cpp/src/compaction.cc
+@@ -47,7 +47,8 @@ Status RunCompaction(MergedIter* input, const std::vector<SeqNum>& observable,
+   std::string ikey;
+   bool pin_satisfied = false;
+ 
+-  for (input->SeekToFirst(); input->Valid(); input->Next()) {
++  // BM78: the cursor advances only when something was emitted.
++  for (input->SeekToFirst(); input->Valid(); ) {
+     // B3-D7a'S PROGRESS ASSERTION, AND IT IS A TERMINATION ASSERTION ONLY.
+     //
+     // GF-12: it says NOTHING about whether the output is right. What covers
+@@ -124,6 +125,7 @@ Status RunCompaction(MergedIter* input, const std::vector<SeqNum>& observable,
+       ++stats->dropped;
+     }
+     newer_seq = seq;
++    if (keep) input->Next();
+   }
+   return Status::Ok();
+ }

@@ -155,6 +155,12 @@ class DB {
 
   // Blocking. B5's poller owns this and adapts it to the async durability
   // contract; see divergence 1.
+  //
+  // SINGLE-CALLER, AND NOW ENFORCED. It was always the contract -- one poller
+  // per engine -- and it was never written down here. It is the path that
+  // flushes and compacts, so it is the only path that appends to the manifest,
+  // and two callers would interleave two groups into one log. A second
+  // concurrent caller aborts.
   virtual Status Sync(wal::SeqNum* watermark) = 0;
 
   virtual Status Get(Slice key, std::string* value) const = 0;
