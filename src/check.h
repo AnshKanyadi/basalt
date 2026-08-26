@@ -50,4 +50,19 @@ namespace rift {
     if (!(cond)) ::rift::Die(__FILE__, __LINE__, "CHECK failed: " #cond); \
   } while (0)
 
+// THE SAME CHECK, WITH THE CONSEQUENCE INSTEAD OF THE CONDITION.
+//
+// `RIFT_CHECK` prints the expression, which tells a reader WHAT failed and
+// nothing about what it means. For an invariant whose violation is a WRONG
+// ANSWER somewhere else -- a read that silently misses a tombstone, a
+// compaction that under-selects -- the expression is the least useful half of
+// the message. Whoever hits it is holding a bug, not a style violation.
+//
+// Use it where the failure's meaning is not obvious from the condition. Where
+// it is, `RIFT_CHECK` is shorter and says the same thing.
+#define RIFT_CHECK_MSG(cond, what)                              \
+  do {                                                          \
+    if (!(cond)) ::rift::Die(__FILE__, __LINE__, "CHECK failed: " #cond "\n  " what); \
+  } while (0)
+
 #endif  // RIFT_CHECK_H_

@@ -219,10 +219,25 @@ Status VersionGet(const Version& v, Slice key, wal::SeqNum snapshot,
 //   and `table.h`'s whole-file residency, which existed to let this function
 //   read the merged view, is no longer required by it.
 //
+// THE SINGLE `<`, AND WHERE IT IS WRITTEN.
+//
 // The tombstone at sequence S hides versions with sequence STRICTLY BELOW S,
-// which is what makes a Set at S survive a DeleteRange at S. That single `<`
-// is the model's rule, and `MemTable::Get`, `VersionGet` and `IterImpl` all
-// spell it the same way.
+// which is what makes a Set at S survive a DeleteRange at S. The rule is
+// spelled in THREE places, and they are not equally load-bearing -- stated
+// precisely, because a comment that says "all three agree" invites a reader to
+// trust any one of them:
+//
+//   `VersionGet`  -- LIVE. Every point read.
+//   `IterImpl`    -- LIVE. Every scan, forwards and backwards.
+//   `MemTable::Get` -- NOT ON ANY READ PATH. No caller in `src/`; the DB reads
+//                    memtables through `MergedIter`. It is kept consistent
+//                    because a divergent copy misleads, and it is exercised by
+//                    the memtable's own tests and by the mutant lane -- but it
+//                    is not what a DB read uses.
+//
+// `RangeDelete.TheSameRuleHoldsAtEveryPlaceItIsWritten` asserts all three, and
+// the residual it cannot close is stated there: no single WORKLOAD reaches all
+// three, because the third is unreachable from the DB.
 struct CollapsedBatch {
   std::vector<wal::Op> ops;
   std::vector<MemRange> ranges;
@@ -870,7 +885,15 @@ class DBImpl final : public DB {
   static void CheckOnlyTheLastMayBeUnbounded(
       const std::vector<std::shared_ptr<sst::Table>>& l1) {
     for (std::size_t i = 0; i + 1 < l1.size(); ++i) {
-      RIFT_CHECK(!l1[i]->check().unbounded_end);
+      // THE MESSAGE CARRIES THE CONSEQUENCE, NOT THE RULE. Whoever hits this is
+      // holding a wrong answer, not a style violation, and needs to know what
+      // it looks like from the outside.
+      RIFT_CHECK_MSG(!l1[i]->check().unbounded_end,
+                     "an L1 file that is not the last of the run holds a range "
+                     "tombstone with no upper bound: every read that does not "
+                     "land on this file will MISS IT, so the range delete "
+                     "silently stops applying above this file's bounds and "
+                     "deleted data comes back");
     }
   }
 

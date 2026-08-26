@@ -21,6 +21,7 @@
 #include <gtest/gtest.h>
 
 #include "manifest.h"
+#include "memtable.h"
 #include "manifest_image.h"
 #include "table_check.h"
 #include "single_caller.h"
@@ -520,6 +521,65 @@ TEST(RangeDelete, AnUnboundedClearEverythingSurvivesAFlushAndAReopen) {
   EXPECT_EQ("<absent>", Get(*db, KeyAt(49)));
   EXPECT_EQ(Value(100, 512), Get(*db, KeyAt(100)));
   ASSERT_TRUE(db->Close().ok());
+}
+
+// THE SAME RULE AT EVERY PLACE IT IS WRITTEN, AND THE RESIDUAL IT CANNOT CLOSE.
+//
+// "A tombstone at S hides sequences strictly below S" is spelled three times.
+// Three copies of one rule is the shape that drifts, so they are asserted
+// together rather than by inspection -- and what this CANNOT do is stated,
+// because a test that claims more than it covers is worse than none:
+//
+//   `VersionGet` and `IterImpl` are reached by ONE WORKLOAD here, which is what
+//   makes them genuinely compared: the same batch, the same sequence, two
+//   readers.
+//
+//   `MemTable::Get` IS NOT ON ANY DB READ PATH -- no caller in `src/`, because
+//   the DB reads memtables through `MergedIter` -- so no workload can reach it
+//   from here. It is asserted against a hand-built memtable instead. THE
+//   RESIDUAL IS THAT THE THIRD COPY IS COMPARED AGAINST THE RULE AND NOT
+//   AGAINST THE OTHER TWO, and nothing in this test would notice if the DB's
+//   two drifted together away from it.
+TEST(RangeDelete, TheSameRuleHoldsAtEveryPlaceItIsWritten) {
+  TestEnvironment t;
+  std::unique_ptr<DB> db;
+  ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+
+  // ONE BATCH: a Set AFTER a DeleteRange that covers it. Both land at the same
+  // sequence, which is the only way to reach the equal case at all.
+  WriteBatch b;
+  const std::string lo = "a";
+  const std::string hi = "z";
+  const std::string k = "same-seq";
+  b.DeleteRange(Bound::At(Slice(lo)), Bound::At(Slice(hi)));
+  b.Set(Slice(k), Slice("survives"));
+  SeqNum s = 0;
+  ASSERT_TRUE(db->Write(b, &s).ok());
+
+  EXPECT_EQ("survives", Get(*db, k)) << "VersionGet: `>` not `>=`";
+
+  bool seen = false;
+  std::unique_ptr<Iterator> it = db->NewIter(IterOptions());
+  for (bool ok = it->First(); ok; ok = it->Next()) {
+    if (it->Key().ToString() == k) seen = true;
+  }
+  ASSERT_TRUE(it->Close().ok());
+  EXPECT_TRUE(seen) << "IterImpl: the same rule, a different walk";
+  ASSERT_TRUE(db->Close().ok());
+
+  // The third copy, against the rule rather than against the other two.
+  MemTable m;
+  m.Add(5, ValueType::kValue, Slice(k), Slice("survives"));
+  m.AddRangeTombstone(5, Slice(lo), Slice(hi), false);
+  std::string v;
+  EXPECT_TRUE(m.Get(Slice(k), 5, &v).ok()) << "MemTable::Get: equal does not hide";
+  EXPECT_EQ("survives", v);
+  // And strictly-below DOES hide, or the assertion above would pass for a copy
+  // that never hid anything.
+  MemTable m2;
+  m2.Add(4, ValueType::kValue, Slice(k), Slice("hidden"));
+  m2.AddRangeTombstone(5, Slice(lo), Slice(hi), false);
+  EXPECT_FALSE(m2.Get(Slice(k), 5, &v).ok());
 }
 
 // ------------------------------------------------------- the Sync precondition
