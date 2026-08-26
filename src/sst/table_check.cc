@@ -23,8 +23,6 @@ const char* TableFaultName(TableFault fault) {
     case TableFault::kIndexNotAscending:     return "index not ascending";
     case TableFault::kIndexSeparatorMismatch:return "index separator is not the block's last key";
     case TableFault::kBadRangeBlock:            return "malformed range-tombstone block";
-    case TableFault::kTombstoneOutsideTheTableBounds:
-      return "a range tombstone the table's own bounds do not admit";
     case TableFault::kEmptyTable:            return "table has no data blocks";
   }
   RIFT_UNREACHABLE("TableFault holds a value no enumerator names");
@@ -201,19 +199,38 @@ TableCheck ValidateTable(Slice image) {
     }
     ok.range_tombstones = tombstones.size();
 
-    // SECTION 6.1's REFUSAL THAT IS NOT ABOUT THE BLOCK. The manifest records
-    // this table's bounds and COMPACTION CHOOSES ITS INPUTS BY THEM, so a
-    // tombstone the bounds do not admit is one no compaction will read -- and
-    // clause 2 of the drop claim then permits dropping a deletion while
-    // something it masked survives elsewhere. Input selection is a correctness
-    // concern, so the bounds that drive it are one too.
-    const Slice lo = ExtractUserKey(Slice(ok.smallest_key));
-    const Slice hi = ExtractUserKey(Slice(ok.largest_key));
+    // SECTION 6.1's REFUSAL THAT IS NOT ABOUT THE BLOCK -- AND IT IS ENFORCED BY
+    // CONSTRUCTION RATHER THAN BY A REFUSAL. See DESIGN-B3 section 6.1a for the
+    // deviation and why it is the stronger form.
+    //
+    // The requirement is that THE BOUNDS THE MANIFEST RECORDS ADMIT EVERY
+    // TOMBSTONE, because compaction chooses its inputs by those bounds and
+    // clause 2 of the drop claim is only sound if the inputs hold every version
+    // of every key they contain. A tombstone outside them is one no compaction
+    // reads, which resurrects what it masked.
+    //
+    // A refusal HERE cannot enforce that: this function DERIVES the bounds, so
+    // whatever it derives is admissible by definition. What it can do is derive
+    // them to INCLUDE the tombstones -- and the manifest is then held to this
+    // derivation at every Open (`VerifyTables` refuses a disagreement). The
+    // requirement becomes unfalsifiable at the file and enforced at the edge
+    // that actually records it.
+    //
+    // The END BOUND IS EXCLUSIVE AND IS INCLUDED ANYWAY: over-covering costs a
+    // file that did not need reading, under-covering resurrects data, and the
+    // two directions are not symmetric.
     for (const RangeTombstone& t : tombstones) {
-      if (t.start.compare(lo) < 0 || t.end.compare(hi) > 0) {
-        return Fail(TableFault::kTombstoneOutsideTheTableBounds,
-                    footer.range_offset + t.offset,
-                    "tombstone range lies outside the table's own key bounds");
+      std::string lo;
+      AppendInternalKey(&lo, t.start, t.tag);
+      if (ok.smallest_key.empty() ||
+          CompareInternalKey(Slice(lo), Slice(ok.smallest_key)) < 0) {
+        ok.smallest_key = lo;
+      }
+      std::string hi;
+      AppendInternalKey(&hi, t.end, t.tag);
+      if (ok.largest_key.empty() ||
+          CompareInternalKey(Slice(hi), Slice(ok.largest_key)) > 0) {
+        ok.largest_key = hi;
       }
       if (t.seq() > ok.largest_seq) ok.largest_seq = t.seq();
     }

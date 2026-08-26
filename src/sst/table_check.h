@@ -68,7 +68,6 @@ enum class TableFault : uint8_t {
   kIndexSeparatorMismatch,
   kEmptyTable,
   kBadRangeBlock,
-  kTombstoneOutsideTheTableBounds,
 };
 const char* TableFaultName(TableFault fault);
 

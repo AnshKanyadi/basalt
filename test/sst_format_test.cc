@@ -7,9 +7,11 @@
 // agree with it. Every fixture below builds something a correct writer will
 // never emit, which is the point: a classifier that can only be shown legal
 // bytes has not been shown to classify.
+#include "range_tombstone.h"
 #include "table_check.h"
 
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -68,6 +70,7 @@ class Table {
   }
   void SetFilter(BlockHandle h) { filter_ = h; }
   void SetVersion(uint32_t v) { version_ = v; }
+  void SetRangeOffset(uint64_t o) { range_offset_ = o; }
 
   std::string Finish(BlockHandle index) const {
     std::string out = bytes_;
@@ -75,6 +78,7 @@ class Table {
     f.filter = filter_;
     f.index = index;
     f.format_version = version_;
+    f.range_offset = range_offset_;
     EncodeFooter(f, &out);
     return out;
   }
@@ -83,6 +87,7 @@ class Table {
   std::string bytes_;
   BlockHandle filter_;
   uint32_t version_ = kFormatVersion;
+  uint64_t range_offset_ = 0;
 };
 
 // The canonical LEGAL table: two data blocks, an index naming each block's
@@ -674,6 +679,69 @@ TEST(SstClassifier, TheSpentReserveIsZeroWithNoRangeBlockAndRefusedWhenItLies) {
   const TableCheck v = ValidateTable(Slice(lying));
   EXPECT_FALSE(v.ok()) << "a range offset past the footer must be refused, not ignored";
   EXPECT_EQ(TableFault::kHandleOutOfRange, v.fault);
+}
+
+// ------------------------------- the range block, from hand-built bytes
+//
+// SECTION 6.1's REFUSAL THAT IS NOT ABOUT THE BLOCK, INDUCED. The writer always
+// widens a table's bounds to admit its own tombstones, so this shape cannot be
+// produced by `TableBuilder` -- which is exactly why it is built by hand. A rule
+// only the writer can be trusted to keep is a rule that is not checked.
+
+// A range block holding one tombstone, framed as a data block: the tombstone is
+// the ENTRY KEY and the value is empty.
+std::string RangeBlock(const std::vector<std::tuple<std::string, std::string, SeqNum>>& ts) {
+  BlockBuilder b;
+  for (const auto& t : ts) {
+    std::string encoded;
+    EncodeRangeTombstone(Slice(std::get<0>(t)), Slice(std::get<1>(t)),
+                         MakeTag(std::get<2>(t), ValueType::kDeletion), &encoded);
+    b.Add(Slice(encoded), Slice());
+  }
+  return b.Finish();
+}
+
+// A table whose only data key is "m", carrying a range block the caller chooses.
+std::string TableWithRange(const std::vector<std::tuple<std::string, std::string, SeqNum>>& ts) {
+  Table t;
+  const BlockHandle block0 = t.Append(DataBlock({{IKey("m", 1), "1"}}));
+  const BlockHandle index = t.Append(IndexBlock({{IKey("m", 1), block0}}));
+  const BlockHandle range = t.Append(RangeBlock(ts));
+  t.SetRangeOffset(range.offset);
+  return t.Finish(index);
+}
+
+// THE CLASSIFIER DERIVES THE BOUNDS INCLUDING THE TOMBSTONES, which is section
+// 6.1's requirement in its enforceable form (see DESIGN-B3 6.1a). The manifest
+// is then held to THIS derivation at every Open, so no manifest can record
+// bounds that fail to admit a tombstone.
+TEST(SstClassifier, ARangeTombstoneWidensTheBoundsTheClassifierDerives) {
+  // The table's only data key is "m"; the tombstone reaches from "a" to "z".
+  const std::string image = TableWithRange({{"a", "z", 9}});
+  const TableCheck v = ValidateTable(Slice(image));
+  ASSERT_TRUE(v.ok()) << TableFaultName(v.fault) << ": " << v.why;
+  EXPECT_EQ(1u, v.range_tombstones);
+  EXPECT_EQ("a", ExtractUserKey(Slice(v.smallest_key)).ToString());
+  EXPECT_EQ("z", ExtractUserKey(Slice(v.largest_key)).ToString())
+      << "the end bound is exclusive and is included anyway: over-covering "
+         "costs a read, under-covering resurrects data";
+  EXPECT_EQ(9u, v.largest_seq) << "a tombstone is a version and counts";
+}
+
+// GF-14: THE OTHER HALF. Without it, "tombstones widen the bounds" could be
+// produced by a classifier that ignored the data keys entirely.
+TEST(SstClassifier, ATombstoneInsideTheDataDoesNotWidenAnything) {
+  Table t;
+  const BlockHandle block0 =
+      t.Append(DataBlock({{IKey("a", 1), "1"}, {IKey("z", 1), "2"}}));
+  const BlockHandle index = t.Append(IndexBlock({{IKey("z", 1), block0}}));
+  const BlockHandle range = t.Append(RangeBlock({{"m", "n", 9}}));
+  t.SetRangeOffset(range.offset);
+  const std::string image = t.Finish(index);
+  const TableCheck v = ValidateTable(Slice(image));
+  ASSERT_TRUE(v.ok()) << TableFaultName(v.fault) << ": " << v.why;
+  EXPECT_EQ("a", ExtractUserKey(Slice(v.smallest_key)).ToString());
+  EXPECT_EQ("z", ExtractUserKey(Slice(v.largest_key)).ToString());
 }
 
 }  // namespace
