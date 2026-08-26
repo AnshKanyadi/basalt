@@ -1,0 +1,28 @@
+# id: BM91-classifier-drops-the-unbounded-flag
+# blinds: a table SAYING its range runs to infinity
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The flag is the only thing that carries the fact: an unbounded tombstone
+# cannot widen `largest`, because there is no finite key to widen it to. Drop
+# the flag and the table's range reads as [smallest, largest] -- finite, and too
+# small.
+#
+# INPUT SELECTION READS IT. A compaction that under-selects on this table does
+# not read the files above `largest`, so clause 2 of the drop claim then permits
+# dropping a deletion whose masked value survives in one of them. Deleted data
+# comes back, with every file structurally valid and every checksum right.
+--- a/engine-cpp/src/sst/table_check.cc
++++ b/engine-cpp/src/sst/table_check.cc
+@@ -226,7 +226,8 @@
+           CompareInternalKey(Slice(lo), Slice(ok.smallest_key)) < 0) {
+         ok.smallest_key = lo;
+       }
+-      if (t.end_unbounded) {
++      // BM91: an unbounded tombstone is a tombstone like any other.
++      if (false && t.end_unbounded) {
+         // NO FINITE KEY WIDENS THIS. The table's range is `[smallest, infinity)`
+         // and the flag is how that travels -- input selection reads it, and a
+         // reader that consulted only the bounds would under-select and let

@@ -1,0 +1,27 @@
+# id: BM92-finite-rule-applied-to-the-sentinel
+# blinds: `end > start` being a rule about FINITE ends
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# THE OTHER HALF OF THE SENTINEL'S READING, and the one a careful reader reaches
+# by being careful. An unbounded record carries no end bytes, so `end` is empty
+# -- and empty is not above any start, so every legal unbounded tombstone is
+# refused as inverted.
+#
+# The comment at the guard exists for exactly this: the sentinel is A DIFFERENT
+# CASE, not an exception to the finite rule. This mutant is what makes that
+# sentence load-bearing rather than decorative.
+--- a/engine-cpp/src/sst/range_tombstone.cc
++++ b/engine-cpp/src/sst/range_tombstone.cc
+@@ -130,7 +130,8 @@
+     // A RULE ABOUT FINITE ENDS, and the sentinel is not an exception to it --
+     // it is a different case, in which there is no end to compare. Written this
+     // way round because the next reader meets the guard before the sentinel.
+-    if (!t.end_unbounded && t.end.compare(t.start) <= 0) {
++    // BM92: `end > start` is applied to the sentinel too.
++    if (t.end.compare(t.start) <= 0) {
+       return Fail(RangeFault::kEmptyOrInvertedRange, e.offset,
+                   "end is not above start");
+     }
