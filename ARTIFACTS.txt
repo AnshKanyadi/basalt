@@ -1,0 +1,47 @@
+# HEADERS AN ORACLE MAY PARSE.
+#
+# B3-D2a. The corrected oracle-independence rule, ruled 2026-08-25:
+#
+#   AN ORACLE MAY PARSE THE ENGINE'S ARTIFACTS, AND MAY NOT CONSULT THE
+#   ENGINE'S BELIEFS. Parsing shares a format; consulting shares a judgement.
+#
+# The rule it replaces was "the oracle includes nothing from src/", which was
+# too coarse: it forbade reading the bytes the engine produced, and bytes are not
+# a claim. What is a claim is what the engine SAYS -- what it holds, what is
+# durable, what Get chooses to return. Reading an artifact with the engine's own
+# decoder is closer to a hex dump than to an interview, PROVIDED THE DECODER
+# ANSWERS ONLY WHAT IS THERE.
+#
+# THE MECHANICAL MARK, and it is the whole of the rule:
+#
+#   AN ARTIFACT HEADER DECLARES NOTHING TAKING AN `Env*` AND NOTHING TAKING A
+#   SNAPSHOT.
+#
+# Those two are exactly where decoding becomes judging. `Env*` means IT WENT AND
+# LOOKED, which is an act with an opinion about what the current state is. A
+# snapshot parameter means IT DECIDED WHAT A CALLER SHOULD BE ALLOWED TO SEE,
+# which is the engine's visibility rule -- the single rule the drop checker
+# exists to audit. A header with neither is bytes in, structure out.
+#
+# `cpp-scan` enforces three things: every oracle's src/ includes are listed here;
+# every header listed here exists and carries neither mark; and every file
+# carrying RIFT_ORACLE is registered in ORACLES.txt and vice versa.
+#
+# THE COST IS NAMED RATHER THAN IMPLIED. A shared decoder is a shared blind spot,
+# at exactly the place the checker exists to watch. Two mutants plant it
+# deliberately -- READER-hides-a-live-record and READER-shows-a-dropped-record --
+# and if the second survives, the aliasing is unacceptable and the rig gets its
+# own parser. Whatever kills them is load-bearing for every drop verdict.
+#
+# Format:  <header path, relative to engine-cpp/src> | <why it only decodes>
+
+slice.h              | A pointer and a length. No engine, no state, no opinion.
+status.h             | A code and a message. It reports what a CALL returned, never what the engine believes about its own contents.
+internal_key.h       | The internal key layout and its comparator. Pure functions over bytes; the comparator is an ORDER, not a visibility rule.
+wal/crc32c.h         | A checksum over bytes.
+wal/format.h         | The WAL's record encoding. Encoders and decoders; no file is opened and no record is judged.
+wal/reader.h         | ScanLog: bytes in, verdict out, explicitly pure -- its own header says so and section 14.4 split it from recovery for this reason.
+sst/table_format.h   | The SSTable's block, footer and handle encoding. ParseBlock and DecodeFooter enumerate what is there.
+sst/table_check.h    | ValidateTable: an image in, a fault or a count out. It judges BYTES against a format, which is the opposite of judging a caller against a snapshot.
+sst/bloom.h          | The filter's encoding and its probe walk. MayContain answers about BITS, not about visibility.
+sst/manifest_format.h | The manifest's pure codec, split out of manifest.h by this very rule -- Manifest::Open takes an Env* and therefore has an opinion.

@@ -1,3 +1,4 @@
+// RIFT_ORACLE -- see exactness_oracle.h and ORACLES.txt.
 #include "exactness_oracle.h"
 
 #include <utility>

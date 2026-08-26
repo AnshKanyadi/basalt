@@ -1,0 +1,18 @@
+# FILES THAT PRODUCE A VERDICT.
+#
+# B3-D2a. Every file here carries a `RIFT_ORACLE` marker in its header comment,
+# and every file carrying that marker is here -- cross-checked both ways, the
+# same construct DECIDERS.txt uses and for the same reason: a new oracle that
+# lands outside the rule by simply not being named in it is the seventh
+# unasserted decider arriving, one category over.
+#
+# An oracle's `src/` includes must all appear in ARTIFACTS.txt. Nothing else in
+# rig/ is bound by that: the DRIVER may call the engine freely -- it has to, it
+# is what makes the engine run -- and it is the JUDGE that may not consult it.
+# Confusing those two is what the old rule did by naming a file instead of a
+# role.
+#
+# Format:  <file, relative to engine-cpp> | <what it produces a verdict about>
+
+rig/exactness_oracle.h  | Whether a recovered state is one of the two elements of the recovery set.
+rig/exactness_oracle.cc | The same.

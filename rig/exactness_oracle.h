@@ -1,3 +1,5 @@
+// RIFT_ORACLE -- registered in ORACLES.txt. It may PARSE artifacts and may not
+// CONSULT beliefs; its src/ includes are allow-listed in ARTIFACTS.txt.
 // THE EXACTNESS ORACLE. Section 7.3, and it asks the engine nothing.
 //
 // Ruling 4: "the crash rig's verdicts come from its own op log, never from
