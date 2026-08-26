@@ -40,6 +40,18 @@
 #
 # A class the sweep cannot reach carries a SPLIT LABEL in the rate column --
 # covered-by: <instrument> -- naming what catches it instead. Not a silent zero.
+#
+# AN ABORT-KILL IS A DIFFERENT INSTRUMENT FROM A TEST-KILL, and it carries a
+# DIFFERENT LABEL: killed-by-guard: <guard>. Three classes are killed by a guard
+# firing rather than by an assertion failing -- the mutex-depth guard and the
+# exactness-suspension assertion -- and when that happens the SUITE REPORTS NO
+# FAILING TEST, because the process dies before the summary prints.
+#
+# "No failing test" and "killed by a guard" are OPPOSITE CONCLUSIONS FROM
+# IDENTICAL OUTPUT, which is why the distinction is a label rather than a
+# sentence in a reasoning column. Read as the first, all three are SURVIVALS.
+# They were read correctly only because RIFT_CHECK prints a partial-run marker,
+# landed hours before this file was written and for exactly this shape.
 # An exempt class is still listed: a class missing from this file is a class
 # with no standing measurement, which is how a bug class drifts back into being
 # uncatchable one flaw at a time.
@@ -137,7 +149,7 @@ BM13-characterization-counted | covered-by: RunOutcome.CharacterizationIsNotEvid
 
 BM14-drop-the-lock | covered-by: TSanLane.ConcurrentAddAndGetAreRaceFreeAcrossThisInterleaving | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Killed by the SANITIZER rather than by an assertion: TSan reports the race the missing lock creates. Its absence would leave the tsan lane green over a genuinely racing structure, which is why the lane runs a dedicated harness and not the unit suite. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
 
-BM16-mutex-across-env | covered-by: env_guard.cc's mutex-depth guard, which ABORTS | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | THE KILL IS AN ABORT, NOT A TEST FAILURE. A naive reading of the suite reports NO failing test, because the process dies before the summary prints -- the exact misreading the RIFT PARTIAL RUN marker now prevents. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+BM16-mutex-across-env | killed-by-guard: env_guard.cc's mutex-depth guard | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | THE KILL IS AN ABORT, NOT A TEST FAILURE. A naive reading of the suite reports NO failing test, because the process dies before the summary prints -- the exact misreading the RIFT PARTIAL RUN marker now prevents. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
 
 BM17a-bypassing-env-method | covered-by: cpp-scan part 1, the Env surface correspondence | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
 
@@ -165,7 +177,7 @@ BM7-drop-close-error | covered-by: DB.CloseErrorReachesTheCaller | 0 | determine
 
 BM8-skip-crc | covered-by: WalReaderSixCases.ACrcFailureWhileInsideIsATornTail | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
 
-BM9-apply-does-io | covered-by: env_guard.cc's mutex-depth guard, which ABORTS | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | THE KILL IS AN ABORT. See BM16: the suite reports no failing test because the process dies first. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+BM9-apply-does-io | killed-by-guard: env_guard.cc's mutex-depth guard | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | THE KILL IS AN ABORT. See BM16: the suite reports no failing test because the process dies first. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
 
 CENSUS-extra-call | covered-by: TestEnvCensus.PerCallSiteCountsAreExactlyWhatTheWorkloadIssued | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
 
@@ -203,7 +215,7 @@ MODEL-kill-keeps-content | covered-by: TestEnvDurability.KillDiscardsEverythingS
 
 ORACLE-includes-engine | covered-by: cpp-scan part 2b, the ARTIFACTS allow-list | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | REPOINTED AT B3: part 2b was REPLACED, not excepted, when B3-Q1 corrected the rule to parse-artifacts-never-consult-beliefs. The class is unchanged and the mechanism that catches it moved. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
 
-REGISTRY-lying-sync-not-suspending | covered-by: test_env.cc's suspension assertion, which ABORTS | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | THE KILL IS AN ABORT. See BM16. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
+REGISTRY-lying-sync-not-suspending | killed-by-guard: test_env.cc's exactness-suspension assertion | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | THE KILL IS AN ABORT. See BM16. Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
 
 SCAN-claim-removed | covered-by: cpp-scan part 4, CLAIMS.txt verbatim | 0 | determined at B3.1 by INDUCTION -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | Determined at b3.1 by induction -- the patch was applied and the failing assertion read, not inferred from what the patch blinds | default | 0
 
