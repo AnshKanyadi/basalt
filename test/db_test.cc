@@ -275,7 +275,23 @@ TEST(DB, DeleteRangeRemovesEarlierWritesInTheSameBatchAndALaterSetReAddsThem) {
 
 // THE WAL RECORDS THE EXPANSION, not the raw DeleteRange -- so recovery replays
 // point deletes and never has to expand against a state it is still rebuilding.
-TEST(DB, TheWalRecordsTheExpansionAndNotTheRange) {
+// B3.5 INVERTED THIS TEST, AND THE INVERSION IS THE CLAIM.
+//
+// It used to assert the opposite -- that the WAL records the EXPANSION and
+// never a raw DELETE_RANGE -- with this reason: *"recovery would have to expand
+// it against a state it is still rebuilding, which is correctness by an
+// argument with a moving premise."* That reason was right, and B3.5 REMOVED THE
+// PREMISE rather than strengthening the argument.
+//
+// A range tombstone means the same thing wherever it is replayed: it hides
+// every version below its own sequence, and nothing about the surrounding state
+// enters into it. So recovery INSERTS it and computes nothing, and the log can
+// carry the range itself.
+//
+// The old test is not weakened here; it is REPLACED, because the mechanism it
+// described has been retired by `[A3]`. A test of a retired mechanism is not
+// evidence about the one that replaced it.
+TEST(DB, TheWalRecordsTheRangeAndNotTheExpansion) {
   TestEnvironment t;
   {
     std::unique_ptr<DB> db;
@@ -298,22 +314,17 @@ TEST(DB, TheWalRecordsTheExpansionAndNotTheRange) {
     wal::DecodedBatch db_rec;
     ASSERT_TRUE(wal::DecodeBatch(Slice(rec.payload), &db_rec));
     for (const wal::Op& op : db_rec.ops) {
-      if (op.kind == wal::OpKind::kDeleteRange) saw_range = true;
+      if (op.kind == wal::OpKind::kDeleteRange) {
+        saw_range = true;
+        EXPECT_TRUE(op.value.empty())
+            << "an empty end is how an unbounded one travels in the log";
+      }
       if (op.kind == wal::OpKind::kDelete) ++deletes;
     }
   }
-  EXPECT_FALSE(saw_range) << "a raw DELETE_RANGE reached the log; recovery would "
-                             "have to expand it against a state it is still "
-                             "rebuilding, which is correctness by an argument "
-                             "with a moving premise";
-  EXPECT_EQ(deletes, 3);
+  EXPECT_TRUE(saw_range) << "the range itself must reach the log now";
+  EXPECT_EQ(0, deletes) << "and no expansion beside it: one entry, not one per key";
 }
-
-// ------------------------------------- the assertions this step re-makes
-
-// Re-asserted here because DeleteRange expansion is the operation most likely
-// to violate it: it READS the memtable, and a reader that reached the file
-// layer would be I/O inside Apply.
 TEST(DB, WriteMakesZeroEnvCallsEvenWhenExpandingARange) {
   Fixture f;
   for (int i = 0; i < 500; ++i) {
@@ -422,6 +433,21 @@ constexpr int kKeysSpanningBlocks = 3000;
 // test below lowers the RECORD cap on purpose, and the ordering invariant means
 // the buffer cap moves with it -- so a fill that never drained would trip the
 // wrong tripwire and the test would pass for the wrong reason.
+// ONE WORKLOAD, WRITTEN ONCE. The torn-record test runs it twice -- a probe to
+// find the sync ordinal, then the killed run -- and the two must be BYTE
+// IDENTICAL or the recorded ordinal names a different Env call in the second.
+// Two copies of a workload that must match is that bug waiting to happen, and
+// it happened: the first version of this test changed the probe's batch and
+// left the killed run issuing the old one, so the kill never fired.
+void FillBigBatch(WriteBatch* b) {
+  for (int i = 0; i < kKeysSpanningBlocks; ++i) {
+    char buf[16];
+    std::snprintf(buf, sizeof buf, "big%08d", i);
+    const std::string k(buf);
+    b->Set(Slice(k), Slice("v"));
+  }
+}
+
 void FillKeys(DB* db, int n) {
   for (int i = 0; i < n; ++i) {
     char buf[16];
@@ -435,43 +461,64 @@ void FillKeys(DB* db, int n) {
   }
 }
 
-TEST(DBDeleteRange, AnOverCapExpansionIsRefusedAndAppliesNothing) {
+// B3.5 REPLACED THIS TEST, AND WHAT IT ASSERTS NOW IS `[A3]`'s WHOLE POINT.
+//
+// It used to fill 3000 keys, issue a clear-everything, and assert the resulting
+// EXPANSION was refused for exceeding the record cap. That was a true and
+// useful thing to check while `DeleteRange` expanded to one point delete per
+// live key -- and it is not a fact about this engine any more.
+//
+// A test of a retired mechanism is not evidence about the one that replaced it,
+// so it is REPLACED rather than deleted or loosened: the same workload, the
+// same clear-everything, and the assertion inverted to the new claim. The
+// record cap's own refusal is still covered where it belongs, at the WAL
+// (`wal_test.cc`), by a batch that is genuinely too large.
+TEST(DBDeleteRange, AClearEverythingIsOneSmallRecordWhateverTheDatabaseHolds) {
   TestEnvironment t;
-  // A LOWERED-CAP REGIME. This is precisely why the caps are run-time
-  // configurable -- a tripwire nobody has watched fire is decoration -- and
-  // precisely why section 8.4 forbids banking this run with default-cap runs.
+  // THE SAME LOWERED-CAP REGIME THE OLD TEST USED, kept deliberately: under it
+  // the expansion of 3000 keys was REFUSED, so passing here is a statement
+  // about the change and not about a cap that got roomier. Section 8.4 still
+  // forbids banking this run with default-cap runs.
   Caps small;
   small.max_record_bytes = 20000;
   small.wal_buffer_bytes = 100000;
   ASSERT_TRUE(small.Ordered());
   rig::RunRecord record;
   record.caps = small;
-  ASSERT_EQ(record.regime(), rig::Regime::kNonDefault)
-      << "this run must be mechanically marked as a different regime, or its "
-         "result can be banked with numbers it says nothing about";
+  ASSERT_EQ(record.regime(), rig::Regime::kNonDefault);
 
   std::unique_ptr<DB> db;
   ASSERT_TRUE(DB::Open(t.env(), kDir, small, &db).ok());
   FillKeys(db.get(), kKeysSpanningBlocks);
+  SeqNum mark = 0;
+  ASSERT_TRUE(db->Sync(&mark).ok());
+  const std::string wal_path = LiveWalPath(&t);
+  const std::size_t before = t.ContentNow(wal_path).size();
 
   WriteBatch b;
   b.DeleteRange(Bound::Unbounded(), Bound::Unbounded());
   SeqNum s = 0;
   const Status st = db->Write(b, &s);
-  EXPECT_EQ(st.code(), Status::Code::kRecordTooLarge) << st.ToString();
+  ASSERT_TRUE(st.ok()) << st.ToString() << " -- the clear no longer expands, so "
+                                          "it cannot exceed the record cap";
+  ASSERT_TRUE(db->Sync(&mark).ok());
 
-  // APPLIES NOTHING, ATOMICALLY.
-  EXPECT_EQ(Get(*db, "key00000000"), "v")
-      << "a refused over-cap DeleteRange partially applied";
-  EXPECT_EQ(Get(*db, "key00002999"), "v");
+  const std::size_t grew = t.ContentNow(wal_path).size() - before;
+  EXPECT_LT(grew, 200u) << "the clear-everything record is " << grew
+                        << " bytes; it used to be one point delete per key";
+  EXPECT_EQ(Get(*db, "key00000000"), "<absent>");
+  EXPECT_EQ(Get(*db, "key00002999"), "<absent>");
+  ASSERT_TRUE(db->Close().ok());
 }
-
-// THE MULTI-BLOCK TORN-TAIL CASE, EXERCISED BY A REAL EXPANSION rather than by
-// a hand-built fixture. Section 5.4.2's rule is stated for multi-fragment
-// records because DeleteRange makes them a ROUTINE path in B1, not an exotic
-// one, and a rule exercised only by fixtures is a rule nobody has seen the
-// engine actually meet.
-TEST(DBDeleteRange, ATornExpansionSpanningBlocksIsDiscardedWholeAndTheGroupStands) {
+// THE PROPERTY SURVIVES ITS PRODUCER. A record spanning several blocks, torn
+// inside a MIDDLE fragment, must be discarded whole and leave the group before
+// it standing. `DeleteRange`'s expansion used to be the easiest way to build
+// such a record and is no longer a way at all -- so the producer is now a large
+// BATCH, and the property is unchanged.
+//
+// Renamed rather than left describing a mechanism that no longer exists: a test
+// name is read as a claim about what the engine does.
+TEST(DBDeleteRange, ATornBatchSpanningBlocksIsDiscardedWholeAndTheGroupStands) {
   uint64_t sync_ordinal = 0;
   uint64_t torn_prefix = 0;
   std::size_t record_bytes = 0;
@@ -486,7 +533,7 @@ TEST(DBDeleteRange, ATornExpansionSpanningBlocksIsDiscardedWholeAndTheGroupStand
     const std::size_t after_fill = probe.ContentNow(wal_path).size();
 
     WriteBatch b;
-    b.DeleteRange(Bound::Unbounded(), Bound::Unbounded());
+    FillBigBatch(&b);
     SeqNum s = 0;
     ASSERT_TRUE(db->Write(b, &s).ok());
     ASSERT_TRUE(db->Sync(&mark).ok());
@@ -494,12 +541,12 @@ TEST(DBDeleteRange, ATornExpansionSpanningBlocksIsDiscardedWholeAndTheGroupStand
       if (e.site == CallSite::kWritableFileSync) sync_ordinal = e.ordinal;
     }
     record_bytes = probe.ContentNow(wal_path).size() - after_fill;
-    // Tear roughly halfway through the expansion, which -- because it spans
+    // Tear roughly halfway through the record, which -- because it spans
     // blocks -- lands inside a MIDDLE fragment.
     torn_prefix = record_bytes / 2;
   }
   ASSERT_GT(record_bytes, wal::kBlockBytes)
-      << "the expansion did not span a block, so this test is not exercising "
+      << "the batch did not span a block, so this test is not exercising "
          "the multi-block case at all";
 
   testenv::FaultPlan plan;
@@ -512,7 +559,7 @@ TEST(DBDeleteRange, ATornExpansionSpanningBlocksIsDiscardedWholeAndTheGroupStand
     SeqNum mark = 0;
     ASSERT_TRUE(db->Sync(&mark).ok());
     WriteBatch b;
-    b.DeleteRange(Bound::Unbounded(), Bound::Unbounded());
+    FillBigBatch(&b);
     SeqNum s = 0;
     ASSERT_TRUE(db->Write(b, &s).ok());
     EXPECT_EQ(db->Sync(&mark).code(), Status::Code::kKilled);
@@ -533,9 +580,12 @@ TEST(DBDeleteRange, ATornExpansionSpanningBlocksIsDiscardedWholeAndTheGroupStand
   std::unique_ptr<DB> db;
   ASSERT_TRUE(DB::Open(re->env(), kDir, Caps(), &db).ok());
   EXPECT_EQ(Get(*db, "key00000000"), "v")
-      << "the torn DeleteRange was partially applied: a multi-fragment record "
-         "must be committed whole or not at all";
+      << "the group before the torn record must stand";
   EXPECT_EQ(Get(*db, "key00002999"), "v");
+  EXPECT_EQ(Get(*db, "big00000000"), "<absent>")
+      << "the torn batch was partially applied: a multi-fragment record must be "
+         "committed whole or not at all";
+  EXPECT_EQ(Get(*db, "big00002999"), "<absent>");
 }
 
 }  // namespace

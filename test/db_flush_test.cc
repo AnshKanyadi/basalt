@@ -309,11 +309,23 @@ TEST(Flush, DeleteRangeReachesKeysThatHaveBeenFlushed) {
   ASSERT_TRUE(db->Close().ok());
 }
 
-TEST(Flush, ApplyStillMakesNoEnvCallWhenDeleteRangeReadsTables) {
-  // THE CONSTRAINT B2-D7 CALLED A REAL ONE RATHER THAN A DETAIL. The expansion
-  // happens at Apply, Apply makes no Env call, and at B2 the expansion reads
-  // every live SSTable -- which is only possible because they are resident.
-  // Asserted from the harness's own Env-call counter, which asks the engine
+TEST(Flush, ApplyMakesNoEnvCallAndNoLongerNeedsToReadAnything) {
+  // THE ASSERTION SURVIVES ITS REASON, AND THE REASON IS WHAT CHANGED.
+  //
+  // B2-D7 called this a real constraint rather than a detail: the expansion
+  // happened at Apply, Apply makes no Env call, and the expansion had to read
+  // every live SSTable -- which was only possible because they were RESIDENT.
+  // That is what forced `table.h`'s whole-file residency.
+  //
+  // B3.5 retires the expansion. Apply now reads NOTHING: a range deletion is
+  // one entry whose meaning does not depend on the state around it. So the
+  // Env-call assertion stands unchanged and stands for less -- it no longer
+  // depends on residency, and residency no longer depends on it.
+  //
+  // Kept rather than deleted, because "Write never blocks on I/O" is a frozen
+  // promise (db.h) independent of how DeleteRange is implemented, and this is
+  // the assertion that holds the engine to it on the path most likely to break
+  // it. Asserted from the harness's own Env-call counter, which asks the engine
   // nothing.
   TestEnvironment t;
   std::unique_ptr<DB> db;

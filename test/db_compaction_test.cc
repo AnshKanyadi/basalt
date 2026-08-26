@@ -12,6 +12,7 @@
 
 #include <cstdio>
 #include <memory>
+#include <algorithm>
 #include <atomic>
 #include <set>
 #include <string>
@@ -103,6 +104,14 @@ std::pair<int, int> LevelCounts(TestEnvironment* t) {
   int l1 = 0;
   for (const auto& e : state.tables) (e.second.level == 0 ? l0 : l1)++;
   return {l0, l1};
+}
+
+// `Slice(KeyAt(i))` will not compile: the deleted `Slice(std::string&&)` stops a
+// Slice binding to a temporary, which is HARNESS-007's fix doing its job. The
+// string is bound to a local here and `Bound::At` copies it.
+Bound BoundAt(int i) {
+  const std::string k = KeyAt(i);
+  return Bound::At(Slice(k));
 }
 
 SeqNum FillAndFlush(DB* db, int from, int count) {
@@ -338,6 +347,178 @@ TEST(Compact, ASnapshotTakenBeforeACompactionStillReadsItsVersion) {
   EXPECT_EQ(Value(7, 512), v) << "the snapshot's version did not survive";
   EXPECT_EQ("after-the-snapshot", Get(*db, KeyAt(7)));
   ASSERT_TRUE(snap->Close().ok());
+  ASSERT_TRUE(db->Close().ok());
+}
+
+// -------------------------------------------------- range deletes, end to end
+//
+// B3.5c-d: THE TOMBSTONE THAT HIDES A KEY NEED NOT LIVE WHERE THE KEY DOES.
+// Every test here puts the two in different stores on purpose, because a read
+// path that asked only the store holding the value would pass a test that put
+// them together.
+
+TEST(RangeDelete, ARangeInTheMemtableHidesAValueInATable) {
+  TestEnvironment t;
+  std::unique_ptr<DB> db;
+  ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+  FillAndFlush(db.get(), 0, 50);          // the values are now in a table
+  ASSERT_EQ(1u, Tables(&t).size());
+
+  WriteBatch b;                            // the tombstone stays in the memtable
+  b.DeleteRange(BoundAt(10), BoundAt(20));
+  SeqNum s = 0;
+  ASSERT_TRUE(db->Write(b, &s).ok());
+
+  EXPECT_EQ(Value(9, 512), Get(*db, KeyAt(9))) << "below the range";
+  EXPECT_EQ("<absent>", Get(*db, KeyAt(10))) << "the start is INCLUSIVE";
+  EXPECT_EQ("<absent>", Get(*db, KeyAt(15)));
+  EXPECT_EQ(Value(20, 512), Get(*db, KeyAt(20))) << "the end is EXCLUSIVE";
+  ASSERT_TRUE(db->Close().ok());
+}
+
+// AND IT SURVIVES THE FLUSH THAT MOVES IT INTO A TABLE, which is the step the
+// memtable's own answer cannot cover.
+TEST(RangeDelete, ARangeSurvivesTheFlushThatWritesItIntoATable) {
+  TestEnvironment t;
+  {
+    std::unique_ptr<DB> db;
+    ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+    FillAndFlush(db.get(), 0, 50);
+    WriteBatch b;
+    b.DeleteRange(BoundAt(10), BoundAt(20));
+    SeqNum s = 0;
+    ASSERT_TRUE(db->Write(b, &s).ok());
+    FillAndFlush(db.get(), 100, 50);   // flushes the tombstone into a table
+    ASSERT_EQ(2u, Tables(&t).size());
+    EXPECT_EQ("<absent>", Get(*db, KeyAt(15)));
+    ASSERT_TRUE(db->Close().ok());
+  }
+  // AND ACROSS A REOPEN, which is the WAL replay path: recovery INSERTS the
+  // tombstone and computes nothing.
+  std::unique_ptr<DB> db;
+  ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+  EXPECT_EQ("<absent>", Get(*db, KeyAt(15)));
+  EXPECT_EQ(Value(9, 512), Get(*db, KeyAt(9)));
+  EXPECT_EQ(Value(20, 512), Get(*db, KeyAt(20)));
+  ASSERT_TRUE(db->Close().ok());
+}
+
+// A WRITE ABOVE THE TOMBSTONE IS NOT HIDDEN BY IT. Strictly-newer-hides, and
+// this is the half that a `>=` comparison would break.
+TEST(RangeDelete, AValueWrittenAfterTheRangeSurvivesIt) {
+  TestEnvironment t;
+  std::unique_ptr<DB> db;
+  ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+  FillAndFlush(db.get(), 0, 50);
+  WriteBatch b;
+  b.DeleteRange(BoundAt(10), BoundAt(20));
+  SeqNum s = 0;
+  ASSERT_TRUE(db->Write(b, &s).ok());
+  Put(db.get(), KeyAt(15), "written-after");
+  EXPECT_EQ("written-after", Get(*db, KeyAt(15)));
+  ASSERT_TRUE(db->Close().ok());
+}
+
+// THE MODEL'S INTRA-BATCH RULE: a DeleteRange covers keys written EARLIER in
+// the same batch, and a Set AFTER it re-adds the key. Every op in one batch
+// shares a sequence, so this is the case the tombstone alone cannot express --
+// it is resolved in the batch, and this is what says so.
+TEST(RangeDelete, WithinOneBatchASetAfterTheRangeSurvivesAndOneBeforeDoesNot) {
+  TestEnvironment t;
+  std::unique_ptr<DB> db;
+  ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+  WriteBatch b;
+  const std::string lo = "a";
+  const std::string hi = "z";
+  const std::string before = "before";
+  const std::string after = "after";
+  b.Set(Slice(before), Slice("1"));
+  b.DeleteRange(Bound::At(Slice(lo)), Bound::At(Slice(hi)));
+  b.Set(Slice(after), Slice("2"));
+  SeqNum s = 0;
+  ASSERT_TRUE(db->Write(b, &s).ok());
+  EXPECT_EQ("<absent>", Get(*db, "before"));
+  EXPECT_EQ("2", Get(*db, "after"));
+  ASSERT_TRUE(db->Close().ok());
+}
+
+// AN ITERATOR SEES WHAT A POINT READ SEES. The two walks are separate code and
+// a range delete that only one of them honoured would be invisible to the
+// other's tests.
+TEST(RangeDelete, AnIteratorSkipsWhatARangeDeleteHides) {
+  TestEnvironment t;
+  std::unique_ptr<DB> db;
+  ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+  FillAndFlush(db.get(), 0, 50);
+  WriteBatch b;
+  b.DeleteRange(BoundAt(10), BoundAt(20));
+  SeqNum s = 0;
+  ASSERT_TRUE(db->Write(b, &s).ok());
+
+  std::vector<std::string> forward;
+  std::unique_ptr<Iterator> it = db->NewIter(IterOptions());
+  for (bool ok = it->First(); ok; ok = it->Next()) forward.push_back(it->Key().ToString());
+  ASSERT_TRUE(it->Close().ok());
+  EXPECT_EQ(40u, forward.size()) << "ten keys are covered";
+  for (int i = 10; i < 20; ++i) {
+    EXPECT_EQ(forward.end(), std::find(forward.begin(), forward.end(), KeyAt(i)));
+  }
+  // AND BACKWARDS, which is a different loop with its own visibility walk.
+  std::vector<std::string> backward;
+  std::unique_ptr<Iterator> rit = db->NewIter(IterOptions());
+  for (bool ok = rit->Last(); ok; ok = rit->Prev()) backward.push_back(rit->Key().ToString());
+  ASSERT_TRUE(rit->Close().ok());
+  EXPECT_EQ(40u, backward.size());
+  ASSERT_TRUE(db->Close().ok());
+}
+
+// A SNAPSHOT BELOW THE RANGE STILL SEES WHAT IT HID -- the same shape as
+// ASnapshotBelowATombstoneKeepsIt one level up, and the reason a range delete
+// cannot simply be applied to the state when it arrives.
+TEST(RangeDelete, ASnapshotBelowARangeStillSeesTheValue) {
+  TestEnvironment t;
+  std::unique_ptr<DB> db;
+  ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+  FillAndFlush(db.get(), 0, 50);
+  std::unique_ptr<Snapshot> snap = db->NewSnapshot();
+  WriteBatch b;
+  b.DeleteRange(BoundAt(10), BoundAt(20));
+  SeqNum s = 0;
+  ASSERT_TRUE(db->Write(b, &s).ok());
+
+  std::string v;
+  const std::string k = KeyAt(15);
+  ASSERT_TRUE(snap->Get(Slice(k), &v).ok()) << "the snapshot predates the range";
+  EXPECT_EQ(Value(15, 512), v);
+  EXPECT_EQ("<absent>", Get(*db, KeyAt(15)));
+  ASSERT_TRUE(snap->Close().ok());
+  ASSERT_TRUE(db->Close().ok());
+}
+
+// `[A3]`'s CLEAR-EVERYTHING CASE, END TO END: one unbounded tombstone, through
+// the memtable, the flush, the table and a reopen.
+TEST(RangeDelete, AnUnboundedClearEverythingSurvivesAFlushAndAReopen) {
+  TestEnvironment t;
+  {
+    std::unique_ptr<DB> db;
+    ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+    FillAndFlush(db.get(), 0, 50);
+    WriteBatch b;
+    b.DeleteRange(Bound::Unbounded(), Bound::Unbounded());
+    SeqNum s = 0;
+    ASSERT_TRUE(db->Write(b, &s).ok());
+    EXPECT_EQ("<absent>", Get(*db, KeyAt(0)));
+    EXPECT_EQ("<absent>", Get(*db, KeyAt(49)));
+    FillAndFlush(db.get(), 100, 50);   // writes the tombstone into a table
+    EXPECT_EQ("<absent>", Get(*db, KeyAt(0)));
+    EXPECT_EQ(Value(100, 512), Get(*db, KeyAt(100))) << "written after the clear";
+    ASSERT_TRUE(db->Close().ok());
+  }
+  std::unique_ptr<DB> db;
+  ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+  EXPECT_EQ("<absent>", Get(*db, KeyAt(0)));
+  EXPECT_EQ("<absent>", Get(*db, KeyAt(49)));
+  EXPECT_EQ(Value(100, 512), Get(*db, KeyAt(100)));
   ASSERT_TRUE(db->Close().ok());
 }
 

@@ -255,9 +255,21 @@ Status RecoverLocked(Env* env, const std::string& dir, const Caps& caps,
                 out->table->Add(b.seq, ValueType::kDeletion, op.key, Slice());
                 break;
               case OpKind::kDeleteRange:
-                // Reserved and never written before B3. Reaching it means the
-                // log was written by something that is not this engine.
-                return Status::Corruption(path + ": DELETE_RANGE is reserved until B3");
+                // B3.5: REPLAY INSERTS IT AND COMPUTES NOTHING, which is the
+                // whole reason section 8.1's circularity is gone. B2 recorded
+                // the EXPANSION because replaying a raw DeleteRange would have
+                // meant expanding it against a state recovery was still
+                // rebuilding. A range tombstone means the same thing wherever
+                // it is replayed: it hides every version below its own
+                // sequence, and nothing about the surrounding state enters in.
+                //
+                // AN EMPTY END MEANS UNBOUNDED. `Op::value` carries the end
+                // key, and an empty one never has a legal finite meaning --
+                // an empty or inverted range covers nothing and is dropped
+                // before it is ever written.
+                out->table->AddRangeTombstone(b.seq, op.key, op.value,
+                                              op.value.empty());
+                break;
             }
           }
           ++batches_this_group;

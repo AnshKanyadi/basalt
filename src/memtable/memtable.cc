@@ -209,15 +209,65 @@ Status MemTable::Get(Slice user_key, SeqNum snapshot, std::string* value) const 
   if (EntryUserKey(n->entry) != user_key) return Status::NotFound(user_key.ToString());
 
   const uint64_t found_tag = EntryTag(n->entry);
+  // A RANGE TOMBSTONE ABOVE THE VERSION HIDES IT, exactly as a point deletion
+  // would. STRICTLY above: within one batch every op shares a sequence, and a
+  // Set issued after a DeleteRange must survive it -- which is the model's
+  // intra-batch rule, and the reason this is `>` and not `>=`.
+  if (NewestCoveringLocked(user_key, snapshot) > SeqOfTag(found_tag)) {
+    return Status::NotFound(user_key.ToString());
+  }
   const ValueType type = static_cast<ValueType>(found_tag & 0xff);
   if (type == ValueType::kDeletion) return Status::NotFound(user_key.ToString());
   *value = EntryValue(n->entry).ToString();
   return Status::Ok();
 }
 
+void MemTable::AddRangeTombstone(SeqNum seq, Slice start, Slice end,
+                                 bool end_unbounded) {
+  std::lock_guard<std::mutex> guard(mu_);
+  MemRange r;
+  r.start.assign(start.data(), start.size());
+  if (!end_unbounded) r.end.assign(end.data(), end.size());
+  r.end_unbounded = end_unbounded;
+  r.seq = seq;
+  ranges_.push_back(std::move(r));
+}
+
+SeqNum MemTable::NewestCovering(Slice user_key, SeqNum snapshot) const {
+  std::lock_guard<std::mutex> guard(mu_);
+  return NewestCoveringLocked(user_key, snapshot);
+}
+
+SeqNum MemTable::NewestCoveringLocked(Slice user_key, SeqNum snapshot) const {
+  SeqNum best = 0;
+  for (const MemRange& r : ranges_) {
+    if (r.seq > snapshot) continue;
+    if (r.seq <= best) continue;
+    if (r.Covers(user_key)) best = r.seq;
+  }
+  return best;
+}
+
+std::vector<MemRange> MemTable::Ranges() const {
+  std::lock_guard<std::mutex> guard(mu_);
+  return ranges_;
+}
+
+std::size_t MemTable::RangeCount() const {
+  std::lock_guard<std::mutex> guard(mu_);
+  return ranges_.size();
+}
+
 std::size_t MemTable::MemoryUsage() const {
   std::lock_guard<std::mutex> guard(mu_);
-  return arena_.MemoryUsage();
+  // THE TOMBSTONES COUNT. They do not live in the arena, and a memtable holding
+  // nothing but range deletions would otherwise never reach the flush threshold
+  // -- which is exactly the clear-everything workload `[A3]` named.
+  std::size_t ranges = 0;
+  for (const MemRange& r : ranges_) {
+    ranges += sizeof(MemRange) + r.start.size() + r.end.size();
+  }
+  return arena_.MemoryUsage() + ranges;
 }
 
 std::size_t MemTable::Count() const {

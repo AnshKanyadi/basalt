@@ -1,18 +1,31 @@
 // AN SSTABLE, OPEN FOR READING.
 //
-// THE WHOLE FILE IS RESIDENT, AND THAT IS A REQUIREMENT RATHER THAN A
-// SHORTCUT. B2-D7 section 8 point 1: `DeleteRange` expands at Apply, Apply
-// makes NO Env CALL, and at B2 the expansion must read the merged view -- so
-// every live table must be readable without touching Env. A reader that pulled
-// blocks on demand would put a syscall inside Apply, which the Env-call counter
-// asserts against.
+// THE WHOLE FILE IS RESIDENT. IT IS NO LONGER A REQUIREMENT, AND THAT IS THE
+// CHANGE B3.5 MADE -- stated here rather than left as a stale justification.
 //
-// The cost is stated rather than discovered: memory grows with the live data
-// set, so B2 is bounded by the flush threshold times the number of tables.
-// B3 is where it changes, because B3 is where compaction, block-granular reads
-// and a cache arrive together -- and where B2-D7's iterate-and-point-delete is
-// replaced by real range tombstones, which is what removes the constraint that
-// forced this in the first place.
+// B2-D7 §8 point 1 made it a requirement: `DeleteRange` expanded at Apply, Apply
+// makes NO Env call, and the expansion had to read the merged view -- so every
+// live table had to be readable without touching Env. A reader that pulled
+// blocks on demand would have put a syscall inside Apply.
+//
+// B3.5 RETIRED THE EXPANSION. A range deletion is now one entry whose meaning
+// does not depend on the state around it, so `Apply` reads nothing and nothing
+// on the Apply path needs a resident table.
+//
+// WHAT STILL DEPENDS ON RESIDENCY, STATED HONESTLY, because "no longer required
+// by X" is not "no longer required":
+//
+//   * A SNAPSHOT OR ITERATOR OUTLIVING A COMPACTION reads through tables whose
+//     FILES have been deleted (see db.cc, install step 5). That works only
+//     because the bytes are in memory. B3.6 replaces it with file lifetime by
+//     reference count, and until then it is the reason the deletion is safe.
+//   * `Table::NewestCovering` and the point path read blocks without an Env
+//     call, which every caller currently assumes.
+//
+// So residency is now a PERFORMANCE AND LIFETIME property rather than a
+// correctness requirement of Apply, and the cost is unchanged: memory grows
+// with the live data set. The measurement that would move it is B5's, against
+// a workload whose working set exceeds it.
 #ifndef RIFT_SST_TABLE_H_
 #define RIFT_SST_TABLE_H_
 
@@ -24,6 +37,7 @@
 #include "bloom.h"
 #include "env.h"
 #include "internal_key.h"
+#include "range_tombstone.h"
 #include "internal_iter.h"
 #include "slice.h"
 #include "status.h"
@@ -43,6 +57,13 @@ class Table {
                      std::shared_ptr<Table>* out);
 
   uint64_t number() const { return number_; }
+
+  // The sequence of the newest range tombstone at or below `snapshot` covering
+  // `user_key`, or 0 if none does. Parsed once at Open, from the same block the
+  // classifier already validated.
+  SeqNum NewestCovering(Slice user_key, SeqNum snapshot) const;
+
+  const std::vector<RangeTombstone>& tombstones() const { return tombstones_; }
   uint64_t file_bytes() const { return image_.size(); }
   const TableCheck& check() const { return check_; }
 
@@ -61,8 +82,13 @@ class Table {
   // optimisation whose absence is invisible is an optimisation nobody can
   // assert is present -- so the fact is made observable at the call rather than
   // left to a counter nothing reads.
+  // `*found_seq` REPORTS THE SEQUENCE OF THE VERSION RETURNED, and it exists
+  // for the same kind of reason as `*filtered`: a caller has to compare it
+  // against the newest RANGE TOMBSTONE covering the key, and the tombstone may
+  // live in a different store entirely. Without the sequence the caller would
+  // have a value and no way to know whether something above it hid it.
   Status Get(Slice user_key, SeqNum snapshot, std::string* value, bool* deleted,
-             bool* filtered) const;
+             bool* filtered, SeqNum* found_seq = nullptr) const;
 
   // A cursor over internal keys, in table order. MAKES NO Env CALL.
   class Iter final : public InternalIter {
@@ -96,6 +122,10 @@ class Table {
   };
 
   std::string image_;
+  // Slices INTO `image_`, which this object owns and never reallocates after
+  // Open. The lifetime is the table's, which is what the shared_ptr every
+  // reader holds is for.
+  std::vector<RangeTombstone> tombstones_;
   std::vector<BlockRef> blocks_;
   FilterReader filter_;
   TableCheck check_;

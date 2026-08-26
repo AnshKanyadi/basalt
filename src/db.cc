@@ -69,6 +69,11 @@ namespace {
 // memtables. An iterator holding a raw pointer into one would read freed arena
 // the moment a flush completed, so a read captures SHARED POINTERS under the
 // lock and holds them for its whole life. Refcounts, not lifetime by argument.
+// Forward-declared because `Version::NewestCovering` needs it and it needs
+// `Version`'s member type.
+const sst::Table* L1FileFor(const std::vector<std::shared_ptr<sst::Table>>& l1,
+                            Slice key);
+
 struct Version {
   std::shared_ptr<MemTable> mem;
   std::shared_ptr<MemTable> imm;  // being flushed; may be null
@@ -93,6 +98,42 @@ struct Version {
   // Open that says otherwise (VerifyL1IsARun), and ConcatIter asserts it again
   // in-process, because the two arrive from different places.
   std::vector<std::shared_ptr<sst::Table>> l1;
+
+  // THE NEWEST RANGE TOMBSTONE COVERING `user_key` AT `snapshot`, ACROSS EVERY
+  // STORE. It has to be across every store, because THE TOMBSTONE THAT HIDES A
+  // KEY NEED NOT LIVE WHERE THE KEY DOES: a DeleteRange in the memtable hides a
+  // value flushed to a table an hour ago, and a reader that asked only the
+  // store holding the value would return it.
+  wal::SeqNum NewestCovering(Slice user_key, wal::SeqNum snapshot) const {
+    wal::SeqNum best = mem->NewestCovering(user_key, snapshot);
+    if (imm != nullptr) {
+      const wal::SeqNum s = imm->NewestCovering(user_key, snapshot);
+      if (s > best) best = s;
+    }
+    // EVERY L0 FILE, because they overlap and any of them may hold it.
+    for (const auto& t : l0) {
+      const wal::SeqNum s = t->NewestCovering(user_key, snapshot);
+      if (s > best) best = s;
+    }
+    // L1 IS A RUN, so at most one file's BOUNDS admit the key -- and the bounds
+    // include tombstone extents (§6.1a), so the file the search finds is the
+    // only one whose finite tombstones can cover it.
+    if (const sst::Table* t = L1FileFor(l1, user_key)) {
+      const wal::SeqNum s = t->NewestCovering(user_key, snapshot);
+      if (s > best) best = s;
+    }
+    // WITH ONE EXCEPTION, AND IT IS THE ONE THE BOUNDS CANNOT DESCRIBE. A
+    // tombstone with no upper bound reaches past every finite bound, so its
+    // file is not found by a search over bounds. Only the LAST file of the run
+    // may hold one -- anywhere else it would overlap its successor and L1 would
+    // stop being a run -- which is asserted where L1 is installed, and is what
+    // keeps this an O(1) extra look rather than a scan.
+    if (!l1.empty() && l1.back()->check().unbounded_end) {
+      const wal::SeqNum s = l1.back()->NewestCovering(user_key, snapshot);
+      if (s > best) best = s;
+    }
+    return best;
+  }
 
   void Build(MergedIter* out) const {
     out->AddMemTable(mem.get());
@@ -151,30 +192,48 @@ const sst::Table* L1FileFor(const std::vector<std::shared_ptr<sst::Table>>& l1,
 Status VersionGet(const Version& v, Slice key, wal::SeqNum snapshot,
                   std::string* value);
 
-// THE EXPANSION HAPPENS AT Apply AND THE WAL RECORDS THE EXPANSION. Section 8.1.
+// APPLY NO LONGER EXPANDS, AND THE CIRCULARITY THAT FORCED IT IS GONE WITH IT.
 //
-// If the WAL recorded the raw DeleteRange, recovery would have to expand it
-// again -- AGAINST A STATE RECOVERY IS STILL IN THE MIDDLE OF REBUILDING. The
-// expansion is a function of the state at the time it runs, so replay-time
-// expansion is correct only if that state provably equals the state at original
-// Apply time. It probably does today, for a reason that depends on the WAL's
-// start point coinciding exactly with the flush boundary -- a property B2 is
-// about to start changing. THAT IS CORRECTNESS BY ARGUMENT, AND THE ARGUMENT
-// HAS A MOVING PREMISE. Recording the post-expansion op list makes it
-// correctness by construction: recovery replays point deletes, there is nothing
-// left to compute, the circularity is gone.
+// B2 expanded a `DeleteRange` into one point delete per live key AT APPLY, and
+// recorded the expansion in the WAL. Section 8.1's argument for that was
+// precise: if the WAL recorded the raw DeleteRange, recovery would have to
+// expand it again -- AGAINST A STATE RECOVERY IS STILL IN THE MIDDLE OF
+// REBUILDING -- so replay-time expansion was correct only if that state
+// provably equalled the state at original Apply time. Correctness by argument,
+// with a moving premise.
 //
-// Intra-batch semantics come out right because this walks the ops IN ORDER: at
-// a DeleteRange the expansion covers the current state AND keys written earlier
-// in the same batch, and a Set after it re-adds the key -- the model's rule
-// reproduced.
-std::vector<wal::Op> ExpandAndCollapse(const WriteBatch& b, const Version& v,
-                                       wal::SeqNum snapshot,
-                                       std::vector<std::string>* owned) {
+// B3.5 REMOVES THE PREMISE RATHER THAN STRENGTHENING IT. A range tombstone is
+// one entry that means the same thing wherever it is replayed: it hides every
+// version below its own sequence, and nothing about the surrounding state
+// enters into it. Recovery inserts it; it computes nothing.
+//
+// WHAT STAYS IS THE INTRA-BATCH COLLAPSE, AND IT IS CHEAP NOW. Every op in one
+// batch shares ONE sequence, so a range tombstone at that sequence cannot
+// express "everything before me in this batch but not after". The model's rule
+// -- a DeleteRange covers keys written EARLIER in the same batch, and a Set
+// after it re-adds the key -- is therefore resolved HERE, against the batch's
+// own ops and nothing else.
+//
+//   O(batch), not O(live keys). It reads no store, so `[A3]`'s clear-everything
+//   case is one entry rather than one point delete per key in the database --
+//   and `table.h`'s whole-file residency, which existed to let this function
+//   read the merged view, is no longer required by it.
+//
+// The tombstone at sequence S hides versions with sequence STRICTLY BELOW S,
+// which is what makes a Set at S survive a DeleteRange at S. That single `<`
+// is the model's rule, and `MemTable::Get`, `VersionGet` and `IterImpl` all
+// spell it the same way.
+struct CollapsedBatch {
+  std::vector<wal::Op> ops;
+  std::vector<MemRange> ranges;
+};
+
+CollapsedBatch CollapseBatch(const WriteBatch& b, std::vector<std::string>* owned) {
   // key -> (kind, value). std::map so the result is sorted by key, which is
   // what B1-D10's collapse costs and what makes "no two memtable entries share
   // a (user_key, seq) pair" assertable.
   std::map<std::string, std::pair<wal::OpKind, std::string>> pending;
+  std::vector<MemRange> ranges;
 
   for (const WriteBatch::Entry& e : b.ops()) {
     switch (e.kind) {  // NO default: arm
@@ -187,64 +246,85 @@ std::vector<wal::Op> ExpandAndCollapse(const WriteBatch& b, const Version& v,
       case wal::OpKind::kDeleteRange: {
         const Bound start =
             e.value.empty() ? Bound::Unbounded() : Bound::At(Slice(e.key));
-        // Everything written EARLIER IN THIS BATCH that falls inside.
-        for (auto it = pending.begin(); it != pending.end(); ++it) {
-          if (InRange(Slice(it->first), start, e.end)) {
-            it->second = {wal::OpKind::kDelete, std::string()};
+        // Everything written EARLIER IN THIS BATCH that falls inside simply
+        // ceases to exist. B2 turned these into point deletions; there is no
+        // need now, because the tombstone at this sequence hides whatever the
+        // key held before the batch, and nothing in the batch survives it.
+        for (auto it = pending.begin(); it != pending.end();) {
+          it = InRange(Slice(it->first), start, e.end) ? pending.erase(it)
+                                                       : std::next(it);
+        }
+        // AN UNBOUNDED START IS THE EMPTY KEY. The empty user key is the
+        // minimum, so `["", end)` and `[unbounded, end)` cover the same set --
+        // which is why only the END needed a representation (B3-Q4).
+        MemRange r;
+        if (start.bounded()) r.start = start.key().ToString();
+        r.end_unbounded = !e.end.bounded();
+        if (!r.end_unbounded) r.end = e.end.key().ToString();
+        // AN EMPTY OR INVERTED RANGE COVERS NOTHING AND IS DROPPED HERE, not
+        // written and refused later: the classifier refuses such a record, and
+        // a caller is entitled to ask for a range that happens to be empty.
+        if (!r.end_unbounded && r.end <= r.start) break;
+        // TWO RANGES IN ONE BATCH CAN SHARE A START, and they then share a
+        // sequence too -- which is a duplicate the block format refuses. They
+        // are merged instead, taking the wider end, because that is what their
+        // union is.
+        bool merged = false;
+        for (MemRange& existing : ranges) {
+          if (existing.start != r.start) continue;
+          if (r.end_unbounded) {
+            existing.end_unbounded = true;
+            existing.end.clear();
+          } else if (!existing.end_unbounded && r.end > existing.end) {
+            existing.end = r.end;
           }
+          merged = true;
+          break;
         }
-        // And everything live in THE MERGED VIEW -- the memtable, the memtable
-        // being flushed, and every SSTable. B2-D7 section 8: at B1 this read
-        // the memtable, and reading only the memtable now would make a
-        // DeleteRange silently miss every key that had been flushed.
-        //
-        // Reads memory, not Env. This is the operation most likely to violate
-        // "Apply performs no I/O", which is why that assertion is re-made
-        // against this path -- and why table.h holds whole SSTables resident.
-        MergedIter it;
-        v.Build(&it);
-        if (start.bounded()) {
-          it.Seek(start.key(), (snapshot << 8) | 1);
-        } else {
-          it.SeekToFirst();
-        }
-        std::string last_user_key;
-        bool have_last = false;
-        for (; it.Valid(); it.Next()) {
-          const Slice k = it.user_key();
-          if (e.end.bounded() && k.compare(e.end.key()) >= 0) break;
-          if (have_last && k == Slice(last_user_key)) continue;  // older version
-          last_user_key = k.ToString();
-          have_last = true;
-          if ((it.tag() >> 8) > snapshot) continue;
-          if ((it.tag() & 0xff) == 0) continue;  // already a deletion
-          if (!InRange(k, start, e.end)) continue;
-          if (pending.find(last_user_key) == pending.end()) {
-            pending[last_user_key] = {wal::OpKind::kDelete, std::string()};
-          }
-        }
+        if (!merged) ranges.push_back(std::move(r));
         break;
       }
     }
   }
 
   owned->clear();
-  owned->reserve(pending.size() * 2);
-  std::vector<wal::Op> out;
-  out.reserve(pending.size());
+  owned->reserve(pending.size() * 2 + ranges.size() * 2);
   for (const auto& kv : pending) {
     owned->push_back(kv.first);
     owned->push_back(kv.second.second);
   }
+  CollapsedBatch out;
+  out.ops.reserve(pending.size() + ranges.size());
   std::size_t i = 0;
   for (const auto& kv : pending) {
     wal::Op op;
     op.kind = kv.second.first;
     op.key = Slice((*owned)[i]);
     if (op.kind == wal::OpKind::kSet) op.value = Slice((*owned)[i + 1]);
-    out.push_back(op);
+    out.ops.push_back(op);
     i += 2;
   }
+  // THE RANGES GO IN THE WAL TOO, as `kDeleteRange` ops -- the kind B1 reserved
+  // for exactly this, and the size formula already accounts for its end key.
+  //
+  // AN EMPTY END MEANS UNBOUNDED, and that is a different sentinel from the
+  // block's `end_len == 0xFFFFFFFF`. The asymmetry is deliberate: the BLOCK
+  // must tell "unbounded" apart from "empty end", because it REFUSES the empty
+  // one and the refusal has to keep its force. Here there is no such refusal --
+  // an empty end never reaches this point, having been dropped above as a range
+  // that covers nothing -- so the value the domain already excludes is free to
+  // carry the meaning, exactly as `range_offset == 0` does one format over.
+  for (const MemRange& r : ranges) {
+    owned->push_back(r.start);
+    owned->push_back(r.end_unbounded ? std::string() : r.end);
+    wal::Op op;
+    op.kind = wal::OpKind::kDeleteRange;
+    op.key = Slice((*owned)[i]);
+    op.value = Slice((*owned)[i + 1]);
+    out.ops.push_back(op);
+    i += 2;
+  }
+  out.ranges = std::move(ranges);
   return out;
 }
 
@@ -354,13 +434,19 @@ class IterImpl final : public Iterator {
       have_previous = true;
       if (o_.upper.bounded() && Slice(k).compare(o_.upper.key()) >= 0) break;
       if (SettleOnCurrentKey(k)) {
-        if ((it_.tag() & 0xff) != 0) {  // a live value, not a deletion
+        // A RANGE TOMBSTONE ABOVE THIS VERSION HIDES THE KEY, exactly as a
+        // point deletion does. Asked of the whole Version, not of the store the
+        // cursor happens to be in: the tombstone need not live where the value
+        // does.
+        const bool covered =
+            v_.NewestCovering(Slice(k), snapshot_) > SeqOfTag(it_.tag());
+        if (!covered && (it_.tag() & 0xff) != 0) {  // a live, uncovered value
           key_ = k;
           value_ = it_.value().ToString();
           valid_ = true;
           return true;
         }
-        SkipVersionsOf(k);  // a deletion hides this key entirely
+        SkipVersionsOf(k);  // a deletion or a covering range hides it entirely
       }
       // Either way the cursor is now past k, so this loop strictly advances.
     }
@@ -381,7 +467,8 @@ class IterImpl final : public Iterator {
           o_.upper.bounded() && Slice(k).compare(o_.upper.key()) >= 0;
       if (!above_upper) {
         SeekToKey(Slice(k));
-        if (SettleOnCurrentKey(k) && (it_.tag() & 0xff) != 0) {
+        if (SettleOnCurrentKey(k) && (it_.tag() & 0xff) != 0 &&
+            v_.NewestCovering(Slice(k), snapshot_) <= SeqOfTag(it_.tag())) {
           key_ = k;
           value_ = it_.value().ToString();
           valid_ = true;
@@ -503,11 +590,24 @@ Status VersionGet(const Version& v, Slice key, wal::SeqNum snapshot,
   // property was not.
   //
   // It is also the only path on which the bloom filter can skip a whole file.
+  // THE NEWEST COVERING RANGE TOMBSTONE, COMPUTED ONCE AND BEFORE THE WALK.
+  //
+  // It cannot be folded into the walk, because the walk STOPS at the first
+  // store holding the key and the tombstone may be in a store it never reaches
+  // -- or in one it already passed. Computing it first costs one pass over the
+  // tombstone lists, which are bounded by what a flush or a compaction wrote.
+  //
+  // STRICTLY NEWER HIDES. Equal sequences mean one batch, where a Set issued
+  // after a DeleteRange must survive it -- the model's intra-batch rule, and
+  // the reason the comparison below is `>` and not `>=`.
+  const wal::SeqNum cover = v.NewestCovering(key, snapshot);
+
   MergedIter mem_only;
   mem_only.AddMemTable(v.mem.get());
   if (v.imm != nullptr) mem_only.AddMemTable(v.imm.get());
   mem_only.Seek(key, MakeTag(snapshot, ValueType::kValue));
   if (mem_only.Valid() && mem_only.user_key() == key) {
+    if (cover > SeqOfTag(mem_only.tag())) return Status::NotFound("");
     if (TypeOfTag(mem_only.tag()) == ValueType::kDeletion) return Status::NotFound("");
     *value = mem_only.value().ToString();
     return Status::Ok();
@@ -515,8 +615,14 @@ Status VersionGet(const Version& v, Slice key, wal::SeqNum snapshot,
   for (const auto& t : v.l0) {
     bool deleted = false;
     bool filtered = false;
-    const Status s = t->Get(key, snapshot, value, &deleted, &filtered);
-    if (s.ok()) return s;
+    wal::SeqNum found_seq = 0;
+    const Status s = t->Get(key, snapshot, value, &deleted, &filtered, &found_seq);
+    if (s.ok()) {
+      // A COVERED VALUE IS NOT AN ANSWER, AND THE WALK STOPS ANYWAY: everything
+      // older than this version is older than the tombstone too.
+      if (cover > found_seq) return Status::NotFound("");
+      return s;
+    }
     if (deleted) return Status::NotFound("");
   }
   // L1 IS ONE LOOKUP, NOT |L1| LOOKUPS. Every L0 file must be asked because
@@ -525,8 +631,12 @@ Status VersionGet(const Version& v, Slice key, wal::SeqNum snapshot,
   if (const sst::Table* t = L1FileFor(v.l1, key)) {
     bool deleted = false;
     bool filtered = false;
-    const Status s = t->Get(key, snapshot, value, &deleted, &filtered);
-    if (s.ok()) return s;
+    wal::SeqNum found_seq = 0;
+    const Status s = t->Get(key, snapshot, value, &deleted, &filtered, &found_seq);
+    if (s.ok()) {
+      if (cover > found_seq) return Status::NotFound("");
+      return s;
+    }
     if (deleted) return Status::NotFound("");
   }
   return Status::NotFound("");
@@ -551,6 +661,7 @@ class DBImpl final : public DB {
     std::vector<std::string> owned;
     wal::SeqNum assigned = 0;
     std::vector<wal::Op> ops;
+    std::vector<MemRange> ranges;
     // ONE LOCK ACQUISITION, ACROSS THE WAL APPEND TOO -- and B2 is what forces
     // it. B1 released the lock around wal_->Apply, which was harmless while
     // nothing ever replaced wal_ or the memtable. The flush replaces BOTH, so
@@ -569,7 +680,9 @@ class DBImpl final : public DB {
       // (section 5.3.4). A sequence space that skipped empty batches would put
       // a translation table inside B4's oracle.
       assigned = ++seq_;
-      ops = ExpandAndCollapse(b, CurrentVersionLocked(), assigned - 1, &owned);
+      const CollapsedBatch collapsed = CollapseBatch(b, &owned);
+      ops = collapsed.ops;
+      ranges = collapsed.ranges;
       Status s = wal_->Apply(assigned, ops);
       if (!s.ok()) {
         // APPLIES NOTHING, ATOMICALLY. The sequence is consumed either way,
@@ -588,8 +701,14 @@ class DBImpl final : public DB {
             mem_->Add(assigned, ValueType::kDeletion, op.key, Slice());
             break;
           case wal::OpKind::kDeleteRange:
-            RIFT_UNREACHABLE("DeleteRange survived expansion");
+            // Applied from `ranges` below, where the bounds are already
+            // normalised. Nothing to do here.
+            break;
         }
+      }
+      for (const MemRange& r : ranges) {
+        mem_->AddRangeTombstone(assigned, Slice(r.start), Slice(r.end),
+                                r.end_unbounded);
       }
     }
     *seq = assigned;
@@ -733,6 +852,26 @@ class DBImpl final : public DB {
     v.l0 = l0_;
     v.l1 = l1_;
     return v;
+  }
+
+  // AT MOST THE LAST FILE OF THE RUN MAY REACH TO INFINITY.
+  //
+  // A tombstone with no upper bound covers every key above its start, so a file
+  // holding one overlaps every file after it -- and L1 would stop being a run.
+  // Only the last file has no successor to overlap, which is why B3.5e splits
+  // an unbounded tombstone at each output boundary and leaves the unbounded
+  // piece in the LAST output alone.
+  //
+  // ASSERTED HERE, WHERE L1 IS INSTALLED, because `Version::NewestCovering`
+  // DEPENDS ON IT: it consults the file the binary search finds, plus the last
+  // file if that one is unbounded, and nothing else. An unbounded tombstone
+  // anywhere else would be invisible to every read that did not land on its
+  // file -- a range delete that silently stops applying.
+  static void CheckOnlyTheLastMayBeUnbounded(
+      const std::vector<std::shared_ptr<sst::Table>>& l1) {
+    for (std::size_t i = 0; i + 1 < l1.size(); ++i) {
+      RIFT_CHECK(!l1[i]->check().unbounded_end);
+    }
   }
 
   // WHEN TO COMPACT -- B3-D3(b), and the number with its derivation at the
@@ -1081,6 +1220,7 @@ class DBImpl final : public DB {
                   return ExtractUserKey(Slice(a->check().smallest_key))
                              .compare(ExtractUserKey(Slice(b->check().smallest_key))) < 0;
                 });
+      CheckOnlyTheLastMayBeUnbounded(l1_);
       for (uint64_t n : gone) mstate_.tables.erase(n);
       for (const sst::TableMeta& meta : outputs) mstate_.tables[meta.number] = meta;
     }
@@ -1192,6 +1332,29 @@ class DBImpl final : public DB {
         ikey.clear();
         AppendInternalKey(&ikey, it.user_key(), it.tag());
         b.Add(Slice(ikey), it.value());
+      }
+      // THE TOMBSTONES, ASCENDING BY START. The memtable holds them in
+      // submission order because it queries them by scanning; the BLOCK
+      // requires ascending starts, because it is searched. Sorting here rather
+      // than keeping the memtable sorted puts the cost on the flush, which
+      // happens once per memtable, instead of on every Write.
+      //
+      // Ties broken by sequence so the order is total: two tombstones may share
+      // a start when their sequences differ, and the block refuses only a
+      // shared start AND a shared tag.
+      std::vector<MemRange> ranges = flushing->Ranges();
+      std::sort(ranges.begin(), ranges.end(),
+                [](const MemRange& a, const MemRange& c) {
+                  if (a.start != c.start) return a.start < c.start;
+                  return a.seq < c.seq;
+                });
+      for (const MemRange& r : ranges) {
+        const uint64_t tag = MakeTag(r.seq, ValueType::kDeletion);
+        if (r.end_unbounded) {
+          b.AddUnboundedRangeTombstone(Slice(r.start), tag);
+        } else {
+          b.AddRangeTombstone(Slice(r.start), Slice(r.end), tag);
+        }
       }
       s = b.Finish();
       if (!s.ok()) return s;
@@ -1427,6 +1590,18 @@ Status DB::Open(Env* env, const std::string& dir, const wal::Caps& caps,
               return ExtractUserKey(Slice(a->check().smallest_key))
                          .compare(ExtractUserKey(Slice(b->check().smallest_key))) < 0;
             });
+
+  for (std::size_t i = 0; i + 1 < l1.size(); ++i) {
+    // The same invariant as the install path's, checked on the way in: a
+    // manifest naming an unbounded tombstone anywhere but the last file of the
+    // run describes an L1 whose reads would silently miss it.
+    if (l1[i]->check().unbounded_end) {
+      return unlock(Status::Corruption(
+          "level 1 file " + std::to_string(l1[i]->number()) +
+          " holds a range tombstone with no upper bound and is not the last of "
+          "the run"));
+    }
+  }
 
   out->reset(new DBImpl(env, dir, caps,
                         std::shared_ptr<MemTable>(std::move(r.table)),

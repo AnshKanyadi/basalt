@@ -42,9 +42,11 @@
 #include <cstdint>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include "arena.h"
 #include "internal_key.h"
+#include "range_tombstone.h"
 #include "slice.h"
 #include "status.h"
 #include "tower.h"
@@ -70,6 +72,31 @@ namespace rift {
 // remembered. The cost is named: B3 cannot implement a timestamp-aware
 // compaction filter, and does not need to, because version GC is A5's job on
 // the Go side.
+// One range deletion, as a memtable holds it: owning its bounds, because the
+// batch that submitted them is gone by the time anyone reads them.
+struct MemRange {
+  std::string start;
+  std::string end;              // unused when `end_unbounded`
+  bool end_unbounded = false;
+  SeqNum seq = 0;
+
+  // ONE PREDICATE, AND IT IS `sst::RangeTombstone::Covers`. A third
+  // implementation of the half-open test is a boundary bug waiting for a
+  // boundary key -- the memtable, the table and the compaction must agree
+  // about which keys a range deletes, so they share the answer.
+  //
+  // (The HARNESS's copy in `rig/version_model.h` is a deliberate FOURTH, and
+  // the reason it must stay separate is written there: B3-D2b forbids the
+  // checker deriving its expectation from the engine.)
+  bool Covers(Slice user_key) const {
+    sst::RangeTombstone t;
+    t.start = Slice(start);
+    t.end = Slice(end);
+    t.end_unbounded = end_unbounded;
+    return t.Covers(user_key);
+  }
+};
+
 class MemTable {
   // Declared first so Iter can name it; defined below.
   struct Node;
@@ -85,12 +112,32 @@ class MemTable {
   // arena and the skiplist and nothing else.
   void Add(SeqNum seq, ValueType type, Slice user_key, Slice value);
 
+  // A RANGE DELETION, held as one entry rather than expanded into one point
+  // delete per live key. `[start, end)`, and `end_unbounded` means no upper
+  // bound -- B3-Q4, and `end` is then unused.
+  //
+  // It is NOT in the skiplist. A range tombstone has no user key of its own,
+  // and giving it one would put a fictional member in the key space every
+  // cursor walks.
+  void AddRangeTombstone(SeqNum seq, Slice start, Slice end, bool end_unbounded);
+
+  // The sequence of the newest range tombstone at or below `snapshot` that
+  // covers `user_key`, or 0 if none does. Sequences start at 1, so 0 is a safe
+  // "none" -- the same reasoning that lets `range_offset == 0` mean "no range
+  // block".
+  SeqNum NewestCovering(Slice user_key, SeqNum snapshot) const;
+
+  // Every tombstone this memtable holds, in submission order. The flush reads
+  // it; nothing else should.
+  std::vector<MemRange> Ranges() const;
+
   // Returns the newest version at or below `snapshot`. kNotFound covers both
   // "no such key" and "the newest visible version is a deletion", which is what
   // the frozen interface's ErrNotFound means.
   Status Get(Slice user_key, SeqNum snapshot, std::string* value) const;
 
   std::size_t MemoryUsage() const;
+  std::size_t RangeCount() const;
   std::size_t Count() const;
 
   // A hash of the memtable's SHAPE, not of its contents alone: every entry's
@@ -159,6 +206,15 @@ class MemTable {
   Node* FindLessThan(Slice user_key, uint64_t tag) const;
   Node* FindLast() const;
 
+  // Guarded by `mu_` like everything else here. A vector and a linear scan:
+  // range tombstones are rare beside point entries, and the memtable is bounded
+  // by the flush threshold. THE MEASUREMENT THAT WOULD MOVE IT is a workload
+  // whose range deletions are dense enough for the scan to show up beside the
+  // skiplist descent -- B5's numbers, attributed by profile rather than
+  // inferred.
+  SeqNum NewestCoveringLocked(Slice user_key, SeqNum snapshot) const;
+
+  std::vector<MemRange> ranges_;
   mutable std::mutex mu_;
   Arena arena_;
   Node* head_ = nullptr;

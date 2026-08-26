@@ -29,6 +29,19 @@ Status Table::Open(Env* env, const std::string& path, uint64_t number,
   std::string why;
   RIFT_CHECK(DecodeFooter(Slice(t->image_), &footer, &why));
 
+  // THE RANGE TOMBSTONES, PARSED ONCE. The classifier has already accepted this
+  // block, so the parse below cannot fail -- and it is a RIFT_CHECK rather than
+  // a Status for exactly that reason: a failure here means the classifier and
+  // this parse disagree about the same bytes, which is a bug in this build and
+  // not a damaged file.
+  if (footer.range_offset != 0) {
+    const uint64_t footer_at = t->image_.size() - kFooterBytes;
+    const Slice block(t->image_.data() + footer.range_offset,
+                      static_cast<std::size_t>(footer_at - footer.range_offset));
+    const RangeCheck rc = ParseRangeBlock(block, &t->tombstones_);
+    RIFT_CHECK(rc.ok());
+  }
+
   std::vector<BlockEntry> index_entries;
   std::vector<uint32_t> restarts;
   const Slice index(t->image_.data() + footer.index.offset, footer.index.size);
@@ -51,9 +64,10 @@ Status Table::Open(Env* env, const std::string& path, uint64_t number,
 }
 
 Status Table::Get(Slice user_key, SeqNum snapshot, std::string* value,
-                  bool* deleted, bool* filtered) const {
+                  bool* deleted, bool* filtered, SeqNum* found_seq) const {
   *deleted = false;
   *filtered = false;
+  if (found_seq != nullptr) *found_seq = 0;
   if (!MayContain(user_key)) {
     *filtered = true;
     return Status::NotFound("");
@@ -72,6 +86,7 @@ Status Table::Get(Slice user_key, SeqNum snapshot, std::string* value,
     *deleted = true;
     return Status::NotFound("");
   }
+  if (found_seq != nullptr) *found_seq = SeqOfTag(ExtractTag(found));
   *value = it.value().ToString();
   return Status::Ok();
 }
@@ -158,6 +173,23 @@ Slice Table::Iter::key() const {
 Slice Table::Iter::value() const {
   RIFT_CHECK(Valid() && loaded_);
   return entries_[entry_].value;
+}
+
+SeqNum Table::NewestCovering(Slice user_key, SeqNum snapshot) const {
+  // A LINEAR SCAN OVER THIS TABLE'S TOMBSTONES, and the bound is the table's
+  // own: one flush's worth, or one compaction output's. The block is sorted by
+  // START, which a binary search could use -- but a covering tombstone is not
+  // found by its start alone, since an earlier one may reach past a later one's
+  // start. Ordering the block buys the classifier a duplicate check and buys a
+  // reader nothing without a second index, so the scan is honest until B5 has a
+  // number that says otherwise.
+  SeqNum best = 0;
+  for (const RangeTombstone& t : tombstones_) {
+    if (t.seq() > snapshot) continue;
+    if (t.seq() <= best) continue;
+    if (t.Covers(user_key)) best = t.seq();
+  }
+  return best;
 }
 
 }  // namespace sst
