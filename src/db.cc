@@ -67,8 +67,22 @@ namespace {
 struct Version {
   std::shared_ptr<MemTable> mem;
   std::shared_ptr<MemTable> imm;  // being flushed; may be null
-  // NEWEST FIRST. Order is not cosmetic: a deletion in a newer table must hide
-  // a value in an older one, so the first source holding a user key wins.
+  // NEWEST FIRST, AND WHERE THAT MATTERS IS `VersionGet` AND NOT `Build`.
+  //
+  // The distinction was found by a mutant that SURVIVED. `BM55` reversed the
+  // order these sources are handed to the merge and every test stayed green,
+  // because `MergedIter` orders by KEY and sequences are unique -- there are no
+  // ties for source order to break, so the order it is given is irrelevant.
+  //
+  // This comment previously read "the first source holding a user key wins",
+  // which is true of the point-read path below and FALSE here: in the merge the
+  // smallest internal key wins, whatever source it came from. **A comment
+  // asserting a load-bearing property for a line where it is not load-bearing
+  // is worse than no comment**, because it is where the next reader looks for
+  // the invariant and it sends them to a line nothing depends on.
+  //
+  // The order is kept because a vector that is newest-first everywhere is one
+  // fewer thing to get right, not because this loop needs it.
   std::vector<std::shared_ptr<sst::Table>> tables;
 
   void Build(MergedIter* out) const {
@@ -373,8 +387,14 @@ Status VersionGet(const Version& v, Slice key, wal::SeqNum snapshot,
   // one seek, and the first visible version it lands on is the answer whatever
   // store it came from.
   //
-  // The TABLES are asked one at a time, newest first, because that is the only
-  // path on which the bloom filter can skip a whole file.
+  // THE TABLES ARE ASKED ONE AT A TIME, NEWEST FIRST, AND HERE THE ORDER IS THE
+  // WHOLE ANSWER. The first table holding the user key wins and the walk stops,
+  // so an older table's value must never be reached before a newer table's
+  // deletion. This is the line `BM55` is pointed at, after it survived being
+  // pointed at `Version::Build` -- where the same words were true and the same
+  // property was not.
+  //
+  // It is also the only path on which the bloom filter can skip a whole file.
   MergedIter mem_only;
   mem_only.AddMemTable(v.mem.get());
   if (v.imm != nullptr) mem_only.AddMemTable(v.imm.get());
