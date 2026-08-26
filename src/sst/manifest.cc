@@ -110,6 +110,7 @@ void EncodeEdit(const ManifestEdit& edit, std::string* out) {
       PutU64(out, edit.table.largest_seq);
       PutString(out, edit.table.smallest);
       PutString(out, edit.table.largest);
+      out->push_back(static_cast<char>(edit.table.level));
       return;
     case EditKind::kDeleteTable:
     case EditKind::kNextFileNumber:
@@ -151,8 +152,18 @@ bool DecodeEdit(Slice payload, ManifestEdit* out, std::string* why) {
     case EditKind::kAddTable:
       if (!c.U64(&out->table.number) || !c.U64(&out->table.file_bytes) ||
           !c.U64(&out->table.largest_seq) || !c.Str(&out->table.smallest) ||
-          !c.Str(&out->table.largest)) {
+          !c.Str(&out->table.largest) || !c.U8(&out->table.level)) {
         *why = "truncated add-table edit";
+        return false;
+      }
+      // REFUSED, NOT CLAMPED. A level this build cannot place is a manifest
+      // from a build that had more levels, and placing its file at level 1
+      // would put an overlapping file into the run the read path binary
+      // searches -- a wrong answer with nothing structurally wrong anywhere.
+      if (out->table.level > kMaxLevel) {
+        *why = "table " + std::to_string(out->table.number) + " is at level " +
+               std::to_string(out->table.level) + "; this build has " +
+               std::to_string(kMaxLevel + 1) + " levels";
         return false;
       }
       break;
@@ -283,6 +294,44 @@ Status Replay(const std::string& path, uint64_t expected_number, Slice image,
   return Status::Ok();
 }
 
+// L1 IS A RUN, AND THE OPEN REFUSES A MANIFEST THAT SAYS OTHERWISE.
+//
+// The same precondition `ConcatIter` asserts, checked HERE because the two
+// arrive from different places and only one of them can be answered with an
+// abort. In-process, an overlapping run is a bug in this build and RIFT_CHECK
+// is the right response. FROM A MANIFEST ON DISK it is untrusted input, and a
+// process that aborts on a damaged file cannot report what is wrong with it.
+//
+// What it costs to skip: two L1 files holding the same user key means the
+// binary search finds one of them and the other's version is INVISIBLE -- a
+// deletion that stops hiding a value, which reads as data returning from the
+// dead and has no structural signature at all.
+Status VerifyL1IsARun(const ManifestState& state) {
+  // std::map iterates by file number; the RUN's order is by KEY, and the two
+  // are unrelated once compaction starts reusing low numbers.
+  std::vector<const TableMeta*> l1;
+  for (const auto& entry : state.tables) {
+    if (entry.second.level == 1) l1.push_back(&entry.second);
+  }
+  std::sort(l1.begin(), l1.end(), [](const TableMeta* a, const TableMeta* b) {
+    const int c = ExtractUserKey(Slice(a->smallest))
+                      .compare(ExtractUserKey(Slice(b->smallest)));
+    if (c != 0) return c < 0;
+    return a->number < b->number;
+  });
+  for (std::size_t i = 1; i < l1.size(); ++i) {
+    const Slice prev_last = ExtractUserKey(Slice(l1[i - 1]->largest));
+    const Slice next_first = ExtractUserKey(Slice(l1[i]->smallest));
+    if (prev_last.compare(next_first) >= 0) {
+      return Status::Corruption(
+          "level 1 is not a run: table " + std::to_string(l1[i - 1]->number) +
+          " ends at a user key at or after where table " +
+          std::to_string(l1[i]->number) + " begins");
+    }
+  }
+  return Status::Ok();
+}
+
 // D4 SECTION 5.1 POINT 2, AND IT IS THE WHOLE OF IT: every sequence the
 // manifest records is checked against the file that justifies it. The table is
 // validated by the SAME ValidateTable the classifier's gates were induced
@@ -323,7 +372,7 @@ Status VerifyTables(Env* env, const std::string& dir, const ManifestState& state
   if (opened != nullptr) {
     opened->assign(built.rbegin(), built.rend());
   }
-  return Status::Ok();
+  return VerifyL1IsARun(state);
 }
 
 }  // namespace

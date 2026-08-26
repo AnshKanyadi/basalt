@@ -38,6 +38,7 @@
 
 #include "memtable.h"
 #include "slice.h"
+#include "concat_iter.h"
 #include "table.h"
 
 namespace rift {
@@ -46,6 +47,10 @@ class MergedIter {
  public:
   void AddMemTable(const MemTable* m);
   void AddTable(const sst::Table* t);
+  // L1 AS ONE SOURCE, NOT |L1| SOURCES -- B3-D4. `run` must be ascending and
+  // non-overlapping; ConcatIter asserts it. An empty run adds nothing, because
+  // a source that is never Valid still costs a comparison on every step.
+  void AddRun(std::vector<const sst::Table*> run);
 
   bool Valid() const { return current_ >= 0; }
   void SeekToFirst();
@@ -64,7 +69,9 @@ class MergedIter {
 
   struct Source {
     std::unique_ptr<MemTable::Iter> mem;
-    std::unique_ptr<sst::Table::Iter> table;
+    // ONE ARM FOR EVERY SSTABLE CURSOR, whether it walks one file or a run.
+    // See internal_iter.h: the alternative was nine three-way branches.
+    std::unique_ptr<sst::InternalIter> table;
     bool Valid() const;
     void Next();
     void Prev();

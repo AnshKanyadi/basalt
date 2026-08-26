@@ -122,6 +122,7 @@ add_library(rift_engine STATIC
   src/sst/table_builder.cc
   src/sst/manifest.cc
   src/sst/table_check.cc
+  src/compaction.cc
   src/db.cc
 )
 target_include_directories(rift_engine PUBLIC src src/env src/env/posix src/memtable src/wal src/sst)
@@ -144,6 +145,7 @@ add_library(rift_rig STATIC
   rig/version_model.cc
   rig/drop_check.cc
   rig/image_fixture.cc
+  rig/manifest_image.cc
   rig/merge_check.cc
   rig/durable_mirror.cc
   rig/cap_adjudication.cc
@@ -182,6 +184,8 @@ add_executable(rift_engine_test
   test/oracle_test.cc
   test/drop_check_test.cc
   test/merge_check_test.cc
+  test/compaction_test.cc
+  test/db_compaction_test.cc
 )
 # rift_rig carries rift_testenv which carries rift_engine, both PUBLIC-ly;
 # naming any of them again makes the linker warn about a duplicate archive.

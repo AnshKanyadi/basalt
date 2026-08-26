@@ -24,6 +24,7 @@
 #include "bloom.h"
 #include "env.h"
 #include "internal_key.h"
+#include "internal_iter.h"
 #include "slice.h"
 #include "status.h"
 #include "table_check.h"
@@ -64,18 +65,18 @@ class Table {
              bool* filtered) const;
 
   // A cursor over internal keys, in table order. MAKES NO Env CALL.
-  class Iter {
+  class Iter final : public InternalIter {
    public:
     explicit Iter(const Table* t) : t_(t) {}
-    bool Valid() const { return loaded_ && block_ < t_->blocks_.size(); }
-    void SeekToFirst();
-    void SeekToLast();
+    bool Valid() const override { return loaded_ && block_ < t_->blocks_.size(); }
+    void SeekToFirst() override;
+    void SeekToLast() override;
     // Positions at the first entry >= `target` in the internal order.
-    void Seek(Slice target);
-    void Next();
-    void Prev();
-    Slice key() const;
-    Slice value() const;
+    void Seek(Slice target) override;
+    void Next() override;
+    void Prev() override;
+    Slice key() const override;
+    Slice value() const override;
 
    private:
     void LoadBlock(std::size_t i);

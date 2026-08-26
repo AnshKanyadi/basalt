@@ -1,5 +1,7 @@
 #include "db.h"
 
+#include <set>
+
 #include <algorithm>
 #include <map>
 #include <memory>
@@ -8,6 +10,7 @@
 #include <vector>
 
 #include "check.h"
+#include "compaction.h"
 #include "env_guard.h"
 #include "manifest.h"
 #include "merged_iter.h"
@@ -83,14 +86,49 @@ struct Version {
   //
   // The order is kept because a vector that is newest-first everywhere is one
   // fewer thing to get right, not because this loop needs it.
-  std::vector<std::shared_ptr<sst::Table>> tables;
+  std::vector<std::shared_ptr<sst::Table>> l0;
+  // ASCENDING BY KEY AND NON-OVERLAPPING -- B3-D3(b). The manifest refuses an
+  // Open that says otherwise (VerifyL1IsARun), and ConcatIter asserts it again
+  // in-process, because the two arrive from different places.
+  std::vector<std::shared_ptr<sst::Table>> l1;
 
   void Build(MergedIter* out) const {
     out->AddMemTable(mem.get());
     if (imm != nullptr) out->AddMemTable(imm.get());
-    for (const auto& t : tables) out->AddTable(t.get());
+    for (const auto& t : l0) out->AddTable(t.get());
+    // ONE SOURCE FOR THE WHOLE RUN, which is B3-D4's entire point: PickSmallest
+    // is a linear scan over sources, so k must not grow with the database.
+    std::vector<const sst::Table*> run;
+    run.reserve(l1.size());
+    for (const auto& t : l1) run.push_back(t.get());
+    out->AddRun(std::move(run));
   }
 };
+
+// The L1 file that could hold `key`, or null. L1 is a run, so AT MOST ONE file
+// can -- which is the property the binary search rests on and the property
+// VerifyL1IsARun refuses an Open without.
+const sst::Table* L1FileFor(const std::vector<std::shared_ptr<sst::Table>>& l1,
+                            Slice key) {
+  std::size_t lo = 0;
+  std::size_t hi = l1.size();
+  // CF-3: `hi - lo` strictly shrinks every iteration whichever branch is taken.
+  // The comparator decides the direction; it does not decide that the interval
+  // shrinks.
+  while (lo < hi) {
+    const std::size_t mid = lo + (hi - lo) / 2;
+    if (ExtractUserKey(Slice(l1[mid]->check().largest_key)).compare(key) < 0) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  if (lo == l1.size()) return nullptr;
+  if (ExtractUserKey(Slice(l1[lo]->check().smallest_key)).compare(key) > 0) {
+    return nullptr;
+  }
+  return l1[lo].get();
+}
 
 // A point read down the merge order: memtable, then the memtable being flushed,
 // then tables newest first. It stops at the FIRST source that holds the key,
@@ -357,16 +395,65 @@ class IterImpl final : public Iterator {
   std::string value_;
 };
 
+// `S`, LIVE: every sequence a caller can still read at through a snapshot.
+//
+// WHY THIS EXISTS WHEN PINNING WOULD ALMOST DO. A snapshot holds shared
+// pointers to its stores, so it reads through the OLD tables whatever a later
+// compaction drops -- which makes S = {the current sequence} sound TODAY, for a
+// reason that expires: it rests on the whole SSTable being resident in memory
+// after its file is deleted, and B3.5 retires that residency and B3.6 changes
+// file lifetime.
+//
+// THAT IS CORRECTNESS BY ARGUMENT WITH A MOVING PREMISE, which is the shape
+// this engine already refused once, at DeleteRange's expansion. A multiset and
+// two hooks make the drop rule sound on its own terms instead.
+class SnapshotRegistry {
+ public:
+  void Take(wal::SeqNum s) {
+    std::lock_guard<std::mutex> g(mu_);
+    live_.insert(s);
+  }
+  void Release(wal::SeqNum s) {
+    std::lock_guard<std::mutex> g(mu_);
+    const auto it = live_.find(s);
+    RIFT_CHECK(it != live_.end());  // released twice, or never taken
+    live_.erase(it);
+  }
+  // ASCENDING AND DISTINCT, which is RunCompaction's precondition. Two
+  // snapshots at one sequence are one member of S.
+  std::vector<wal::SeqNum> Live() const {
+    std::lock_guard<std::mutex> g(mu_);
+    std::vector<wal::SeqNum> out;
+    for (wal::SeqNum s : live_) {
+      if (out.empty() || out.back() != s) out.push_back(s);
+    }
+    return out;
+  }
+
+ private:
+  mutable std::mutex mu_;
+  std::multiset<wal::SeqNum> live_;
+};
+
 class SnapshotImpl final : public Snapshot {
  public:
-  SnapshotImpl(Version v, wal::SeqNum seq) : v_(std::move(v)), seq_(seq) {}
+  SnapshotImpl(Version v, wal::SeqNum seq,
+               std::shared_ptr<SnapshotRegistry> registry)
+      : v_(std::move(v)), seq_(seq), registry_(std::move(registry)) {
+    registry_->Take(seq_);
+  }
+  ~SnapshotImpl() override { Release(); }
   Status Get(Slice key, std::string* value) const override {
     return VersionGet(v_, key, seq_, value);
   }
   std::unique_ptr<Iterator> NewIter(const IterOptions& o) const override {
     return std::unique_ptr<Iterator>(new IterImpl(v_, seq_, o));
   }
-  Status Close() override { return Status::Ok(); }
+  // CLOSE AND DESTRUCTION BOTH RELEASE, AND EXACTLY ONE OF THEM COUNTS. The
+  // frozen interface has Close; C++ has a destructor; a caller doing both must
+  // not remove a live sequence twice, and a caller doing neither would pin the
+  // drop rule forever.
+  Status Close() override { Release(); return Status::Ok(); }
 
  private:
   // A SNAPSHOT PINS ITS STORES. The frozen interface says a snapshot "holds its
@@ -374,8 +461,16 @@ class SnapshotImpl final : public Snapshot {
   // true because nothing was ever retired. Holding the shared pointers is what
   // makes it true now, and it is why a flush may drop the DB's reference to a
   // memtable while a snapshot taken before it still reads through it.
+  void Release() {
+    if (released_) return;
+    released_ = true;
+    registry_->Release(seq_);
+  }
+
   Version v_;
   wal::SeqNum seq_;
+  std::shared_ptr<SnapshotRegistry> registry_;
+  bool released_ = false;
 };
 
 Status VersionGet(const Version& v, Slice key, wal::SeqNum snapshot,
@@ -404,7 +499,17 @@ Status VersionGet(const Version& v, Slice key, wal::SeqNum snapshot,
     *value = mem_only.value().ToString();
     return Status::Ok();
   }
-  for (const auto& t : v.tables) {
+  for (const auto& t : v.l0) {
+    bool deleted = false;
+    bool filtered = false;
+    const Status s = t->Get(key, snapshot, value, &deleted, &filtered);
+    if (s.ok()) return s;
+    if (deleted) return Status::NotFound("");
+  }
+  // L1 IS ONE LOOKUP, NOT |L1| LOOKUPS. Every L0 file must be asked because
+  // they overlap; at most one L1 file can hold the key, so the read
+  // amplification B3-D8 records is |L0| + 1 rather than |L0| + |L1|.
+  if (const sst::Table* t = L1FileFor(v.l1, key)) {
     bool deleted = false;
     bool filtered = false;
     const Status s = t->Get(key, snapshot, value, &deleted, &filtered);
@@ -420,12 +525,14 @@ class DBImpl final : public DB {
          std::shared_ptr<MemTable> table, std::unique_ptr<wal::Wal> w,
          wal::SeqNum seq, std::unique_ptr<sst::Manifest> manifest,
          sst::ManifestState mstate,
-         std::vector<std::shared_ptr<sst::Table>> tables,
+         std::vector<std::shared_ptr<sst::Table>> l0,
+         std::vector<std::shared_ptr<sst::Table>> l1,
          wal::SeqNum flushed_through)
       : env_(env), dir_(std::move(dir)), caps_(std::move(caps)),
         mem_(std::move(table)), wal_(std::move(w)), seq_(seq),
         manifest_(std::move(manifest)), mstate_(std::move(mstate)),
-        tables_(std::move(tables)), flushed_through_(flushed_through) {}
+        l0_(std::move(l0)), l1_(std::move(l1)),
+        flushed_through_(flushed_through) {}
 
   Status Write(const WriteBatch& b, wal::SeqNum* seq) override {
     std::vector<std::string> owned;
@@ -504,9 +611,18 @@ class DBImpl final : public DB {
     // engine.
     bool needed = false;
     { wal::DbLock lock(mu_); needed = !closed_ && mem_->MemoryUsage() >= caps_.flush_bytes; }
+    if (needed) {
+      const Status f = Flush();
+      if (!f.ok()) return f;
+    }
+    // COMPACTION RUNS WHERE THE FLUSH RUNS, and for the same reason: it is I/O,
+    // and this is the only blocking entry point the frozen interface has. It
+    // runs AFTER the flush because the flush is what pushes L0 over the
+    // trigger, so a Sync that flushes can compact in the same call rather than
+    // leaving L0 one file over until the next one.
+    const Status c = MaybeCompact();
+    if (!c.ok()) return c;
     if (!needed) return s;
-    const Status f = Flush();
-    if (!f.ok()) return f;
     { wal::DbLock lock(mu_); *watermark = wal_->DurableSeq() > flushed_through_
                                               ? wal_->DurableSeq() : flushed_through_; }
     return s;
@@ -528,7 +644,8 @@ class DBImpl final : public DB {
 
   std::unique_ptr<Snapshot> NewSnapshot() override {
     wal::DbLock lock(mu_);
-    return std::unique_ptr<Snapshot>(new SnapshotImpl(CurrentVersionLocked(), seq_));
+    return std::unique_ptr<Snapshot>(
+        new SnapshotImpl(CurrentVersionLocked(), seq_, snapshots_));
   }
 
   Status ApproximateDiskBytes(const Bound& start, const Bound& end,
@@ -563,8 +680,331 @@ class DBImpl final : public DB {
     Version v;
     v.mem = mem_;
     v.imm = imm_;
-    v.tables = tables_;
+    v.l0 = l0_;
+    v.l1 = l1_;
     return v;
+  }
+
+  // WHEN TO COMPACT -- B3-D3(b), and the number with its derivation at the
+  // definition site, per section 8.4.
+  //
+  // Read amplification for a point lookup is |L0| + 1: every L0 file must be
+  // asked because they overlap, and at most one L1 file can hold the key. So
+  // the trigger IS the read-amplification bound, and 4 is chosen to match the
+  // structure this engine already has rather than copied: a flush produces one
+  // L0 file, so the trigger is how many flushes may accumulate before their
+  // cost is paid, and the bloom filter makes an absent key cost a filter probe
+  // rather than a block read.
+  //
+  // THE MEASUREMENT THAT WOULD MOVE IT is B3.7's, which records read and space
+  // amplification against this number. Until then it is stated, not tuned.
+  static constexpr std::size_t kL0CompactionTrigger = 4;
+
+  // ---------------------------------------------------------------------
+  // THE INSTALL ORDERING, AND IT IS B2-D5's WITH ONE SENTENCE ADDED.
+  //
+  //   1. write the output table, Sync it
+  //   2. Directory::Sync            (its NAME becomes durable)
+  //   3. one manifest group: the counter, the ADD of the output, the DELETE of
+  //      every input; AppendGroup Syncs
+  //   4. Directory::Sync            (the manifest's extent is durable)
+  //   5. only now: delete the input files, then Directory::Sync
+  //
+  // THE ADDED SENTENCE: the add and the deletes are ONE GROUP because the
+  // output becoming live and the inputs ceasing to be are the same fact. A
+  // crash between them either loses the compaction's work or loses the data,
+  // and only one ordering makes both impossible.
+  //
+  // A crash before 3 leaves the output as an unnamed .sst, which Open removes.
+  // A crash between 3 and 5 leaves the INPUTS as unnamed .sst files, which Open
+  // removes by the same rule. Neither window loses a version.
+  Status MaybeCompact() {
+    std::vector<std::shared_ptr<sst::Table>> in_l0;
+    std::vector<std::shared_ptr<sst::Table>> in_l1;
+    std::vector<std::shared_ptr<sst::Table>> keep_l1;
+    std::vector<wal::SeqNum> observable;
+    {
+      wal::DbLock lock(mu_);
+      if (closed_ || compacting_ || l0_.size() < kL0CompactionTrigger) {
+        return Status::Ok();
+      }
+      compacting_ = true;
+      in_l0 = l0_;
+      // THE INPUT SET IS EVERY L0 FILE PLUS EVERY L1 FILE THAT OVERLAPS THEM,
+      // and that is a correctness requirement rather than a policy: clause 2
+      // of the drop claim permits dropping a tombstone only when nothing older
+      // survives ANYWHERE, so a compaction that left an overlapping L1 file out
+      // could resurrect deleted data.
+      std::string lo = ExtractUserKey(Slice(in_l0[0]->check().smallest_key)).ToString();
+      std::string hi = ExtractUserKey(Slice(in_l0[0]->check().largest_key)).ToString();
+      for (const auto& t : in_l0) {
+        const std::string a = ExtractUserKey(Slice(t->check().smallest_key)).ToString();
+        const std::string b = ExtractUserKey(Slice(t->check().largest_key)).ToString();
+        if (a < lo) lo = a;
+        if (b > hi) hi = b;
+      }
+      for (const auto& t : l1_) {
+        const Slice a = ExtractUserKey(Slice(t->check().smallest_key));
+        const Slice b = ExtractUserKey(Slice(t->check().largest_key));
+        const bool overlaps = a.compare(Slice(hi)) <= 0 && b.compare(Slice(lo)) >= 0;
+        (overlaps ? in_l1 : keep_l1).push_back(t);
+      }
+      observable = snapshots_->Live();
+      // `S` = the live snapshots PLUS the sequence a caller reads at with no
+      // snapshot. Without the second member the newest version of every key
+      // would be droppable, which is the one drop no compaction may make.
+      if (observable.empty() || observable.back() != seq_) observable.push_back(seq_);
+      std::sort(observable.begin(), observable.end());
+      observable.erase(std::unique(observable.begin(), observable.end()),
+                       observable.end());
+    }
+    const Status s = DoCompact(in_l0, in_l1, keep_l1, observable);
+    { wal::DbLock lock(mu_); compacting_ = false; }
+    return s;
+  }
+
+  // ROLLS THE OUTPUT INTO A RUN OF BOUNDED FILES.
+  //
+  // ONE OUTPUT FILE WOULD BE CANDIDATE (a) WEARING (b)'s NAME: every compaction
+  // would rewrite the whole database, which is exactly the write amplification
+  // B3-D3 rejected (a) for. With a run, a compaction reads only the L1 files
+  // that overlap its inputs.
+  //
+  // THE SIZE IS DERIVED, NOT CHOSEN: an output file is capped at the FLUSH
+  // THRESHOLD, so an L1 file is the same order as the L0 file that produced it.
+  // That ties it to a number that already has a derivation (caps.h) instead of
+  // inventing a second one, and it moves with the caps -- so the sweep, which
+  // sets the flush threshold low to make flushes reachable, gets a multi-file
+  // L1 for free rather than needing a second knob.
+  class TableRoller final : public CompactionSink {
+   public:
+    TableRoller(DBImpl* db, uint64_t max_bytes) : db_(db), max_bytes_(max_bytes) {}
+
+    Status Add(Slice internal_key, Slice value, bool boundary) override {
+      if (builder_ != nullptr && boundary && builder_->file_size() >= max_bytes_) {
+        const Status s = CloseCurrent();
+        if (!s.ok()) return s;
+      }
+      if (builder_ == nullptr) {
+        const Status s = OpenNext();
+        if (!s.ok()) return s;
+      }
+      builder_->Add(internal_key, value);
+      return builder_->status();
+    }
+
+    // Finishes whatever is open. Called once, after RunCompaction returns.
+    Status Finish() { return builder_ == nullptr ? Status::Ok() : CloseCurrent(); }
+
+    const std::vector<sst::TableMeta>& outputs() const { return outputs_; }
+
+   private:
+    Status OpenNext() {
+      {
+        wal::DbLock lock(db_->mu_);
+        number_ = db_->mstate_.next_file_number;
+        db_->mstate_.next_file_number = number_ + 1;
+      }
+      const Status s = db_->env_->NewWritableFile(sst::TablePath(db_->dir_, number_),
+                                                  &file_);
+      if (!s.ok()) return s;
+      builder_.reset(new sst::TableBuilder(file_.get()));
+      return Status::Ok();
+    }
+
+    // ONE FILE'S WHOLE ORDERING, IN ONE PLACE: Finish, Sync, Close. The
+    // DIRECTORY sync is the caller's, once, after the last file -- B2-D5's
+    // step 2 for a run rather than for a file.
+    Status CloseCurrent() {
+      Status s = builder_->Finish();
+      if (!s.ok()) return s;
+      sst::TableMeta meta;
+      meta.number = number_;
+      meta.level = 1;
+      meta.file_bytes = builder_->file_size();
+      meta.smallest = builder_->smallest().ToString();
+      meta.largest = builder_->largest().ToString();
+      meta.largest_seq = builder_->largest_seq();
+      outputs_.push_back(meta);
+      builder_.reset();
+      s = file_->Sync();
+      if (!s.ok()) return s;
+      s = file_->Close();
+      file_.reset();
+      return s;
+    }
+
+    DBImpl* db_;
+    uint64_t max_bytes_;
+    uint64_t number_ = 0;
+    WritableFilePtr file_;
+    std::unique_ptr<sst::TableBuilder> builder_;
+    std::vector<sst::TableMeta> outputs_;
+  };
+
+  Status DoCompact(const std::vector<std::shared_ptr<sst::Table>>& in_l0,
+                   const std::vector<std::shared_ptr<sst::Table>>& in_l1,
+                   const std::vector<std::shared_ptr<sst::Table>>& keep_l1,
+                   const std::vector<wal::SeqNum>& observable) {
+    // THE DERIVED BOUND OF B3-D7a, and `pin_seq` beside it. Both are counted
+    // from the inputs before the merge starts, out of what ValidateTable
+    // already measured when each table was opened -- GF-13: a bound derived
+    // from another instrument's measurement cannot be raised without
+    // contradicting that instrument. There is no number here to tune.
+    uint64_t bound = 0;
+    wal::SeqNum pin_seq = 0;
+    std::vector<const sst::Table*> run;
+    MergedIter merge;
+    for (const auto& t : in_l0) {
+      bound += t->check().entries;
+      if (t->check().largest_seq > pin_seq) pin_seq = t->check().largest_seq;
+      merge.AddTable(t.get());
+    }
+    for (const auto& t : in_l1) {
+      bound += t->check().entries;
+      if (t->check().largest_seq > pin_seq) pin_seq = t->check().largest_seq;
+      run.push_back(t.get());
+    }
+    merge.AddRun(std::move(run));
+
+    // BOTTOM-MOST, COMPUTED RATHER THAN ASSUMED. The inputs hold every version
+    // of every key they contain exactly when no L1 file left out of them can
+    // reach into their key range. It is true by construction here -- L1 is a
+    // run and every overlapping member was taken -- and it is computed anyway,
+    // because clause 2's soundness rests on it and a false belief about it
+    // resurrects deleted data with nothing structurally wrong anywhere.
+    //
+    // The memtables are not a hazard: they hold sequences ABOVE every table's,
+    // so they can only hide an input version, never be hidden by one.
+    bool bottom_most = true;
+    if (!keep_l1.empty()) {
+      std::string lo, hi;
+      bool first = true;
+      const auto widen = [&](const std::shared_ptr<sst::Table>& t) {
+        const std::string a = ExtractUserKey(Slice(t->check().smallest_key)).ToString();
+        const std::string b = ExtractUserKey(Slice(t->check().largest_key)).ToString();
+        if (first) { lo = a; hi = b; first = false; return; }
+        if (a < lo) lo = a;
+        if (b > hi) hi = b;
+      };
+      for (const auto& t : in_l0) widen(t);
+      for (const auto& t : in_l1) widen(t);
+      for (const auto& t : keep_l1) {
+        const Slice a = ExtractUserKey(Slice(t->check().smallest_key));
+        const Slice b = ExtractUserKey(Slice(t->check().largest_key));
+        if (a.compare(Slice(hi)) <= 0 && b.compare(Slice(lo)) >= 0) bottom_most = false;
+      }
+    }
+
+    // 1. the output run, each file Finished, Synced and Closed as it fills.
+    CompactionStats stats;
+    TableRoller roller(this, caps_.flush_bytes);
+    {
+      Status s = RunCompaction(&merge, observable, bottom_most, pin_seq, bound,
+                               &roller, &stats);
+      if (!s.ok()) return s;
+      s = roller.Finish();
+      if (!s.ok()) return s;
+    }
+    const std::vector<sst::TableMeta>& outputs = roller.outputs();
+
+    // 2. the directory, so every output's NAME is durable. ONCE, after the last
+    //    file: the manifest edit that names them has not been written yet, so
+    //    until step 3 they are all equally invisible.
+    Status s = SyncDir();
+    if (!s.ok()) return s;
+
+    // 3. ONE GROUP: the counter, the add, and every delete.
+    {
+      std::vector<sst::ManifestEdit> group;
+      sst::ManifestEdit bump;
+      bump.kind = sst::EditKind::kNextFileNumber;
+      {
+        // THE COUNTER AS IT STANDS NOW, not as it stood when the number was
+        // reserved. A flush between the two would have raised it, and writing
+        // the older value here would move the durable counter BACKWARDS below a
+        // live file -- which is exactly the manifest BM54 refuses.
+        wal::DbLock lock(mu_);
+        bump.number = mstate_.next_file_number;
+      }
+      group.push_back(bump);
+      for (const sst::TableMeta& meta : outputs) {
+        sst::ManifestEdit add;
+        add.kind = sst::EditKind::kAddTable;
+        add.table = meta;
+        group.push_back(add);
+      }
+      for (const auto& t : in_l0) {
+        sst::ManifestEdit del;
+        del.kind = sst::EditKind::kDeleteTable;
+        del.number = t->number();
+        group.push_back(del);
+      }
+      for (const auto& t : in_l1) {
+        sst::ManifestEdit del;
+        del.kind = sst::EditKind::kDeleteTable;
+        del.number = t->number();
+        group.push_back(del);
+      }
+      s = manifest_->AppendGroup(group);
+      if (!s.ok()) return s;
+    }
+
+    // 4. the directory again.
+    s = SyncDir();
+    if (!s.ok()) return s;
+
+    // The outputs and the edges naming them are all durable, so everything they
+    // hold now survives a crash. Only now does the in-memory state move.
+    std::vector<std::shared_ptr<sst::Table>> opened;
+    for (const sst::TableMeta& meta : outputs) {
+      std::shared_ptr<sst::Table> t;
+      s = sst::Table::Open(env_, sst::TablePath(dir_, meta.number), meta.number, &t);
+      if (!s.ok()) return s;
+      opened.push_back(std::move(t));
+    }
+    {
+      wal::DbLock lock(mu_);
+      std::set<uint64_t> gone;
+      for (const auto& t : in_l0) gone.insert(t->number());
+      for (const auto& t : in_l1) gone.insert(t->number());
+      std::vector<std::shared_ptr<sst::Table>> kept_l0;
+      for (const auto& t : l0_) {
+        if (gone.find(t->number()) == gone.end()) kept_l0.push_back(t);
+      }
+      l0_ = std::move(kept_l0);
+      l1_ = keep_l1;
+      for (const auto& t : opened) l1_.push_back(t);
+      std::sort(l1_.begin(), l1_.end(),
+                [](const std::shared_ptr<sst::Table>& a,
+                   const std::shared_ptr<sst::Table>& b) {
+                  return ExtractUserKey(Slice(a->check().smallest_key))
+                             .compare(ExtractUserKey(Slice(b->check().smallest_key))) < 0;
+                });
+      for (uint64_t n : gone) mstate_.tables.erase(n);
+      for (const sst::TableMeta& meta : outputs) mstate_.tables[meta.number] = meta;
+    }
+
+    // 5. only now: the input files.
+    //    A compaction that emits NOTHING leaves no output file at all -- the
+    //    roller opens one on its first entry and never before -- which is the
+    //    correct outcome for a key written and deleted with no snapshot below
+    //    it, and it is why TableBuilder may keep refusing to Finish an empty
+    //    table.
+    //
+    //    DELETING A FILE A LIVE SNAPSHOT STILL READS IS SAFE HERE ONLY BECAUSE
+    //    THE WHOLE TABLE IS RESIDENT (table.h). That is a property B3.5 and
+    //    B3.6 change, and file lifetime by reference count is B3.6's step. The
+    //    DROP RULE does not rest on it -- see SnapshotRegistry.
+    for (const auto& t : in_l0) {
+      s = env_->DeleteFile(sst::TablePath(dir_, t->number()));
+      if (!s.ok()) return s;
+    }
+    for (const auto& t : in_l1) {
+      s = env_->DeleteFile(sst::TablePath(dir_, t->number()));
+      if (!s.ok()) return s;
+    }
+    return SyncDir();
   }
 
   // B2-D5's ordering, and there is only one correct one. Every adjacent pair
@@ -704,7 +1144,7 @@ class DBImpl final : public DB {
     if (!s.ok()) return s;
     {
       wal::DbLock lock(mu_);
-      tables_.insert(tables_.begin(), opened);  // newest first
+      l0_.insert(l0_.begin(), opened);  // newest first; a flush lands at L0
       mstate_.tables[meta.number] = meta;
       for (auto it = mstate_.wals.begin(); it != mstate_.wals.end();) {
         it = (*it < new_wal_number) ? mstate_.wals.erase(it) : std::next(it);
@@ -769,11 +1209,15 @@ class DBImpl final : public DB {
   wal::SeqNum seq_ = 0;
   std::unique_ptr<sst::Manifest> manifest_;
   sst::ManifestState mstate_;
-  std::vector<std::shared_ptr<sst::Table>> tables_;  // newest first
+  std::vector<std::shared_ptr<sst::Table>> l0_;  // newest first
+  std::vector<std::shared_ptr<sst::Table>> l1_;  // ascending, non-overlapping
   // The highest sequence a DURABLE table holds. See DurableSeq for why the
   // watermark is a maximum over this and the live WAL rather than the WAL alone.
   wal::SeqNum flushed_through_ = 0;
   bool closed_ = false;
+  bool compacting_ = false;
+  std::shared_ptr<SnapshotRegistry> snapshots_ =
+      std::make_shared<SnapshotRegistry>();
 };
 
 }  // namespace
@@ -858,10 +1302,31 @@ Status DB::Open(Env* env, const std::string& dir, const wal::Caps& caps,
     }
   }
 
+  // THE SPLIT COMES FROM THE MANIFEST, NOT FROM THE FILES. A table's level is
+  // recorded, never inferred from its key range: two tables can be
+  // non-overlapping and still both belong at L0, and inferring would make the
+  // structure a function of the data rather than of what the engine decided.
+  std::vector<std::shared_ptr<sst::Table>> l0;  // newest first, as handed over
+  std::vector<std::shared_ptr<sst::Table>> l1;
+  for (const auto& t : tables) {
+    const auto it = mstate.tables.find(t->number());
+    RIFT_CHECK(it != mstate.tables.end());  // it was opened BECAUSE it is named
+    (it->second.level == 0 ? l0 : l1).push_back(t);
+  }
+  // L1 ascending by user key. VerifyL1IsARun has already refused an Open where
+  // that order is ambiguous, so this sort has a unique answer.
+  std::sort(l1.begin(), l1.end(),
+            [](const std::shared_ptr<sst::Table>& a,
+               const std::shared_ptr<sst::Table>& b) {
+              return ExtractUserKey(Slice(a->check().smallest_key))
+                         .compare(ExtractUserKey(Slice(b->check().smallest_key))) < 0;
+            });
+
   out->reset(new DBImpl(env, dir, caps,
                         std::shared_ptr<MemTable>(std::move(r.table)),
                         std::move(r.wal), r.recovered_seq, std::move(manifest),
-                        std::move(mstate), std::move(tables), covered));
+                        std::move(mstate), std::move(l0), std::move(l1),
+                        covered));
   return unlock(Status::Ok());
 }
 

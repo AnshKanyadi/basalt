@@ -46,6 +46,13 @@ void MergedIter::AddTable(const sst::Table* t) {
   sources_.push_back(std::move(s));
 }
 
+void MergedIter::AddRun(std::vector<const sst::Table*> run) {
+  if (run.empty()) return;
+  Source s;
+  s.table.reset(new sst::ConcatIter(std::move(run)));
+  sources_.push_back(std::move(s));
+}
+
 int MergedIter::CompareSources(std::size_t i, std::size_t j) const {
   const int c = sources_[i].user_key().compare(sources_[j].user_key());
   if (c != 0) return c;

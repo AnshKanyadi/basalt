@@ -29,13 +29,14 @@
 #include <memory>
 #include <vector>
 
+#include "internal_iter.h"
 #include "slice.h"
 #include "table.h"
 
 namespace rift {
 namespace sst {
 
-class ConcatIter {
+class ConcatIter final : public InternalIter {
  public:
   // `run` must be ASCENDING by key range and non-overlapping. That is a
   // precondition on the caller, asserted at construction rather than assumed:
@@ -43,14 +44,14 @@ class ConcatIter {
   // another's, which is a wrong answer with no failing structure anywhere.
   explicit ConcatIter(std::vector<const Table*> run);
 
-  bool Valid() const;
-  void SeekToFirst();
-  void SeekToLast();
-  void Seek(Slice target);   // first entry >= target, in the internal order
-  void Next();
-  void Prev();
-  Slice key() const;
-  Slice value() const;
+  bool Valid() const override;
+  void SeekToFirst() override;
+  void SeekToLast() override;
+  void Seek(Slice target) override;  // first entry >= target, internal order
+  void Next() override;
+  void Prev() override;
+  Slice key() const override;
+  Slice value() const override;
 
   std::size_t files() const { return run_.size(); }
 

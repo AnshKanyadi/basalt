@@ -123,6 +123,110 @@ TEST(Manifest, WhatIsAppendedSurvivesAReopen) {
   ASSERT_TRUE(m->Close().ok());
 }
 
+// ------------------------------------------------------------------- levels
+
+TEST(Manifest, TheLevelSurvivesAReopen) {
+  TestEnvironment t;
+  ASSERT_TRUE(t.env()->CreateDir(kDir).ok());
+  {
+    ManifestState state;
+    std::unique_ptr<Manifest> m;
+    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok());
+    TableMeta meta = WriteTable(&t, state.next_file_number,
+                                {{IKey("a", 3), "1"}, {IKey("b", 7), "2"}});
+    meta.level = 1;
+    ManifestEdit bump;
+    bump.kind = EditKind::kNextFileNumber;
+    bump.number = state.next_file_number + 1;
+    ASSERT_TRUE(m->AppendGroup({Add(meta), bump}).ok());
+    ASSERT_TRUE(m->Close().ok());
+  }
+  ManifestState state;
+  std::unique_ptr<Manifest> m;
+  ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok());
+  ASSERT_EQ(1u, state.tables.size());
+  EXPECT_EQ(1, state.tables.begin()->second.level);
+  ASSERT_TRUE(m->Close().ok());
+}
+
+// REFUSED, NOT CLAMPED, and the reason is in manifest.cc: a file from a build
+// with more levels placed at level 1 joins a run the read path binary searches,
+// and an overlapping member of that run makes a key INVISIBLE.
+TEST(Manifest, ALevelThisBuildCannotPlaceIsRefused) {
+  TestEnvironment t;
+  ASSERT_TRUE(t.env()->CreateDir(kDir).ok());
+  {
+    ManifestState state;
+    std::unique_ptr<Manifest> m;
+    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok());
+    TableMeta meta = WriteTable(&t, state.next_file_number, {{IKey("a", 3), "1"}});
+    meta.level = 2;
+    ManifestEdit bump;
+    bump.kind = EditKind::kNextFileNumber;
+    bump.number = state.next_file_number + 1;
+    ASSERT_TRUE(m->AppendGroup({Add(meta), bump}).ok());
+    ASSERT_TRUE(m->Close().ok());
+  }
+  ManifestState state;
+  std::unique_ptr<Manifest> m;
+  const Status s = Manifest::Open(t.env(), kDir, &state, nullptr, &m);
+  ASSERT_FALSE(s.ok());
+  EXPECT_NE(std::string::npos, s.ToString().find("levels"));
+}
+
+// Two L1 files that share a user key. `L1FileFor` finds ONE of them and the
+// other's versions cannot be reached -- so a deletion stops hiding a value and
+// deleted data returns, with nothing structurally wrong in either file.
+TEST(Manifest, AnOverlappingLevelOneIsRefused) {
+  TestEnvironment t;
+  ASSERT_TRUE(t.env()->CreateDir(kDir).ok());
+  {
+    ManifestState state;
+    std::unique_ptr<Manifest> m;
+    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok());
+    TableMeta lo = WriteTable(&t, 2, {{IKey("a", 3), "1"}, {IKey("m", 4), "2"}});
+    TableMeta hi = WriteTable(&t, 3, {{IKey("m", 9), "3"}, {IKey("z", 5), "4"}});
+    lo.level = 1;
+    hi.level = 1;
+    ManifestEdit bump;
+    bump.kind = EditKind::kNextFileNumber;
+    bump.number = 4;
+    ASSERT_TRUE(m->AppendGroup({Add(lo), Add(hi), bump}).ok());
+    ASSERT_TRUE(m->Close().ok());
+  }
+  ManifestState state;
+  std::unique_ptr<Manifest> m;
+  const Status s = Manifest::Open(t.env(), kDir, &state, nullptr, &m);
+  ASSERT_FALSE(s.ok());
+  EXPECT_NE(std::string::npos, s.ToString().find("not a run"));
+}
+
+// GF-14: THE OTHER HALF. Without it the refusal above could be produced by a
+// check that rejects every two-file L1, and nothing would say so.
+TEST(Manifest, AdjacentLevelOneTablesAreARun) {
+  TestEnvironment t;
+  ASSERT_TRUE(t.env()->CreateDir(kDir).ok());
+  {
+    ManifestState state;
+    std::unique_ptr<Manifest> m;
+    ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok());
+    TableMeta lo = WriteTable(&t, 2, {{IKey("a", 3), "1"}, {IKey("m", 4), "2"}});
+    TableMeta hi = WriteTable(&t, 3, {{IKey("n", 9), "3"}, {IKey("z", 5), "4"}});
+    lo.level = 1;
+    hi.level = 1;
+    ManifestEdit bump;
+    bump.kind = EditKind::kNextFileNumber;
+    bump.number = 4;
+    ASSERT_TRUE(m->AppendGroup({Add(lo), Add(hi), bump}).ok());
+    ASSERT_TRUE(m->Close().ok());
+  }
+  ManifestState state;
+  std::unique_ptr<Manifest> m;
+  ASSERT_TRUE(Manifest::Open(t.env(), kDir, &state, nullptr, &m).ok());
+  EXPECT_EQ(2u, state.tables.size());
+  ASSERT_TRUE(m->Close().ok());
+}
+
 TEST(Manifest, EveryOpenRotatesAndTheOldOneIsRemoved) {
   TestEnvironment t;
   ASSERT_TRUE(t.env()->CreateDir(kDir).ok());

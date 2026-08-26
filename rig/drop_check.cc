@@ -1,6 +1,8 @@
 // RIFT_ORACLE -- see drop_check.h and ORACLES.txt.
 #include "drop_check.h"
 
+#include "manifest_image.h"
+
 #include <algorithm>
 #include <vector>
 
@@ -36,38 +38,6 @@ std::string BaseName(const std::string& path, const std::string& dir) {
     return path.substr(dir.size() + 1);
   }
   return path;
-}
-
-// Replays a manifest image into the state it describes. PURE: the bytes are
-// already in hand, and this is the same codec the engine writes with -- which
-// B3-D2a permits, and B3-D2b is why it does not also supply the expectation.
-bool ReplayManifest(Slice image, sst::ManifestState* out, std::string* why) {
-  const wal::ScanResult scan = wal::ScanLog(image);
-  if (scan.outcome == wal::ScanOutcome::kInteriorCorruption) {
-    *why = "manifest: interior corruption at offset " +
-           std::to_string(scan.failure_offset);
-    return false;
-  }
-  for (std::size_t i = 0; i < scan.committed_count; ++i) {
-    const wal::LogicalRecord& rec = scan.records[i];
-    if (rec.kind != wal::RecordKind::kManifestEdit) continue;
-    sst::ManifestEdit edit;
-    std::string edit_why;
-    if (!sst::DecodeEdit(Slice(rec.payload), &edit, &edit_why)) {
-      *why = "manifest: " + edit_why;
-      return false;
-    }
-    switch (edit.kind) {  // NO default: arm
-      case sst::EditKind::kAddTable:       out->tables[edit.table.number] = edit.table; break;
-      case sst::EditKind::kDeleteTable:    out->tables.erase(edit.number); break;
-      case sst::EditKind::kNextFileNumber: out->next_file_number = edit.number; break;
-      case sst::EditKind::kSetLogNumber:   break;  // reserved, never written
-      case sst::EditKind::kAddWal:         out->wals.insert(edit.number); break;
-      case sst::EditKind::kDeleteWal:      out->wals.erase(edit.number); break;
-      case sst::EditKind::kInvalid:        *why = "manifest: invalid edit"; return false;
-    }
-  }
-  return true;
 }
 
 // Every (user key, sequence) an SSTable image holds. Enumerating is the whole
@@ -140,7 +110,7 @@ DropVerdict AdjudicateDrops(const VersionModel& model, const ImageBytes& image,
     const auto manifest = image.find(dir + "/" + body.substr(0, body.size() - 1));
     if (manifest == image.end()) return Violation(v, "CURRENT names a manifest not in the image");
     std::string why;
-    if (!ReplayManifest(Slice(manifest->second), &state, &why)) return Violation(v, why);
+    if (!ReplayManifestImage(Slice(manifest->second), &state, &why)) return Violation(v, why);
   }
 
   // 2. WHAT SURVIVED: every version the durable bytes still hold, from tables

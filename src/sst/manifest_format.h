@@ -46,6 +46,19 @@ enum class EditKind : uint8_t {
 };
 const char* EditKindName(EditKind kind);
 
+// TWO LEVELS AND NO MORE -- B3-D3(b), and the decoder refuses a third.
+//
+// L0 holds flush output: files overlap each other and every one must be
+// consulted. L1 is a SINGLE NON-OVERLAPPING RUN, which is what lets the read
+// path binary-search it and what lets the merge take it as ONE source.
+//
+// A number here rather than a bool because (c) -- multi-level leveled -- is
+// A6's stretch item and is a policy change on top of this structure. The FORMAT
+// admitting only 0 and 1 is deliberate: a manifest naming a level this build
+// cannot place is refused rather than guessed at, exactly as an unknown edit
+// kind is.
+inline constexpr uint8_t kMaxLevel = 1;
+
 struct TableMeta {
   uint64_t number = 0;
   uint64_t file_bytes = 0;
@@ -53,6 +66,7 @@ struct TableMeta {
   std::string largest;
   // RE-DERIVED AT OPEN from the table's own bytes and compared against this.
   SeqNum largest_seq = 0;
+  uint8_t level = 0;
 };
 
 struct ManifestEdit {
