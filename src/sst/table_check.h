@@ -92,6 +92,10 @@ struct TableCheck {
   // Range tombstones the table carries. Zero for every table written before
   // B3.5, which is what `range_offset == 0` decodes to.
   uint64_t range_tombstones = 0;
+  // B3-Q4: the table holds a tombstone with NO UPPER BOUND, so its key range is
+  // `[smallest_key, infinity)` and no finite `largest_key` describes it. Input
+  // selection must read this, not just the bounds.
+  bool unbounded_end = false;
   std::string smallest_key;
   std::string largest_key;
   uint64_t largest_seq = 0;

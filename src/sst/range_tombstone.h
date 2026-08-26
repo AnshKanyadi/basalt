@@ -18,6 +18,9 @@
 //            || end_len:u32   || end_user_key
 //            || tag:u64
 //
+//   end_len == 0xFFFFFFFF means THE RANGE HAS NO UPPER BOUND, and `end` then
+//   occupies ZERO BYTES. See below: this is B3-Q4's ruling.
+//
 // THE BLOCK REUSES THE DATA BLOCK'S FRAMING EXACTLY, so `ParseBlock` decodes it
 // and there is ONE block decoder in this engine rather than two that can drift.
 // Section 7.5's one mechanism, two users, for the third time.
@@ -31,6 +34,39 @@
 // construction -- the same choice `Bound` made at B1 and for its reason: two
 // range conventions in one engine is a bug waiting for a boundary key.
 //
+// ---------------------------------------------------------------------------
+// B3-Q4, RULED: THE UNBOUNDED END IS IN THE BYTES, NOT IN A CONVENTION.
+//
+// The frozen `Engine` interface has `DeleteRange(Bound, Bound)` with either
+// bound possibly UNBOUNDED, and `DeleteRange(Unbounded, Unbounded)` is section
+// 8.2's clear-everything case -- the one Amendment `[A3]` was ruled for. THERE
+// IS NO BYTE STRING GREATER THAN EVERY BYTE STRING, so `[start, infinity)` has
+// no representation as a pair of keys.
+//
+// ONLY THE END IS AFFECTED. An unbounded START is expressible as `""`: the empty
+// user key is the minimum, so `["", end)` and `[unbounded, end)` cover the same
+// set. The problem is one-sided and so is the fix.
+//
+//   `end_len == kUnboundedEndLen` (0xFFFFFFFF) means no upper bound, and the
+//   record then carries NO end bytes at all.
+//
+// WHY NOT A FLAG BIT IN THE TAG, which was the other candidate: section 6.1
+// says a range tombstone is A VERSION LIKE ANY OTHER, ordered against point
+// versions by the same comparator. A tag that stops being a plain internal-key
+// tag surrenders a property that holds for EVERY ENTRY in this engine, in
+// exchange for one bit. A property that holds for every entry is worth more
+// than a byte.
+//
+// `end > start` REMAINS A RULE ABOUT FINITE ENDS. The sentinel is not an
+// exception to it -- it is a DIFFERENT CASE, in which there is no end to
+// compare. Written here because the next reader will meet the guard first and
+// the sentinel second, and "exception" is the wrong thing to conclude.
+//
+// AND THE TWO WAYS OF SAYING UNBOUNDED MUST NOT BOTH EXIST: a record claiming
+// the sentinel while carrying end bytes is REFUSED, so there is exactly one
+// encoding of "no upper bound" and no second one to disagree with it.
+//
+// ---------------------------------------------------------------------------
 // THE BOUNDS ARE USER KEYS AND NOT INTERNAL KEYS, so the empty user key is a
 // valid bound and there is no minimum length. This is the OPPOSITE of the point
 // entry rule -- which refuses a key too short to carry a tag -- and it is stated
@@ -49,16 +85,23 @@
 namespace rift {
 namespace sst {
 
+// The one encoding of "no upper bound". A length no real key can have: a key
+// that long cannot fit in a block, and the block decoder bounds every length
+// before reading it.
+inline constexpr uint32_t kUnboundedEndLen = 0xFFFFFFFFu;
+
 struct RangeTombstone {
   Slice start;      // user key, inclusive
-  Slice end;        // user key, EXCLUSIVE
+  Slice end;        // user key, EXCLUSIVE; empty and unused when unbounded
+  bool end_unbounded = false;
   uint64_t tag = 0; // (seq << 8) | kDeleteRange
   uint64_t offset = 0;  // from the block's start, for error reporting
 
   SeqNum seq() const { return SeqOfTag(tag); }
   // Half-open, and the ONE place this question is answered.
   bool Covers(Slice user_key) const {
-    return user_key.compare(start) >= 0 && user_key.compare(end) < 0;
+    if (user_key.compare(start) < 0) return false;
+    return end_unbounded || user_key.compare(end) < 0;
   }
 };
 
@@ -70,6 +113,7 @@ enum class RangeFault : uint8_t {
   kNotAscending,
   kDuplicate,
   kNotADeleteRangeTag,
+  kUnboundedEndWithBytes,
 };
 const char* RangeFaultName(RangeFault fault);
 
@@ -85,6 +129,12 @@ struct RangeCheck {
 // build blocks by hand, and a fixture using a different encoder than the reader
 // validates would be testing the fixture.
 void EncodeRangeTombstone(Slice start, Slice end, uint64_t tag, std::string* out);
+
+// The same, for a range with NO UPPER BOUND. A separate function rather than a
+// sentinel argument, so a caller cannot reach the unbounded encoding by
+// accident with an empty `end` -- which is a legal FINITE bound this format
+// refuses for a different reason.
+void EncodeUnboundedRangeTombstone(Slice start, uint64_t tag, std::string* out);
 
 // Parses AND CHECKS a range-tombstone block, from bytes alone. Pure: no Env, no
 // engine, no writer. See DESIGN-B3 section 6.1 for what each refusal means.

@@ -57,6 +57,44 @@ void TableBuilder::FlushDataBlock() {
   block_entries_ = 0;
 }
 
+namespace {
+
+// The ordering discipline both tombstone entry points share. Ascending by
+// start, and no two with one start and one tag -- the classifier's rules,
+// refused at the writer where the mistake is.
+void CheckOrder(std::size_t count, Slice start, uint64_t tag,
+                const std::string& last_start, uint64_t last_tag) {
+  if (count == 0) return;
+  const int c = start.compare(Slice(last_start));
+  RIFT_CHECK(c >= 0);
+  RIFT_CHECK(c != 0 || tag != last_tag);
+}
+
+}  // namespace
+
+void TableBuilder::AddUnboundedRangeTombstone(Slice start, uint64_t tag) {
+  RIFT_CHECK(!finished_);
+  RIFT_CHECK(TypeOfTag(tag) == ValueType::kDeletion);
+  CheckOrder(range_count_, start, tag, last_range_start_, last_range_tag_);
+  std::string encoded;
+  EncodeUnboundedRangeTombstone(start, tag, &encoded);
+  range_.Add(Slice(encoded), Slice());
+  last_range_start_.assign(start.data(), start.size());
+  last_range_tag_ = tag;
+  ++range_count_;
+  unbounded_end_ = true;
+
+  std::string lo;
+  AppendInternalKey(&lo, start, tag);
+  if (smallest_.empty() || CompareInternalKey(Slice(lo), Slice(smallest_)) < 0) {
+    smallest_ = lo;
+  }
+  // NO `largest_` WIDENING, and that is the point: there is no finite key to
+  // widen it to. `TableCheck::unbounded_end` carries the fact instead.
+  const SeqNum seq = SeqOfTag(tag);
+  if (seq > largest_seq_) largest_seq_ = seq;
+}
+
 void TableBuilder::AddRangeTombstone(Slice start, Slice end, uint64_t tag) {
   RIFT_CHECK(!finished_);
   // Every rule the classifier refuses on, refused HERE too -- at the writer,
@@ -64,11 +102,7 @@ void TableBuilder::AddRangeTombstone(Slice start, Slice end, uint64_t tag) {
   // a table nobody can act on; a RIFT_CHECK names the caller.
   RIFT_CHECK(end.compare(start) > 0);
   RIFT_CHECK(TypeOfTag(tag) == ValueType::kDeletion);
-  if (range_count_ > 0) {
-    const int c = start.compare(Slice(last_range_start_));
-    RIFT_CHECK(c >= 0);
-    RIFT_CHECK(c != 0 || tag != last_range_tag_);
-  }
+  CheckOrder(range_count_, start, tag, last_range_start_, last_range_tag_);
   std::string encoded;
   EncodeRangeTombstone(start, end, tag, &encoded);
   range_.Add(Slice(encoded), Slice());

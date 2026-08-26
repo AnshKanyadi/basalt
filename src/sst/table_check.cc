@@ -226,11 +226,19 @@ TableCheck ValidateTable(Slice image) {
           CompareInternalKey(Slice(lo), Slice(ok.smallest_key)) < 0) {
         ok.smallest_key = lo;
       }
-      std::string hi;
-      AppendInternalKey(&hi, t.end, t.tag);
-      if (ok.largest_key.empty() ||
-          CompareInternalKey(Slice(hi), Slice(ok.largest_key)) > 0) {
-        ok.largest_key = hi;
+      if (t.end_unbounded) {
+        // NO FINITE KEY WIDENS THIS. The table's range is `[smallest, infinity)`
+        // and the flag is how that travels -- input selection reads it, and a
+        // reader that consulted only the bounds would under-select and let
+        // clause 2 drop a deletion whose masked value survives above.
+        ok.unbounded_end = true;
+      } else {
+        std::string hi;
+        AppendInternalKey(&hi, t.end, t.tag);
+        if (ok.largest_key.empty() ||
+            CompareInternalKey(Slice(hi), Slice(ok.largest_key)) > 0) {
+          ok.largest_key = hi;
+        }
       }
       if (t.seq() > ok.largest_seq) ok.largest_seq = t.seq();
     }

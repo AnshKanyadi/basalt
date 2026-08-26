@@ -14,6 +14,8 @@ const char* RangeFaultName(RangeFault fault) {
     case RangeFault::kNotAscending:         return "tombstones not ascending by start";
     case RangeFault::kDuplicate:            return "two tombstones with one start and one tag";
     case RangeFault::kNotADeleteRangeTag:   return "tag is not a DELETE_RANGE";
+    case RangeFault::kUnboundedEndWithBytes:
+      return "an unbounded end that carries end bytes";
   }
   RIFT_UNREACHABLE("RangeFault holds a value no enumerator names");
 }
@@ -49,10 +51,20 @@ RangeCheck Fail(RangeFault f, uint64_t offset, const std::string& why) {
 }  // namespace
 
 void EncodeRangeTombstone(Slice start, Slice end, uint64_t tag, std::string* out) {
+  RIFT_CHECK(end.size() != kUnboundedEndLen);  // unreachable, and stated anyway
   PutU32(out, static_cast<uint32_t>(start.size()));
   out->append(start.data(), start.size());
   PutU32(out, static_cast<uint32_t>(end.size()));
   out->append(end.data(), end.size());
+  for (int i = 0; i < 8; ++i) out->push_back(static_cast<char>((tag >> (8 * i)) & 0xff));
+}
+
+void EncodeUnboundedRangeTombstone(Slice start, uint64_t tag, std::string* out) {
+  PutU32(out, static_cast<uint32_t>(start.size()));
+  out->append(start.data(), start.size());
+  PutU32(out, kUnboundedEndLen);
+  // AND NO END BYTES. The parser refuses a record that claims the sentinel and
+  // carries them, so there is exactly one encoding of "no upper bound".
   for (int i = 0; i < 8; ++i) out->push_back(static_cast<char>((tag >> (8 * i)) & 0xff));
 }
 
@@ -90,10 +102,22 @@ RangeCheck ParseRangeBlock(Slice block, std::vector<RangeTombstone>* out) {
     if (left < 4) return Fail(RangeFault::kMalformedBlock, e.offset, "truncated end length");
     const uint32_t elen = GetU32(p);
     p += 4; left -= 4;
-    if (left < elen) return Fail(RangeFault::kMalformedBlock, e.offset, "end runs past the entry");
-    t.end = Slice(p, elen);
-    p += elen; left -= elen;
-    if (left != 8) return Fail(RangeFault::kMalformedBlock, e.offset, "entry is not exactly a tombstone");
+    if (elen == kUnboundedEndLen) {
+      // B3-Q4's sentinel. The record carries NO end bytes, and one that claims
+      // otherwise is refused -- so "no upper bound" has exactly one encoding and
+      // there is no second one to disagree with it.
+      t.end_unbounded = true;
+      if (left != 8) {
+        return Fail(RangeFault::kUnboundedEndWithBytes, e.offset,
+                    "end length is the unbounded sentinel and " +
+                        std::to_string(left - 8) + " end bytes follow");
+      }
+    } else {
+      if (left < elen) return Fail(RangeFault::kMalformedBlock, e.offset, "end runs past the entry");
+      t.end = Slice(p, elen);
+      p += elen; left -= elen;
+      if (left != 8) return Fail(RangeFault::kMalformedBlock, e.offset, "entry is not exactly a tombstone");
+    }
     t.tag = GetU64(p);
     t.offset = e.offset;
     if (!e.value.empty()) {
@@ -103,7 +127,10 @@ RangeCheck ParseRangeBlock(Slice block, std::vector<RangeTombstone>* out) {
     // [start, end), HALF-OPEN. An empty or inverted range covers nothing and no
     // writer can mean it; accepting it makes "covers nothing" and "covers
     // everything below start" indistinguishable at the reader.
-    if (t.end.compare(t.start) <= 0) {
+    // A RULE ABOUT FINITE ENDS, and the sentinel is not an exception to it --
+    // it is a different case, in which there is no end to compare. Written this
+    // way round because the next reader meets the guard before the sentinel.
+    if (!t.end_unbounded && t.end.compare(t.start) <= 0) {
       return Fail(RangeFault::kEmptyOrInvertedRange, e.offset,
                   "end is not above start");
     }

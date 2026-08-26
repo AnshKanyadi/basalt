@@ -71,6 +71,13 @@ class TableBuilder {
   // consult -- which resurrects everything it was supposed to mask.
   void AddRangeTombstone(Slice start, Slice end, uint64_t tag);
 
+  // The same, for a range with NO UPPER BOUND (B3-Q4). It widens `smallest` and
+  // deliberately does NOT widen `largest`: there is no finite key to widen it
+  // to. The fact travels as `TableCheck::unbounded_end` instead, which says the
+  // table's range is `[smallest, infinity)` -- an over-approximation, and
+  // over-covering costs a read while under-covering resurrects data.
+  void AddUnboundedRangeTombstone(Slice start, uint64_t tag);
+
   // Writes the last data block, the filter, the index, THE RANGE BLOCK and the
   // footer -- in that order, and the range block's position is load-bearing:
   // its size is derived as `file_size - kFooterBytes - range_offset`, so
@@ -112,6 +119,7 @@ class TableBuilder {
   std::string last_range_start_;
   uint64_t last_range_tag_ = 0;
   std::size_t range_count_ = 0;
+  bool unbounded_end_ = false;
   std::string smallest_;
   std::string largest_;
   SeqNum largest_seq_ = 0;

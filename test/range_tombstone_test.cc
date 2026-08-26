@@ -48,6 +48,23 @@ RangeCheck Check(const std::string& block, std::vector<RangeTombstone>* out) {
   return ParseRangeBlock(Slice(block), out);
 }
 
+// A block holding one UNBOUNDED-end tombstone, through the same encoder.
+std::string UnboundedBlock(const std::string& start, uint64_t tag,
+                           const std::string& extra_end_bytes = "") {
+  BlockBuilder b;
+  std::string k;
+  EncodeUnboundedRangeTombstone(Slice(start), tag, &k);
+  if (!extra_end_bytes.empty()) {
+    // Splice the bytes in where a finite end would live: after the sentinel
+    // length and before the tag. That is exactly the shape the refusal is for --
+    // a record claiming the sentinel AND carrying an end.
+    const std::size_t tag_at = k.size() - 8;
+    k.insert(tag_at, extra_end_bytes);
+  }
+  b.Add(Slice(k), Slice());
+  return b.Finish();
+}
+
 // ------------------------------------------------------------ the legal shape
 
 TEST(RangeTombstone, AcceptsASortedBlockAndReportsWhatItHolds) {
@@ -187,6 +204,71 @@ TEST(RangeTombstone, EveryFaultHasADistinctName) {
     for (const std::string& seen : names) EXPECT_NE(seen, n);
     names.push_back(n);
   }
+}
+
+// ------------------------------------- B3-Q4: the unbounded end, in the bytes
+//
+// A NEW SHAPE THE FROZEN REFUSALS HAVE NEVER SEEN. Every rule §6.1 fixed was
+// induced against FINITE ends, so the sentinel gets its own fixtures rather
+// than inheriting confidence from theirs.
+
+TEST(RangeTombstone, AcceptsAnUnboundedEnd) {
+  std::vector<RangeTombstone> t;
+  // BOUND TO A LOCAL, NOT PASSED AS A TEMPORARY. `RangeTombstone::start` is a
+  // Slice INTO the block, so a temporary block dies at the end of the
+  // expression and every field reads freed memory -- HARNESS-007's class,
+  // reached the one way the deleted `Slice(std::string&&)` cannot catch:
+  // through a `const std::string&` parameter. The first version of this test
+  // read "e" for a start of "m" and still passed its ok() assertion.
+  const std::string block = UnboundedBlock("m", DelTag(9));
+  const RangeCheck v = Check(block, &t);
+  ASSERT_TRUE(v.ok()) << RangeFaultName(v.fault) << ": " << v.why;
+  ASSERT_EQ(1u, t.size());
+  EXPECT_TRUE(t[0].end_unbounded);
+  EXPECT_EQ("m", t[0].start.ToString());
+  EXPECT_EQ(9u, t[0].seq());
+}
+
+// IT COVERS EVERYTHING AT OR ABOVE ITS START AND NOTHING BELOW. Both halves,
+// because "unbounded" implemented as "covers everything" passes the first.
+TEST(RangeTombstone, AnUnboundedEndCoversEverythingAboveItsStartAndNothingBelow) {
+  std::vector<RangeTombstone> t;
+  const std::string block = UnboundedBlock("m", DelTag(9));
+  ASSERT_TRUE(Check(block, &t).ok());
+  ASSERT_EQ(1u, t.size());
+  EXPECT_FALSE(t[0].Covers(Slice("a")));
+  EXPECT_FALSE(t[0].Covers(Slice("l")));
+  EXPECT_TRUE(t[0].Covers(Slice("m")));      // start is INCLUSIVE
+  EXPECT_TRUE(t[0].Covers(Slice("zzzzzz")));
+}
+
+// THE TWO WAYS OF SAYING UNBOUNDED MUST NOT BOTH EXIST. A record claiming the
+// sentinel while carrying end bytes is refused, so "no upper bound" has exactly
+// one encoding and there is no second one to disagree with it.
+TEST(RangeTombstone, RefusesAnUnboundedEndThatCarriesEndBytes) {
+  std::vector<RangeTombstone> t;
+  const std::string block = UnboundedBlock("m", DelTag(9), "zzz");
+  const RangeCheck v = Check(block, &t);
+  ASSERT_FALSE(v.ok());
+  EXPECT_EQ(RangeFault::kUnboundedEndWithBytes, v.fault) << v.why;
+}
+
+// AND `end > start` IS STILL A RULE ABOUT FINITE ENDS. The sentinel is not an
+// exception to it; an inverted FINITE range beside an unbounded one is still
+// refused, which is what distinguishes "a different case" from "a hole".
+TEST(RangeTombstone, TheFiniteRuleStillBindsBesideAnUnboundedOne) {
+  BlockBuilder b;
+  std::string ok_key;
+  EncodeUnboundedRangeTombstone(Slice("a"), DelTag(9), &ok_key);
+  b.Add(Slice(ok_key), Slice());
+  std::string bad_key;
+  EncodeRangeTombstone(Slice("m"), Slice("b"), DelTag(7), &bad_key);  // inverted
+  b.Add(Slice(bad_key), Slice());
+  const std::string block = b.Finish();
+  std::vector<RangeTombstone> t;
+  const RangeCheck v = ParseRangeBlock(Slice(block), &t);
+  ASSERT_FALSE(v.ok());
+  EXPECT_EQ(RangeFault::kEmptyOrInvertedRange, v.fault) << v.why;
 }
 
 }  // namespace

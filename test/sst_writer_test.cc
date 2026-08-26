@@ -374,6 +374,47 @@ TEST(SstWriter, ARangeTombstoneWidensTheTablesRecordedBounds) {
          "a file that did not need reading, under-covering resurrects data";
 }
 
+// B3-Q4 THROUGH THE WRITER. The clear-everything case Amendment [A3] put
+// DeleteRange in the interface for, written as one tombstone rather than as one
+// point delete per live key.
+TEST(SstWriter, AnUnboundedTombstoneIsWrittenAndTheTableSaysSo) {
+  testenv::TestEnvironment t;
+  ASSERT_TRUE(t.env()->CreateDir("w").ok());
+  const std::string path = "w/000001.sst";
+  WritableFilePtr f;
+  ASSERT_TRUE(t.env()->NewWritableFile(path, &f).ok());
+  std::string k1 = IKey("m", 1);
+  {
+    TableBuilder b(f.get());
+    b.Add(Slice(k1), Slice("1"));
+    b.AddUnboundedRangeTombstone(Slice("a"), RangeTag(9));
+    ASSERT_TRUE(b.Finish().ok());
+    // NO FINITE KEY DESCRIBES THE UPPER END, so `largest` stays at the data key
+    // and the FLAG is what says the range runs to infinity.
+    EXPECT_EQ("a", ExtractUserKey(b.smallest()).ToString());
+    EXPECT_EQ("m", ExtractUserKey(b.largest()).ToString());
+  }
+  ASSERT_TRUE(f->Sync().ok());
+  ASSERT_TRUE(f->Close().ok());
+  const std::string image = t.ContentNow(path);
+  const TableCheck v = ValidateTable(Slice(image));
+  ASSERT_TRUE(v.ok()) << TableFaultName(v.fault) << ": " << v.why;
+  EXPECT_EQ(1u, v.range_tombstones);
+  EXPECT_TRUE(v.unbounded_end);
+  EXPECT_EQ("a", ExtractUserKey(Slice(v.smallest_key)).ToString());
+  EXPECT_EQ("m", ExtractUserKey(Slice(v.largest_key)).ToString());
+}
+
+// GF-14: THE OTHER HALF. A finite tombstone must NOT set the flag, or "the
+// table's range runs to infinity" would be true of every table that has one.
+TEST(SstWriter, AFiniteTombstoneLeavesTheUnboundedFlagClear) {
+  const std::string image = BuiltWithRanges(
+      {{IKey("a", 1), "1"}, {IKey("z", 2), "2"}}, {{"a", "z", 5}}, nullptr);
+  const TableCheck v = ValidateTable(Slice(image));
+  ASSERT_TRUE(v.ok()) << TableFaultName(v.fault) << ": " << v.why;
+  EXPECT_FALSE(v.unbounded_end);
+}
+
 }  // namespace
 }  // namespace sst
 }  // namespace rift
