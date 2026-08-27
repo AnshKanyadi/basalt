@@ -1,0 +1,32 @@
+# id: BM110-append-bytes-not-recorded
+# blinds: the harness counting BYTES rather than merely counting calls
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# THE INSTRUMENT'S OWN FIRST FAILURE, PRESERVED AS A CLASS. Write amplification
+# is bytes written over bytes submitted, and the first version summed
+# `durable_bytes_after` -- a FILE SIZE AFTER A SYNC, which is left at zero for
+# an Append. It reported 0.00.
+#
+# IT ANNOUNCED ITSELF ONLY BECAUSE ZERO CANNOT BE TRUE. A field that returned a
+# plausible-but-wrong number in the same slot would have been published in
+# BENCHMARKS.md as a result, and the number decides B3-D3.
+#
+# So the class is not "the wrong field was summed" -- that specific mistake is
+# fixed -- it is "the instrument returns something other than the bytes the
+# engine asked to write", which is the shape any future edit to this ledger can
+# reintroduce.
+--- a/engine-cpp/src/env/test/test_env.cc
++++ b/engine-cpp/src/env/test/test_env.cc
+@@ -468,7 +468,8 @@
+     if (f == nullptr) return Status::IoError("appending to a vanished file: " + path_);
+     // WHAT THE ENGINE ASKED TO WRITE, recorded from the call rather than
+     // inferred from a file size afterwards. See LedgerEntry::append_bytes.
+-    impl_->RecordAppendBytes(data.size());
++    // BM110: the ledger records the call and not the bytes.
++    impl_->RecordAppendBytes(0);
+     f->buf.append(data.data(), data.size());
+     return Status::Ok();
+   }

@@ -1,0 +1,34 @@
+# id: BM111-l0-state-not-reported
+# blinds: the measurement reporting the CONDITION its write number is true under
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# THE INSTRUMENT'S SECOND FAILURE, AND IT WAS CAUGHT ONLY AFTER THE NUMBER HAD
+# BEEN PRINTED ONCE. A run that stops with L0 partly full has not paid for those
+# files' compaction, so its write amplification reads LOW -- which is exactly
+# the direction that flatters the conclusion.
+#
+# A blinded column reads as zero, and zero is indistinguishable from a run that
+# genuinely drained. That is why the covering pair asserts BOTH states, and why
+# the drained size had to be found by measurement rather than assumed: a
+# condition column is worth having only if a test can tell its two states apart.
+#
+# THE DEFECT IS NOT A WRONG NUMBER. It is a right number without its conditions,
+# published in a file whose first rule is that a number without its methodology
+# is not a result.
+--- a/engine-cpp/rig/amplification.cc
++++ b/engine-cpp/rig/amplification.cc
+@@ -97,9 +97,8 @@
+       sst::ManifestState st;
+       std::string why;
+       if (ReplayManifestImage(Slice(image), &st, &why)) {
+-        for (const auto& e : st.tables) {
+-          if (e.second.level == 0) ++p.l0_at_end;
+-        }
++        // BM111: the condition the number is true under is not reported.
++        (void)st;
+       }
+     }
+ 
