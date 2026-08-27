@@ -153,6 +153,7 @@ add_library(rift_rig STATIC
   rig/exactness_oracle.cc
   rig/sweep.cc
   rig/amplification.cc
+  rig/differential_artifact.cc
 )
 target_include_directories(rift_rig PUBLIC rig src src/env src/env/test src/wal src/sst src/memtable)
 target_link_libraries(rift_rig PUBLIC rift_testenv)
@@ -188,6 +189,7 @@ add_executable(rift_engine_test
   test/compaction_test.cc
   test/db_compaction_test.cc
   test/amplification_test.cc
+  test/differential_artifact_test.cc
 )
 # rift_rig carries rift_testenv which carries rift_engine, both PUBLIC-ly;
 # naming any of them again makes the linker warn about a duplicate archive.
