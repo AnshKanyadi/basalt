@@ -5,10 +5,25 @@
 # control-lane: cpp-build
 # expect-control: alive
 #
-# THIS PATCH IS BUG-004 EXACTLY, PRESERVED. It was the first implementation, and
-# it is the shape a careful reader reaches by simplifying: the tombstone test
-# looks independent of `s`, so it gets hoisted out of the loop and made once at
-# the interval's top.
+# THIS PATCH IS BUG-004 EXACTLY, PRESERVED -- AND WHAT IT PRESERVES IS THE
+# SIMPLIFICATION, NOT THE INVARIANT.
+#
+# THE SPECIFIC EDIT THAT PRODUCES IT, so a refactorer recognises their own hand:
+#
+#   "NewestCoveringTombstone(tombstones, user_key, s) does not obviously depend
+#    on the loop, and calling it once per observable sequence is O(|S|) work
+#    inside a hot loop. Hoist it out. Use the interval's top as the sequence,
+#    since that is the most a reader could see."
+#
+# Every clause of that is reasonable and the conclusion is wrong. The call DOES
+# depend on `s` -- `s` is the sequence AT WHICH the tombstone must be visible --
+# and a tombstone at 9 is invisible to a snapshot at 5 even though both lie
+# inside a version-at-4's interval.
+#
+# STATING THE EDIT AND NOT ONLY THE RULE IS THE POINT. A refactorer believes
+# they are preserving the invariant -- "a version hidden by a tombstone is not
+# required" -- and they are. What they are not preserving is WHICH SEQUENCE THE
+# QUESTION IS ASKED AT, which the invariant's wording does not mention.
 #
 # It conflates two different sequences. A snapshot at 5 and a tombstone at 9 are
 # both "inside the interval" of a version at 4 -- and the tombstone is INVISIBLE

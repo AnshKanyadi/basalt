@@ -144,6 +144,10 @@ Status RunCompaction(MergedIter* input, const std::vector<SeqNum>& observable,
       // SAME `s`. It must be the newest version at `s` (the interval test), and
       // no tombstone visible AT THAT `s` may hide it.
       //
+      // DO NOT HOIST THE TOMBSTONE CALL OUT OF THIS LOOP. It looks independent
+      // of `s` and is not: `s` is THE SEQUENCE AT WHICH THE TOMBSTONE MUST BE
+      // VISIBLE. `BM105` is that exact edit, preserved as a class.
+      //
       // THE PER-SEQUENCE TEST IS THE WHOLE POINT, AND THE FIRST IMPLEMENTATION
       // GOT IT WRONG. It asked whether a tombstone covered the key at the TOP
       // of the interval, which conflates two different sequences: a snapshot at
