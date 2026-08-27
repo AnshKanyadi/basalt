@@ -309,3 +309,15 @@ BM105-clause-one-ignores-the-snapshot-below | covered-by: Compaction.ASnapshotBe
 BM106-retire-deletes-while-a-reader-holds | covered-by: FileLifetime.AnInputFileOutlivesTheCompactionWhileASnapshotHoldsIt | 0 | determined at B3.6 by induction | THE PRE-B3.6 BEHAVIOUR PRESERVED AS A CLASS. Not obviously wrong -- it was the engine through all of B3.5, and every read still returns the right answer, because table.h holds the image resident so the bytes outlive the directory entry. That is exactly why it is planted: GF-25 says only an assertion about the MECHANISM can tell you, and the covering test asserts THE FILE IS ON DISK rather than that the read succeeds. A suite of read-through-the-snapshot tests passes against this patch. | default | 0
 BM107-obsolete-collected-while-still-held | covered-by: FileLifetime.AnInputFileOutlivesTheCompactionWhileASnapshotHoldsIt | 0 | determined at B3.6 by induction | The half a reviewer's eye would pass: the obsolete list EXISTS and is used, and simply does not decide anything. A structure that is built and then not consulted is the shape a reader trusts most. Different window from BM106, same outcome -- a file deleted while a reader still holds it. | default | 0
 BM108-obsolete-never-collected | covered-by: FileLifetime.WithNoReaderTheInputFilesGoImmediately | 0 | determined at B3.6 by induction | GF-14's other half. Keeping every file forever is perfectly SAFE -- every read correct, no snapshot losing anything -- and is a disk leak that grows with every compaction. Without this class, "the file outlives its reader" could be satisfied by an engine that never deletes anything, and no test would say otherwise: a retention claim needs its reclamation half or it is a claim about doing nothing. | default | 0
+
+# ------------------------------------------------------------ B3.7: `compact`
+#
+# THE THIRD REGIME'S POWER, MEASURED RATHER THAN ASSUMED. A sweep that visits a
+# path proves the engine recovers there; it says nothing about whether the
+# sweep could DETECT a defect there. These rows are what make `compact`'s green
+# mean something -- "power is measured last, once the shape stops moving", and
+# a lane whose sensitivity is unmeasured is the shape section 7.5 warns about
+# one level up.
+#
+# The floors below are placeholders until the first measurement fills them in;
+# `cpp-campaign` prints the measured value and fails if a row is missing.

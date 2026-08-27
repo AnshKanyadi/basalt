@@ -75,7 +75,19 @@ struct SweepResult {
 // Comparing a number from one against a floor from the other would be the
 // aggregation section 8.4 forbids, which is why the regime is named in the
 // output and in FLOORS.txt rather than left to whoever reads the log.
-enum class SweepRegime : uint8_t { kDefault, kFlush };
+// THREE REGIMES, AND THE THIRD WAS DECIDED BY MEASUREMENT (§8.2a).
+//
+// Reaching the COMPACTION trigger needs four flushes, which is roughly four
+// times the `flush` regime's whole workload. Folding that into `flush` would
+// have multiplied its kill-point count -- the DENOMINATOR OF EVERY RATE in
+// FLOORS.txt -- and diluted every B2 class measured against it, for no reason
+// except that one workload happened to reach two paths.
+//
+// A separate regime leaves `default` and `flush` byte-identical, so their
+// counts and rates are untouched and no floor moves. §8.4's rule needs no
+// extension: numbers from different regimes never aggregate, which is why
+// adding one is cheaper than growing one.
+enum class SweepRegime : uint8_t { kDefault, kFlush, kCompact };
 const char* SweepRegimeName(SweepRegime r);
 wal::Caps CapsFor(SweepRegime r);
 

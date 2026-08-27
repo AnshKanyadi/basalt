@@ -19,8 +19,11 @@ int main(int argc, char** argv) {
   if (argc > 1) {
     if (std::strcmp(argv[1], "flush") == 0) {
       regime = rift::rig::SweepRegime::kFlush;
+    } else if (std::strcmp(argv[1], "compact") == 0) {
+      regime = rift::rig::SweepRegime::kCompact;
     } else if (std::strcmp(argv[1], "default") != 0) {
-      std::printf("   FAIL  unknown regime \"%s\"; expected default or flush\n", argv[1]);
+      std::printf("   FAIL  unknown regime \"%s\"; expected default, flush or compact\n",
+                  argv[1]);
       return 2;
     }
   }

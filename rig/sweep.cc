@@ -27,7 +27,11 @@ const char* kDir = "db";
 // a sweep over a single-batch group cannot tell a group boundary from a batch
 // boundary and would pass BM15 without noticing.
 struct Driver {
-  DB* db;
+  // DESIGNATED-INITIALISED AT EVERY CALL SITE, not positional. Adding a member
+  // to a positionally-initialised aggregate is a silent reordering waiting to
+  // happen -- and `-Wmissing-field-initializers` caught this one, which is the
+  // warning doing the job a convention would have had to.
+  DB* db = nullptr;
   SubmissionLog log;
   bool alive = true;
   // The Env ordinal at which the current Sync began, so the harness can ask
@@ -48,6 +52,23 @@ struct Driver {
     log.NoteWrite({c});
     log.NoteDurableSeq(static_cast<OracleSeq>(db->DurableSeq()));
   }
+  // A SNAPSHOT HELD ACROSS PART OF THE WORKLOAD. It is not in the submission
+  // log and does not need to be: the oracle judges what a RECOVERED state
+  // holds, and a snapshot is a live-process object that no crash preserves.
+  // What it changes is the ENGINE'S path -- with a reader holding them, the
+  // compaction's input files go on the obsolete list instead of being deleted
+  // in place -- and that path is what the sweep is here to visit.
+  std::unique_ptr<Snapshot> snapshot;
+  void TakeSnapshot() {
+    if (!alive) return;
+    snapshot = db->NewSnapshot();
+  }
+  void ReleaseSnapshot() {
+    if (snapshot == nullptr) return;
+    (void)snapshot->Close();
+    snapshot.reset();
+  }
+
   void Sync() {
     if (!alive) return;
     if (env != nullptr) sync_start_ordinal = env->ordinal();
@@ -82,7 +103,16 @@ void Workload(Driver* d, SweepRegime regime) {
   d->Sync();
   d->Put("f", "6");
   d->Sync();
-  if (regime != SweepRegime::kFlush) return;
+  // THE FLUSH TAIL RUNS FOR BOTH REGIMES THAT FLUSH, and the guard says so by
+  // NAMING THEM rather than by excluding one. Written `!= kFlush` when there
+  // were two regimes, it read as "only the flush regime continues" and silently
+  // returned for `compact` the moment a third arrived -- so the compaction
+  // sweep ran the six-key default workload and reported 305 kill points with a
+  // census containing no compaction at all.
+  //
+  // A GUARD PHRASED AS "NOT THE OTHER ONE" IS A GUARD THAT CHANGES MEANING WHEN
+  // A THIRD APPEARS.
+  if (regime == SweepRegime::kDefault) return;
   // Enough to cross kFlushBytes at the flush regime's setting, so that the
   // Sync below runs a flush and every Env call it makes becomes a kill point.
   const std::string filler(256, 'x');
@@ -93,6 +123,31 @@ void Workload(Driver* d, SweepRegime regime) {
   }
   d->Sync();
   d->Put("after-the-flush", "1");
+  d->Sync();
+  if (regime != SweepRegime::kCompact) return;
+
+  // THREE MORE FLUSHES, so the fourth crosses the L0 compaction trigger and
+  // every Env call the compaction makes becomes a kill point: the output
+  // tables, their directory sync, the manifest group, its directory sync, and
+  // the input deletions.
+  //
+  // A SNAPSHOT IS HELD ACROSS IT, and that is not decoration. Without a live
+  // snapshot the drop rule reclaims everything and the input files are deleted
+  // inside the compaction; with one, they go on the obsolete list and are
+  // collected later -- so both halves of B3.6's file lifetime are on the swept
+  // path rather than only the easy one.
+  d->TakeSnapshot();
+  for (int round = 0; round < 3; ++round) {
+    for (int i = 0; i < 40; ++i) {
+      char key[16];
+      std::snprintf(key, sizeof key, "c%d%03d", round, i);
+      d->Put(key, filler);
+    }
+    d->Sync();
+  }
+  d->ReleaseSnapshot();
+  d->Sync();
+  d->Put("after-the-compaction", "1");
   d->Sync();
 }
 
@@ -171,6 +226,7 @@ const char* SweepRegimeName(SweepRegime r) {
   switch (r) {  // NO default: arm
     case SweepRegime::kDefault: return "default";
     case SweepRegime::kFlush:   return "flush";
+    case SweepRegime::kCompact: return "compact";
   }
   RIFT_UNREACHABLE("SweepRegime holds a value no enumerator names");
 }
@@ -186,6 +242,13 @@ wal::Caps CapsFor(SweepRegime r) {
       // batch that happened to trip the threshold.
       c.flush_bytes = 8u * 1024;
       return c;
+    case SweepRegime::kCompact:
+      // THE SAME THRESHOLD AS `flush`, DELIBERATELY. What differs between the
+      // two regimes is the WORKLOAD -- how many times it crosses the threshold
+      // -- and not the caps. Changing both would leave nothing to attribute a
+      // difference to.
+      c.flush_bytes = 8u * 1024;
+      return c;
   }
   RIFT_UNREACHABLE("SweepRegime holds a value no enumerator names");
 }
@@ -194,7 +257,9 @@ uint64_t WorkloadOrdinalCount(SweepRegime regime) {
   TestEnvironment probe;
   std::unique_ptr<DB> db;
   if (!DB::Open(probe.env(), kDir, CapsFor(regime), &db).ok()) return 0;
-  Driver d{db.get(), {}, true, &probe, 0};
+  Driver d;
+  d.db = db.get();
+  d.env = &probe;
   Workload(&d, regime);
   return probe.ordinal();
 }
@@ -246,7 +311,9 @@ SweepResult RunSweep(SweepRegime regime) {
         const Status open = DB::Open(t.env(), kDir, caps, &db);
         if (open.ok()) {
           opened = true;
-          Driver d{db.get(), {}, true, &t, 0};
+          Driver d;
+          d.db = db.get();
+          d.env = &t;
           Workload(&d, regime);
           log = d.log;
           sync_start_ordinal = d.sync_start_ordinal;
