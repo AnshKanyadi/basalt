@@ -1,21 +1,27 @@
 /* THE C BOUNDARY. extern "C", error codes, and no C++ type crosses.
  *
  * ---------------------------------------------------------------------------
- * NO EXCEPTION CROSSES THIS BOUNDARY, AND IT IS ENFORCED RATHER THAN PROMISED.
+ * NO EXCEPTION CROSSES THIS BOUNDARY, AND THE ENFORCEMENT IS THE COMPILER.
  *
  * An exception unwinding through a C frame into Go is undefined behaviour, and
  * the failure is not a crash at the boundary -- it is a corrupted Go stack,
- * diagnosed anywhere. Every entry point below is wrapped in a catch-all that
- * converts to RIFT_INTERNAL.
+ * diagnosed anywhere.
  *
- * THE CATCH IS A BACKSTOP AND NOT THE DESIGN. It converts an exception into a
- * code and LOSES WHAT IT WAS, so the engine's own discipline stands: this
- * engine does not throw, RIFT_CHECK aborts rather than throws, and Status is
- * the error channel everywhere. The catch is for std::bad_alloc and for a
- * future contributor.
+ * THIS ARCHIVE IS BUILT `-fno-exceptions`, so there is nothing to catch: throw
+ * does not compile, try does not compile, and operator new ABORTS rather than
+ * throwing. A catch-all would have been WEAKER -- it converts an exception into
+ * a code and loses what the exception was, and a boundary that reports
+ * RIFT_INTERNAL for everything is one where every failure looks the same.
+ *
+ * The flag is asserted by `cpp-scan` part 7, because nothing in this file can
+ * assert its own build. See DESIGN-B5 section 2.1 and BUGS.md GF-32.
  *
  * ---------------------------------------------------------------------------
- * BUFFER OWNERSHIP, AND THE RULE THAT MAKES cgo's POINTER RULE UNVIOLATABLE.
+ * BUFFER OWNERSHIP, AND THE RULE THAT MAKES cgo's POINTER RULE UNVIOLATABLE
+ * BY SHAPE RATHER THAN BY DISCIPLINE -- which is the strongest available form
+ * of it, and worth noting because MOST cgo CODEBASES HOLD THIS RULE BY
+ * CONVENTION: a comment saying "do not retain this", and a reviewer who
+ * remembers.
  *
  * C may not store a Go pointer beyond the call. The design that CANNOT violate
  * that is the one where C never receives a Go pointer it could store:
