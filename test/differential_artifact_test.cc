@@ -501,17 +501,58 @@ std::string ReadFixture(const std::string& name) {
   return std::string();
 }
 
-TEST(DiffFixtures, TheLegalOnesAreAccepted) {
-  for (const char* name : {"legal-minimal.diff", "legal-every-op.diff",
-                           "legal-unjudged.diff"}) {
+// THE VALUES, NOT MERELY THAT THE BYTES PARSE -- and the difference is the
+// whole point of the pair.
+//
+// The first version of this test asserted only `ok()`. `BM112` swaps two
+// provenance fields in BOTH C++ ends, so the bytes still parse perfectly and
+// the wrong string lands in the wrong field: THIS TEST PASSED. A shared-fixture
+// check that asks "does it parse?" cannot catch a disagreement about what the
+// bytes MEAN, which is the only disagreement it exists for.
+//
+// It is GF-25 in the fixture corpus: an assertion about the OUTCOME where one
+// about the CONTENT was needed.
+//
+// The expected values are from `seeds/differential/format/README.md`'s
+// generator -- written in the document's terms, not read back from either
+// decoder.
+TEST(DiffFixtures, TheLegalOnesAreAcceptedAndSayWhatTheDocumentSaysTheySay) {
+  const std::string image = ReadFixture("legal-minimal.diff");
+  ASSERT_FALSE(image.empty()) << "fixture not found -- a pair whose shared "
+                                 "fixtures are absent is two decoders nobody "
+                                 "has compared";
+  DiffArtifact a;
+  const DiffCheck v = ParseDiffArtifact(Slice(image), &a);
+  ASSERT_TRUE(v.ok()) << DiffFaultName(v.fault) << " " << v.why;
+
+  // Field by field, in the order the format declares them: a swap of any two
+  // fails here even though the bytes are structurally perfect.
+  EXPECT_EQ("abc123", a.provenance.engine_commit);
+  EXPECT_EQ("def456", a.provenance.model_commit);
+  EXPECT_EQ("flush", a.provenance.regime);
+  EXPECT_EQ(7u, a.provenance.seed);
+  EXPECT_EQ(4194304u, a.provenance.flush_bytes);
+  EXPECT_EQ(268435456u, a.provenance.wal_buffer_bytes);
+  EXPECT_EQ(33554432u, a.provenance.max_record_bytes);
+  ASSERT_EQ(1u, a.submission.size());
+  EXPECT_EQ(DiffOpKind::kSet, a.submission[0].kind);
+  EXPECT_EQ(1u, a.submission[0].seq);
+  EXPECT_EQ("a", a.submission[0].key);
+  EXPECT_EQ("1", a.submission[0].value);
+  EXPECT_EQ(1u, a.watermark);
+  ASSERT_EQ(1u, a.recovered.size());
+  EXPECT_EQ("1", a.recovered.at("a"));
+  EXPECT_EQ(DiffOutcome::kAgree, a.outcome);
+}
+
+TEST(DiffFixtures, TheOtherLegalOnesParse) {
+  for (const char* name : {"legal-every-op.diff", "legal-unjudged.diff"}) {
     const std::string image = ReadFixture(name);
-    ASSERT_FALSE(image.empty()) << "fixture " << name << " not found -- a pair "
-                                   "whose shared fixtures are absent is two "
-                                   "decoders nobody has compared";
+    ASSERT_FALSE(image.empty()) << "fixture " << name << " not found";
     DiffArtifact a;
     const DiffCheck v = ParseDiffArtifact(Slice(image), &a);
     EXPECT_TRUE(v.ok()) << name << ": " << DiffFaultName(v.fault) << " " << v.why;
-    EXPECT_FALSE(a.provenance.regime.empty()) << name;
+    EXPECT_EQ("flush", a.provenance.regime) << name;
   }
 }
 

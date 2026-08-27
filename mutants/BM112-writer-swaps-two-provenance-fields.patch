@@ -1,0 +1,49 @@
+# id: BM112-writer-swaps-two-provenance-fields
+# blinds: THE TWO DECODERS AGREEING ABOUT WHAT THE BYTES MEAN
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# THE CLASS THE TWO-DECODER PAIR EXISTS FOR, and the one that makes it worth its
+# cost. IT SWAPS BOTH C++ ENDS -- writer and reader together -- so the C++ side
+# agrees with itself perfectly. The round trip passes. Every structural check
+# passes: the lengths are right, the section parses, the checksum covers it.
+#
+# WHAT IS LOST IS THAT THE TWO LANGUAGES MEAN THE SAME THING BY THE SAME BYTES.
+# An artifact this writer produces names the model's commit where the format
+# says the engine's goes, so a divergence recorded against it points at the
+# wrong pair of commits -- and nothing about the file is malformed.
+#
+# A ONE-SIDED SWAP WOULD HAVE BEEN CAUGHT BY THE ROUND TRIP ALONE, which is one
+# implementation catching itself and demonstrates nothing about the pair. This
+# one is caught by `DiffFixtures.*` -- the HAND-BUILT BYTES, made from the
+# document rather than from either implementation -- and it is what the Go
+# decoder would catch too.
+#
+# A SECOND IMPLEMENTATION THAT CANNOT BE SHOWN TO CATCH A DISAGREEMENT IS NOT
+# BUYING WHAT IT COSTS. This is the demonstration.
+--- a/engine-cpp/rig/differential_artifact.cc
++++ b/engine-cpp/rig/differential_artifact.cc
+@@ -146,8 +146,9 @@
+   // one run are byte-identical.
+   {
+     std::string p;
+-    PutStr(&p, a.provenance.engine_commit);
++    // BM112: the writer emits two fields in the other order...
+     PutStr(&p, a.provenance.model_commit);
++    PutStr(&p, a.provenance.engine_commit);
+     PutStr(&p, a.provenance.regime);
+     PutU64(&p, a.provenance.seed);
+     PutU64(&p, a.provenance.flush_bytes);
+@@ -272,7 +273,9 @@
+     switch (static_cast<DiffSection>(kind)) {  // NO default: arm
+       case DiffSection::kProvenance: {
+         DiffProvenance& v = out->provenance;
+-        if (!c.Str(&v.engine_commit) || !c.Str(&v.model_commit) ||
++        // ...AND THE READER EXPECTS THEM THAT WAY, so the C++ side agrees
++        // with itself perfectly and only the shared fixtures disagree.
++        if (!c.Str(&v.model_commit) || !c.Str(&v.engine_commit) ||
+             !c.Str(&v.regime) || !c.U64(&v.seed) ||
+             !c.U64(&v.flush_bytes) || !c.U64(&v.wal_buffer_bytes) ||
+             !c.U64(&v.max_record_bytes) || !c.Done()) {
