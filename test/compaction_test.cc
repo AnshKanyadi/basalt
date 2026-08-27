@@ -383,6 +383,60 @@ TEST(RangeModel, TheNewestCoveringTombstoneDecidesAndNotTheLastSubmitted) {
   EXPECT_TRUE(m.Required().empty()) << "9 shadows the value; 5 does not undo it";
 }
 
+// A VERSION A TOMBSTONE HIDES AT THE TOP IS STILL REQUIRED BY A SNAPSHOT BELOW
+// THE TOMBSTONE. Judged by the drop adjudicator, which computes `Required()`
+// from the harness's submission log and never from the engine.
+// A VERSION A TOMBSTONE HIDES AT THE TOP IS STILL REQUIRED BY A SNAPSHOT BELOW
+// THE TOMBSTONE, and this is the assertion that found clause 1 wrong.
+//
+// The first implementation asked whether a tombstone covered the key at the TOP
+// of the version's interval, which conflates two different sequences: a
+// snapshot at 5 and a tombstone at 9 are both "in the interval" of a version at
+// 4, and the tombstone IS INVISIBLE TO THE SNAPSHOT. The version is the answer
+// at 5 and was being dropped -- data loss for that snapshot, masked in every
+// end-to-end test because the snapshot holds the pre-compaction tables
+// resident and reads through them.
+TEST(Compaction, ASnapshotBelowARangeTombstoneKeepsTheVersionItHides) {
+  // "a"@8 carries the top sequence so THE WATERMARK PIN CANNOT FIRE ON "b" --
+  // otherwise this test would be watching the pin and calling it clause 1,
+  // which is the shape GF-16 already names.
+  const std::vector<std::vector<Cell>> in = {
+      {{"a", 8, false, "top"}, {"b", 4, false, "old"}}};
+  const std::vector<SeqNum> s = {5, 10};   // a snapshot at 5, current at 10
+  CompactionTombstone t;
+  t.start = "b";
+  t.end = "c";
+  t.seq = 9;                                // above the snapshot at 5
+
+  auto env = std::unique_ptr<TestEnvironment>(new TestEnvironment());
+  EXPECT_TRUE(env->env()->CreateDir(kDir).ok());
+  const std::string bytes = TableBytes(in[0]);
+  const std::string path = sst::TablePath(kDir, 1);
+  WritableFilePtr f;
+  EXPECT_TRUE(env->env()->NewWritableFile(path, &f).ok());
+  EXPECT_TRUE(f->Append(Slice(bytes)).ok());
+  EXPECT_TRUE(f->Sync().ok());
+  EXPECT_TRUE(f->Close().ok());
+  std::shared_ptr<sst::Table> opened;
+  EXPECT_TRUE(sst::Table::Open(env->env(), path, 1, &opened).ok());
+
+  MergedIter merge;
+  merge.AddTable(opened.get());
+  const std::string out_path = sst::TablePath(kDir, 2);
+  WritableFilePtr out;
+  EXPECT_TRUE(env->env()->NewWritableFile(out_path, &out).ok());
+  sst::TableBuilder b(out.get());
+  OneFile sink(&b);
+  CompactionStats stats;
+  EXPECT_TRUE(RunCompaction(&merge, s, true, 8, opened->check().entries, {t},
+                            &sink, &stats)
+                  .ok());
+  EXPECT_EQ(0u, stats.pinned) << "the pin must not be what keeps anything here";
+  EXPECT_EQ(2u, stats.emitted)
+      << "the snapshot at 5 sees v@4: the tombstone at 9 is not visible to it, "
+         "so the value is the ANSWER at 5 and must survive";
+}
+
 // ------------------------------------------------------- B3-D7a's two halves
 
 // THE TERMINATION ASSERTION, AND ITS BOUND IS EXACT. A correct compaction
