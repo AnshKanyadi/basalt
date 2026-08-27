@@ -42,6 +42,15 @@ int main(int argc, char** argv) {
   if (model != nullptr) o.model_commit = model;
 
   const rift::rig::DiffArtifact a = rift::rig::RunDifferential(o);
+  if (!a.reopen_error.empty()) {
+    // THE REOPEN FAILED, so there is no recovered state to judge. Reporting it
+    // here rather than emitting an artifact claiming an empty recovery is the
+    // difference between "the engine lost everything" and "the rig could not
+    // ask" -- HARNESS-006's distinction, and the rig must not blame the engine
+    // for its own inability to look.
+    std::fprintf(stderr, "REOPEN FAILED: %s\n", a.reopen_error.c_str());
+    return 3;
+  }
   const std::string bytes = rift::rig::EncodeDiffArtifact(a);
   std::fwrite(bytes.data(), 1, bytes.size(), stdout);
   return 0;

@@ -415,6 +415,50 @@ TEST(SstWriter, AFiniteTombstoneLeavesTheUnboundedFlagClear) {
   EXPECT_FALSE(v.unbounded_end);
 }
 
+// MINIMAL REPRODUCTION of the divergence the B4 differential rig found on its
+// first outing: the WRITER records bounds the CLASSIFIER does not derive, so
+// `VerifyTables` refuses the Open.
+//
+// THE SHAPE: a range tombstone whose END USER KEY EQUALS the table's largest
+// data user key, at a LOWER sequence.
+//
+//   internal order is user key ascending, TAG DESCENDING -- so at one user key
+//   a smaller tag sorts LATER. The writer compares INTERNAL keys, sees the
+//   tombstone's end as "greater", and widens `largest_` to it. The classifier
+//   compares USER KEYS -- which section 6.1a says is correct, because the bound
+//   is a statement about user keys -- sees them equal, and does not widen.
+//
+// The manifest then records the writer's bound and is held to the classifier's,
+// and every Open fails with "key bounds disagree with the manifest".
+TEST(SstWriter, ATombstoneEndingAtTheLargestDataKeyDoesNotMoveTheBound) {
+  testenv::TestEnvironment t;
+  ASSERT_TRUE(t.env()->CreateDir("w").ok());
+  const std::string path = "w/000001.sst";
+  WritableFilePtr f;
+  ASSERT_TRUE(t.env()->NewWritableFile(path, &f).ok());
+  const std::string k = IKey("m", 9);          // data at "m", sequence 9
+  std::string builder_largest;
+  {
+    TableBuilder b(f.get());
+    b.Add(Slice(k), Slice("v"));
+    // The tombstone ENDS at "m" -- the same user key -- with a LOWER sequence.
+    b.AddRangeTombstone(Slice("a"), Slice("m"), RangeTag(4));
+    ASSERT_TRUE(b.Finish().ok());
+    builder_largest = b.largest().ToString();
+  }
+  ASSERT_TRUE(f->Sync().ok());
+  ASSERT_TRUE(f->Close().ok());
+
+  const std::string image = t.ContentNow(path);
+  const TableCheck v = ValidateTable(Slice(image));
+  ASSERT_TRUE(v.ok()) << TableFaultName(v.fault) << ": " << v.why;
+
+  EXPECT_EQ(v.largest_key, builder_largest)
+      << "the writer and the classifier disagree about this table's largest "
+         "key, so the manifest records one and is held to the other, and every "
+         "Open fails with \"key bounds disagree with the manifest\"";
+}
+
 }  // namespace
 }  // namespace sst
 }  // namespace rift

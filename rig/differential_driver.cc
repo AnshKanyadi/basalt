@@ -203,9 +203,19 @@ DiffArtifact RunDifferential(const DiffRunOptions& o) {
   std::unique_ptr<testenv::TestEnvironment> re =
       testenv::TestEnvironment::FromImage(t.Image(), testenv::FaultPlan());
   std::unique_ptr<DB> reopened;
-  if (DB::Open(re->env(), kDir, caps, &reopened).ok()) {
+  const Status opened = DB::Open(re->env(), kDir, caps, &reopened);
+  if (opened.ok()) {
     a.recovered = ExtractState(*reopened);
     (void)reopened->Close();
+  } else {
+    // A FAILED REOPEN IS NOT AN EMPTY RECOVERY, AND THE FIRST VERSION COULD NOT
+    // TELL THEM APART. It left `recovered` empty and the judge reported "the
+    // engine recovered nothing" -- which is a verdict about the ENGINE for what
+    // may be a defect in the RIG, and is HARNESS-006's shape exactly.
+    //
+    // A reopen that fails is a fact about the run, so it is recorded as one and
+    // the judge is told rather than left to infer.
+    a.reopen_error = opened.ToString();
   }
   // NO VERDICT. This side cannot reach one, and an artifact that carried a
   // verdict this side invented would be an engine judging itself.

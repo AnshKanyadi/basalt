@@ -154,6 +154,11 @@ struct DiffArtifact {
   std::map<std::string, std::string> recovered;
   DiffOutcome outcome = DiffOutcome::kUnrun;
   std::string why;
+  // NOT IN THE FORMAT, and deliberately: it is a diagnostic for the driver's
+  // own use, not a field an artifact carries. A reopen that fails means there
+  // is nothing to judge, and the driver reports it rather than emitting an
+  // artifact that says the engine recovered nothing.
+  std::string reopen_error;
 };
 
 // CLOSED. Every refusal in FORMAT-differential.md §3 has an enumerator, so a
