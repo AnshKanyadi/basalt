@@ -179,6 +179,18 @@ struct LedgerEntry {
   // `path` afterwards. This is the harness's own record of what was promised.
   uint64_t durable_bytes_after = 0;
   bool promoted = false;  // did this call advance any durable image?
+  // BYTES THIS CALL WAS ASKED TO WRITE, for an Append and zero otherwise.
+  //
+  // It is NOT `durable_bytes_after`, and the difference is what B3.7b's first
+  // instrument got wrong: `durable_bytes_after` is the SIZE OF THE FILE once a
+  // Sync has promoted it, so for an Append it is left at zero. Summing it over
+  // appends produced a write amplification of 0.00 -- a number that cannot be
+  // true, which is the only reason the broken instrument announced itself.
+  //
+  // Recorded here because write amplification is BYTES WRITTEN over BYTES
+  // SUBMITTED, and the harness must count the first from its own record of what
+  // the engine asked for rather than from anything the engine reports.
+  uint64_t append_bytes = 0;
 };
 
 // Exactly what a kill leaves on disk: for every path whose directory entry is

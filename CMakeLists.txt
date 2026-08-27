@@ -152,6 +152,7 @@ add_library(rift_rig STATIC
   rig/regime.cc
   rig/exactness_oracle.cc
   rig/sweep.cc
+  rig/amplification.cc
 )
 target_include_directories(rift_rig PUBLIC rig src src/env src/env/test src/wal src/sst src/memtable)
 target_link_libraries(rift_rig PUBLIC rift_testenv)
@@ -196,6 +197,10 @@ target_compile_definitions(rift_engine_test PRIVATE ${RIFT_SANITIZER_DEFINE})
 add_executable(rift_sweep cmd/sweep_main.cc)
 target_link_libraries(rift_sweep PRIVATE rift_rig)
 target_compile_options(rift_sweep PRIVATE ${RIFT_CXX_FLAGS})
+
+add_executable(rift_amp cmd/amp_main.cc)
+target_link_libraries(rift_amp PRIVATE rift_rig)
+target_compile_options(rift_amp PRIVATE ${RIFT_CXX_FLAGS})
 
 # The cpp-tsan lane runs THIS and not the unit suite (DESIGN-B1 section 6.4).
 add_executable(rift_tsan_harness

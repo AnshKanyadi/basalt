@@ -212,6 +212,12 @@ class TestEnvironment::Impl {
     return d;
   }
 
+  // Records the size of an Append, on the entry the call just made.
+  void RecordAppendBytes(uint64_t bytes) {
+    RIFT_CHECK(!ledger_.empty());
+    ledger_.back().append_bytes = bytes;
+  }
+
   // Records what a successfully returning call actually promoted. Called by the
   // file objects AFTER the implementation ran, so the ledger's promotion column
   // is the harness's own record of what was promised rather than a prediction.
@@ -460,6 +466,9 @@ class TestWritableFile final : public WritableFile {
   Status DoAppend(Slice data) override {
     FileState* f = impl_->Find(path_);
     if (f == nullptr) return Status::IoError("appending to a vanished file: " + path_);
+    // WHAT THE ENGINE ASKED TO WRITE, recorded from the call rather than
+    // inferred from a file size afterwards. See LedgerEntry::append_bytes.
+    impl_->RecordAppendBytes(data.size());
     f->buf.append(data.data(), data.size());
     return Status::Ok();
   }
