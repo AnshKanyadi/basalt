@@ -1,0 +1,45 @@
+# id: BM105-clause-one-ignores-the-snapshot-below
+# blinds: clause 1 asking about the tombstone AT EACH OBSERVABLE SEQUENCE
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# THIS PATCH IS BUG-004 EXACTLY, PRESERVED. It was the first implementation, and
+# it is the shape a careful reader reaches by simplifying: the tombstone test
+# looks independent of `s`, so it gets hoisted out of the loop and made once at
+# the interval's top.
+#
+# It conflates two different sequences. A snapshot at 5 and a tombstone at 9 are
+# both "inside the interval" of a version at 4 -- and the tombstone is INVISIBLE
+# to the snapshot. The version is the answer at 5, and this drops it: DATA LOSS
+# for a snapshot below a range delete.
+#
+# It is invisible to every end-to-end test, because a live snapshot holds the
+# pre-compaction tables RESIDENT and reads through them. The loss appears at the
+# next Open, after the snapshot is gone. Only a unit-level assertion on what the
+# compaction EMITTED can see it, which is why one exists.
+--- a/engine-cpp/src/compaction.cc
++++ b/engine-cpp/src/compaction.cc
+@@ -160,14 +160,19 @@
+       // unobservable too. Keeping one and dropping the other resurrects the
+       // value. So the rule must be neither too strict nor too loose, and it is
+       // stated per observable sequence because that is what the claim says.
++      // BM105: the tombstone test is made once, at the TOP of the interval,
++      // rather than at each observable sequence inside it.
+       keep = false;
+       for (SeqNum s : observable) {
+         if (s < seq) continue;
+-        if (s >= newer_seq) break;          // ascending, so nothing later fits
+-        if (NewestCoveringTombstone(tombstones, user_key, s) > seq) continue;
++        if (s >= newer_seq) break;
+         keep = true;
+         break;
+       }
++      if (keep) {
++        const SeqNum ceiling = newer_seq > kMaxSeqNum ? kMaxSeqNum : newer_seq - 1;
++        if (NewestCoveringTombstone(tombstones, user_key, ceiling) > seq) keep = false;
++      }
+     } else {
+       // CLAUSE 2, AND IT IS DELIBERATELY CONSERVATIVE. The tombstone drops when
+       // no observable sequence is below it, because then nothing older is in

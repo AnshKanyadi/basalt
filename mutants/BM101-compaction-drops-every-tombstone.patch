@@ -15,8 +15,8 @@
 # consistent, the checksums pass. The only evidence is a read.
 --- a/engine-cpp/src/db.cc
 +++ b/engine-cpp/src/db.cc
-@@ -1176,6 +1176,8 @@
-     // install -- and a `CompactionTombstone` owns its bounds for that reason.
+@@ -1177,6 +1177,8 @@
+     // -- and a `CompactionTombstone` owns its bounds for that reason.
      std::vector<CompactionTombstone> tombstones;
      const auto collect = [&tombstones](const sst::Table* t) {
 +      // BM101: the inputs' tombstones are not carried into the output.
