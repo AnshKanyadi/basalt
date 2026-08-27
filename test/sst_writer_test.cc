@@ -457,6 +457,52 @@ TEST(SstWriter, ATombstoneEndingAtTheLargestDataKeyDoesNotMoveTheBound) {
       << "the writer and the classifier disagree about this table's largest "
          "key, so the manifest records one and is held to the other, and every "
          "Open fails with \"key bounds disagree with the manifest\"";
+
+  // AND THE BOUND ITSELF MUST BE RIGHT, NOT MERELY AGREED ON.
+  //
+  // `BM113` SURVIVED THE ASSERTION ABOVE, and the survival is the finding:
+  // consolidating the rule into one predicate removed the DISAGREEMENT, and
+  // with it the instrument that detected one. Both sides now compare the same
+  // way, so they agree even when the way is wrong.
+  //
+  //   COLLAPSING TWO IMPLEMENTATIONS INTO ONE REMOVES A FAILURE CLASS AND
+  //   REMOVES THE INSTRUMENT THAT DETECTED IT. What is left has to be asserted
+  //   against the INVARIANT rather than against the other implementation.
+  //
+  // The invariant: the bound is a statement about USER KEYS. The tombstone ends
+  // at "m", the data's largest key is "m", so the bound does not move -- and it
+  // keeps the DATA entry's tag, not the tombstone's.
+  EXPECT_EQ("m", ExtractUserKey(Slice(v.largest_key)).ToString());
+  EXPECT_EQ(k, v.largest_key)
+      << "the bound moved to the tombstone's tag; a bound is a statement about "
+         "user keys and these two are the same user key";
+}
+
+// THE PREDICATE ITSELF, ASSERTED DIRECTLY. One implementation of one rule means
+// one place to hold to the rule -- and after BUG-006 that place is here rather
+// than in a comparison between two callers.
+TEST(SstWriter, BoundWideningIsAStatementAboutUserKeys) {
+  const std::string bound = IKey("m", 9);
+  // EQUAL USER KEYS NEVER WIDEN, whichever way the tags fall. Both tag
+  // directions are asserted, because a rule that compared internal keys would
+  // be right about one of them by accident.
+  EXPECT_FALSE(WidensUpperBound(Slice("m"), Slice(bound))) << "lower tag";
+  EXPECT_FALSE(WidensLowerBound(Slice("m"), Slice(bound))) << "lower tag";
+  const std::string high = IKey("m", 99);
+  EXPECT_FALSE(WidensUpperBound(Slice("m"), Slice(high))) << "higher tag";
+  EXPECT_FALSE(WidensLowerBound(Slice("m"), Slice(high))) << "higher tag";
+
+  // AND A GENUINELY WIDER USER KEY DOES WIDEN -- GF-14's other half, or the
+  // rule could be one that never widens anything.
+  EXPECT_TRUE(WidensUpperBound(Slice("z"), Slice(bound)));
+  EXPECT_TRUE(WidensLowerBound(Slice("a"), Slice(bound)));
+  EXPECT_FALSE(WidensUpperBound(Slice("a"), Slice(bound)));
+  EXPECT_FALSE(WidensLowerBound(Slice("z"), Slice(bound)));
+
+  // An absent bound is always widened, or a table's first tombstone would set
+  // nothing.
+  EXPECT_TRUE(WidensUpperBound(Slice("m"), Slice()));
+  EXPECT_TRUE(WidensLowerBound(Slice("m"), Slice()));
 }
 
 }  // namespace
