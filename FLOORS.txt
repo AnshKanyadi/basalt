@@ -28,7 +28,15 @@
 #   default  305    flush  990    compact  3545
 #
 # `compact` was ADDED at B3.7 rather than `flush` being grown, precisely so the
-# other two counts did not move -- see DESIGN-B3 section 8.2a. `default` read
+# other two counts did not move -- see DESIGN-B3 section 8.2a and GF-27: AN
+# EXTENSION THAT MULTIPLIES A REGIME'S KILL-POINT COUNT DILUTES EVERY CLASS
+# ALREADY MEASURED AGAINST IT, so the cost of extending a regime is paid by
+# every existing floor.
+#
+# AND A NEW REGIME IS NOT LANDED UNTIL AT LEAST ONE CLASS IS FLOORED AGAINST IT
+# (GF-26). A regime with no floor is a green whose SENSITIVITY IS UNKNOWN -- the
+# vacuous-green shape at regime granularity -- and a large kill-point count with
+# zero violations reads as thorough while proving only that the lane ran. `default` read
 # 300 at B2.7 and reads 305 now; the five extra calls arrived during B3 and are
 # recorded rather than absorbed. Every default-regime floor was set with margin
 # and holds at the new denominator, and the DETECTION COUNTS -- the bound a
