@@ -171,6 +171,16 @@ const sst::Table* L1FileFor(const std::vector<std::shared_ptr<sst::Table>>& l1,
   // at an output boundary leaves file i bounded by `[.., B)` and file i+1
   // starting at `B`; the binary search above finds file i for key B, and file i
   // does not contain it. Step past it.
+  //
+  // CF-3: the progress quantity is `lo`, AN INTEGER INDEX, bounded by
+  // `l1.size()` -- neither derived from the comparator nor from the exclusive
+  // flag, which are the two things this loop could be wrong about.
+  //
+  // ITS CORRECTNESS INSTRUMENT IS SEPARATE, per the two-instrument rule:
+  // `RangeDelete.ARangeSpanningOutputFilesIsSplitAndEveryPieceApplies` reads
+  // every key across a split run, and `Manifest.AdjacentLevelOneTablesAreARun`
+  // asserts the touching case is admitted at all. A loop that skipped too far
+  // would terminate cleanly and return the wrong file.
   while (lo < l1.size() && l1[lo]->check().largest_is_exclusive &&
          ExtractUserKey(Slice(l1[lo]->check().largest_key)).compare(key) == 0) {
     ++lo;

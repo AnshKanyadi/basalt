@@ -164,6 +164,10 @@ Status RunCompaction(MergedIter* input, const std::vector<SeqNum>& observable,
       // unobservable too. Keeping one and dropping the other resurrects the
       // value. So the rule must be neither too strict nor too loose, and it is
       // stated per observable sequence because that is what the claim says.
+      // CF-3: this loop's progress quantity is its POSITION IN `observable`, a
+      // vector fixed before the merge began and never modified inside it. It is
+      // independent of the tombstones, the drop rules and the comparator --
+      // every one of which this loop could be wrong about.
       keep = false;
       for (SeqNum s : observable) {
         if (s < seq) continue;

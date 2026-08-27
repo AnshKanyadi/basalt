@@ -59,6 +59,16 @@ AmpResult MeasureAmplification(const wal::Caps& caps,
     // DISTINCT KEYS, so `live_bytes` is what the database holds rather than
     // what was submitted: an overwrite-heavy workload would make space
     // amplification a statement about the overwrite rate.
+    // CF-3: the progress quantity is `p.live_bytes`, which rises by
+    // `k.size() + value.size()` -- A POSITIVE CONSTANT -- on every iteration.
+    // It is independent of the engine entirely: the harness counts what it
+    // SUBMITTED, so a bug in the engine cannot stall this loop, and a bug in
+    // this loop cannot be masked by one in the engine.
+    //
+    // ITS CORRECTNESS INSTRUMENT IS `AmpInstrument.*`, which asserts the
+    // numbers the loop produces are in the ranges only a working instrument can
+    // produce. Termination says the measurement ends; it says nothing about
+    // whether the number means anything.
     while (p.live_bytes < target) {
       const std::string k = KeyOf(i++);
       WriteBatch b;
