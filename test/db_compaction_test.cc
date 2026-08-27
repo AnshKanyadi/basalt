@@ -803,6 +803,119 @@ TEST(RangeDelete, AnUnboundedRangeIsSplitWithTheOpenPieceInTheLastFile) {
   ASSERT_TRUE(db->Close().ok());
 }
 
+// ------------------------------- B3.6: file lifetime by reference count
+//
+// THE ASSERTION IS ABOUT THE FILE, NOT ABOUT THE ANSWER. A snapshot reading
+// through a deleted file returns the right answer today because `table.h` holds
+// the image resident -- so a test that only read through the snapshot would
+// pass with or without the reference count. What is asserted is that THE FILE
+// IS STILL THERE while a reader holds it, and gone once the reader does not.
+
+TEST(FileLifetime, AnInputFileOutlivesTheCompactionWhileASnapshotHoldsIt) {
+  TestEnvironment t;
+  std::unique_ptr<DB> db;
+  ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+  FillAndFlush(db.get(), 0, 50);
+  const std::vector<std::string> inputs = Tables(&t);
+  ASSERT_EQ(1u, inputs.size());
+
+  std::unique_ptr<Snapshot> snap = db->NewSnapshot();
+  for (int round = 1; round < 4; ++round) FillAndFlush(db.get(), round * 50, 50);
+  ASSERT_EQ(0, LevelCounts(&t).first) << "the compaction ran";
+
+  // THE INPUT FILE IS STILL ON DISK, because the snapshot's Version holds it.
+  const std::vector<std::string> after = Tables(&t);
+  EXPECT_NE(after.end(), std::find(after.begin(), after.end(), inputs[0]))
+      << "an input file was deleted while a snapshot was still reading it; that "
+         "is correct today only because the bytes happen to be resident";
+
+  // AND IT GOES WHEN THE SNAPSHOT DOES.
+  ASSERT_TRUE(snap->Close().ok());
+  snap.reset();
+  SeqNum mark = 0;
+  ASSERT_TRUE(db->Sync(&mark).ok());
+  const std::vector<std::string> reclaimed = Tables(&t);
+  EXPECT_EQ(reclaimed.end(),
+            std::find(reclaimed.begin(), reclaimed.end(), inputs[0]))
+      << "the last reader is gone and the file was not reclaimed";
+  ASSERT_TRUE(db->Close().ok());
+}
+
+// GF-14: THE OTHER HALF. With no reader, an input file is deleted by the
+// compaction itself and never enters the obsolete list at all.
+TEST(FileLifetime, WithNoReaderTheInputFilesGoImmediately) {
+  TestEnvironment t;
+  std::unique_ptr<DB> db;
+  ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+  FillAndFlush(db.get(), 0, 50);
+  const std::vector<std::string> inputs = Tables(&t);
+  for (int round = 1; round < 4; ++round) FillAndFlush(db.get(), round * 50, 50);
+  ASSERT_EQ(0, LevelCounts(&t).first);
+  const std::vector<std::string> after = Tables(&t);
+  for (const std::string& in : inputs) {
+    EXPECT_EQ(after.end(), std::find(after.begin(), after.end(), in))
+        << in << " outlived a compaction nobody was reading through";
+  }
+  ASSERT_TRUE(db->Close().ok());
+}
+
+// AN ITERATOR COUNTS AS A READER TOO. `NewIter` was a NAMED GAP at B3.4 -- the
+// frozen interface promises pinning for `Snapshot` and says nothing about
+// `Iterator` -- and this is where it stops being a gap: the iterator holds its
+// Version, so it holds its files, and the count sees it.
+TEST(FileLifetime, AnOpenIteratorHoldsItsInputFilesToo) {
+  TestEnvironment t;
+  std::unique_ptr<DB> db;
+  ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+  FillAndFlush(db.get(), 0, 50);
+  const std::vector<std::string> inputs = Tables(&t);
+  ASSERT_EQ(1u, inputs.size());
+
+  std::unique_ptr<Iterator> it = db->NewIter(IterOptions());
+  ASSERT_TRUE(it->First());
+  for (int round = 1; round < 4; ++round) FillAndFlush(db.get(), round * 50, 50);
+  ASSERT_EQ(0, LevelCounts(&t).first);
+  const std::vector<std::string> after = Tables(&t);
+  EXPECT_NE(after.end(), std::find(after.begin(), after.end(), inputs[0]))
+      << "an iterator's input file was deleted underneath it";
+
+  // AND THE ITERATOR STILL WALKS, which is the answer half beside the file half.
+  //
+  // FIFTY, NOT TWO HUNDRED: an iterator captures its Version and its sequence
+  // when it is created, so it sees the database as it was then -- the later
+  // writes are invisible to it by construction. The first version of this test
+  // expected 200 and was asserting that an iterator is live rather than
+  // snapshotted, which is not what the frozen interface says.
+  int seen = 1;
+  while (it->Next()) ++seen;
+  EXPECT_EQ(50, seen) << "an iterator sees the database as of its creation";
+  ASSERT_TRUE(it->Close().ok());
+  ASSERT_TRUE(db->Close().ok());
+}
+
+// TWO COMPACTIONS UNDER ONE SNAPSHOT, which is B3-D5's stated gate: "a test that
+// takes a snapshot, compacts twice, and reads through it".
+TEST(FileLifetime, ASnapshotSurvivesTwoCompactionsAndReadsThroughThem) {
+  TestEnvironment t;
+  std::unique_ptr<DB> db;
+  ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+  FillAndFlush(db.get(), 0, 50);
+  std::unique_ptr<Snapshot> snap = db->NewSnapshot();
+  for (int round = 1; round < 8; ++round) FillAndFlush(db.get(), round * 50, 50);
+
+  std::string v;
+  const std::string k = KeyAt(7);
+  ASSERT_TRUE(snap->Get(Slice(k), &v).ok()) << "the snapshot lost its version";
+  EXPECT_EQ(Value(7, 512), v);
+  std::unique_ptr<Iterator> it = snap->NewIter(IterOptions());
+  int seen = 0;
+  for (bool ok = it->First(); ok; ok = it->Next()) ++seen;
+  EXPECT_EQ(50, seen) << "the snapshot sees exactly what it saw when taken";
+  ASSERT_TRUE(it->Close().ok());
+  ASSERT_TRUE(snap->Close().ok());
+  ASSERT_TRUE(db->Close().ok());
+}
+
 // ------------------------------------------------------- the Sync precondition
 //
 // SINGLE-CALLER, INDUCED IN BOTH DIRECTIONS (GF-14). One direction alone would

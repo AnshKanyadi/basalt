@@ -15,16 +15,19 @@
 // WHAT STILL DEPENDS ON RESIDENCY, STATED HONESTLY, because "no longer required
 // by X" is not "no longer required":
 //
-//   * A SNAPSHOT OR ITERATOR OUTLIVING A COMPACTION reads through tables whose
-//     FILES have been deleted (see db.cc, install step 5). That works only
-//     because the bytes are in memory. B3.6 replaces it with file lifetime by
-//     reference count, and until then it is the reason the deletion is safe.
+//   * A SNAPSHOT OR ITERATOR OUTLIVING A COMPACTION -- RETIRED AT B3.6, AND
+//     THIS IS WHAT THE ENTRY IS FOR. It used to read through tables whose FILES
+//     had been deleted, which worked only because the bytes were in memory:
+//     correctness by an argument whose premise moves. `db.cc` now keeps the
+//     FILE alive until the last reader drops its `shared_ptr`, so the read is
+//     correct because the file is there, not because the bytes happen to be.
 //   * `Table::NewestCovering` and the point path read blocks without an Env
-//     call, which every caller currently assumes.
+//     call, which every caller currently assumes. STILL TRUE, and it is what a
+//     block cache would have to preserve.
 //
-// So residency is now a PERFORMANCE AND LIFETIME property rather than a
-// correctness requirement of Apply, and the cost is unchanged: memory grows
-// with the live data set. The measurement that would move it is B5's, against
+// So residency is now a PERFORMANCE property and nothing else: no correctness
+// claim in this engine rests on it. The cost is unchanged -- memory grows with
+// the live data set -- and the measurement that would move it is B5's, against
 // a workload whose working set exceeds it.
 #ifndef RIFT_SST_TABLE_H_
 #define RIFT_SST_TABLE_H_

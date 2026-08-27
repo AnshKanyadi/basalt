@@ -802,6 +802,11 @@ class DBImpl final : public DB {
     // leaving L0 one file over until the next one.
     const Status c = MaybeCompact();
     if (!c.ok()) return c;
+    // AND ANY FILE WHOSE LAST READER HAS GONE. Here rather than at Close time,
+    // because a Close makes no Env call by contract and this is one -- and
+    // because `Sync` is the only blocking entry point the frozen interface has.
+    const Status o = DropObsolete();
+    if (!o.ok()) return o;
     if (!needed) return s;
     { wal::DbLock lock(mu_); *watermark = wal_->DurableSeq() > flushed_through_
                                               ? wal_->DurableSeq() : flushed_through_; }
@@ -876,6 +881,68 @@ class DBImpl final : public DB {
     v.l0 = l0_;
     v.l1 = l1_;
     return v;
+  }
+
+  // FILE LIFETIME BY REFERENCE COUNT -- B3.6, AND IT REPLACES AN ARGUMENT.
+  //
+  // Until now, deleting an input file while a snapshot still read through it
+  // was safe for ONE reason: `table.h` holds the whole image in memory, so the
+  // bytes outlive the directory entry. That is correctness by an argument whose
+  // premise moves (`GF-20`) -- and the mover is named: anything that reads a
+  // block on demand, which is the first thing a cache would do.
+  //
+  // THE COUNT IS `shared_ptr::use_count()`, NOT A SECOND COUNTER. Every reader
+  // already holds a `shared_ptr<Table>` for exactly as long as it may read:
+  // `Version` copies them under the lock, and a `Snapshot` or `Iterator` holds
+  // its `Version` for its whole life. A separate refcount would be a second
+  // source of truth about the same fact, and the two would drift.
+  //
+  // EVERY RETIRED TABLE GOES THROUGH `obsolete_`, AND THAT IS THE WHOLE POINT
+  // OF THE DESIGN RATHER THAN A DETOUR.
+  //
+  // The first version compared `use_count()` at the retirement site against a
+  // threshold worked out by reasoning: "`t` is one reference and the caller's
+  // vector is another, so above two is a reader." IT DOUBLE-COUNTED THE SAME
+  // REFERENCE -- `t` is a reference TO the vector's element, not a copy -- and
+  // the file was deleted with a snapshot still holding it.
+  //
+  //   A REFERENCE-COUNT THRESHOLD DERIVED BY REASONING ABOUT WHICH LOCALS
+  //   HAPPEN TO EXIST IS A NUMBER THAT CHANGES WHEN SOMEONE ADDS A VARIABLE.
+  //
+  // So there is exactly ONE place a count is taken and exactly ONE holder to
+  // subtract: `obsolete_` itself. `use_count() == 1` there means the list is
+  // the only holder. Nothing to derive, and adding a local anywhere else cannot
+  // move it.
+  //
+  // WHAT A CRASH DOES TO A FILE STILL WAITING: nothing that matters. The
+  // manifest edit removing it is already durable, so the next Open finds an
+  // UNNAMED `.sst` and deletes it as an orphan -- B2-D5 candidate (c), which
+  // this reuses rather than extends. A leaked file is removed by the next Open;
+  // a file deleted too early is a wrong answer.
+  void RetireTable(const std::shared_ptr<sst::Table>& t) {
+    wal::DbLock lock(mu_);
+    obsolete_.push_back(t);
+  }
+
+  // Deletes every obsolete file whose last reader has gone. Called where an Env
+  // call is already permitted -- never from a read path, which must make none.
+  Status DropObsolete() {
+    std::vector<std::shared_ptr<sst::Table>> ready;
+    {
+      wal::DbLock lock(mu_);
+      std::vector<std::shared_ptr<sst::Table>> still_held;
+      for (const auto& t : obsolete_) {
+        // One reference is `obsolete_`'s own; anything more is a live reader.
+        (t.use_count() > 1 ? still_held : ready).push_back(t);
+      }
+      obsolete_ = std::move(still_held);
+    }
+    if (ready.empty()) return Status::Ok();
+    for (const auto& t : ready) {
+      const Status s = env_->DeleteFile(sst::TablePath(dir_, t->number()));
+      if (!s.ok()) return s;
+    }
+    return SyncDir();
   }
 
   // AT MOST THE LAST FILE OF THE RUN MAY REACH TO INFINITY.
@@ -992,7 +1059,15 @@ class DBImpl final : public DB {
     // stays true if the inputs ever stop being frozen at selection time.
     const Status s = DoCompact(in_l0, in_l1, keep_l1, observable);
     { wal::DbLock lock(mu_); compacting_ = false; }
-    return s;
+    if (!s.ok()) return s;
+    // THE LOCAL INPUT VECTORS ARE RELEASED BEFORE THE COLLECTION, and that
+    // ordering is the whole reason this is here rather than inside DoCompact:
+    // while they are alive they are readers by `use_count`'s reckoning, and
+    // nothing could ever be collected in the same call.
+    in_l0.clear();
+    in_l1.clear();
+    keep_l1.clear();
+    return DropObsolete();
   }
 
   // ROLLS THE OUTPUT INTO A RUN OF BOUNDED FILES.
@@ -1346,7 +1421,12 @@ class DBImpl final : public DB {
       for (const sst::TableMeta& meta : outputs) mstate_.tables[meta.number] = meta;
     }
 
-    // 5. only now: the input files.
+    // 5. only now: the input files -- OR, IF ANYONE IS STILL READING THEM, a
+    //    record that they are obsolete and a deletion when the last reader
+    //    goes. See `ObsoleteFiles` below: B3.6 replaces "the bytes are
+    //    resident so deleting the file is safe" with a reference count, which
+    //    is what the frozen interface's "holds its version against compaction
+    //    until it is Closed" has always meant.
     //    A compaction that emits NOTHING leaves no output file at all -- the
     //    roller opens one on its first entry and never before -- which is the
     //    correct outcome for a key written and deleted with no snapshot below
@@ -1357,15 +1437,18 @@ class DBImpl final : public DB {
     //    THE WHOLE TABLE IS RESIDENT (table.h). That is a property B3.5 and
     //    B3.6 change, and file lifetime by reference count is B3.6's step. The
     //    DROP RULE does not rest on it -- see SnapshotRegistry.
-    for (const auto& t : in_l0) {
-      s = env_->DeleteFile(sst::TablePath(dir_, t->number()));
-      if (!s.ok()) return s;
-    }
-    for (const auto& t : in_l1) {
-      s = env_->DeleteFile(sst::TablePath(dir_, t->number()));
-      if (!s.ok()) return s;
-    }
-    return SyncDir();
+    for (const auto& t : in_l0) RetireTable(t);
+    for (const auto& t : in_l1) RetireTable(t);
+    // AND RECLAIMED IMMEDIATELY IF NOBODY IS READING. `DropObsolete` is called
+    // from `Sync` as well, which is what eventually collects a file whose
+    // reader outlives this call -- but a compaction nobody is reading through
+    // must not leave its inputs on disk until the next Sync, or `Tables()`
+    // never settles and the space is not reclaimed when it could be.
+    //
+    // THE CALLER'S `in_l0`/`in_l1` STILL HOLD REFERENCES AT THIS POINT, so
+    // these files are not yet collectable here -- they are collected by the
+    // `Sync` that follows, which is why the compaction path calls it below.
+    return DropObsolete();
   }
 
   // B2-D5's ordering, and there is only one correct one. Every adjacent pair
@@ -1606,6 +1689,9 @@ class DBImpl final : public DB {
   bool closed_ = false;
   bool compacting_ = false;
   std::atomic<bool> in_sync_{false};
+  // Tables the manifest no longer names, whose files are still on disk because
+  // a snapshot or iterator is still reading them. Guarded by `mu_`.
+  std::vector<std::shared_ptr<sst::Table>> obsolete_;
   std::shared_ptr<SnapshotRegistry> snapshots_ =
       std::make_shared<SnapshotRegistry>();
 };
