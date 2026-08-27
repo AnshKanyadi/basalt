@@ -1,0 +1,48 @@
+// usage: rift_diff <regime> <seed> [kill_ordinal] > artifact.diff
+//
+// Runs one differential schedule and writes an UNJUDGED artifact to stdout.
+// It reaches no verdict: reaching one requires engine/model, which is Go.
+//
+// THE COMMITS COME FROM THE ENVIRONMENT, NOT FROM THIS PROGRAM. `RIFT_ENGINE_COMMIT`
+// and `RIFT_MODEL_COMMIT` are set by the lane that runs it, because a binary
+// cannot know the commit it was built from without being rebuilt on every
+// commit -- and a stale constant compiled in would be worse than an absent one.
+// The format refuses an artifact naming no commit, so a lane that forgets to
+// set them produces a file the judge will not accept.
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <string>
+
+#include "differential_artifact.h"
+#include "differential_driver.h"
+
+int main(int argc, char** argv) {
+  if (argc < 3) {
+    std::fprintf(stderr, "usage: rift_diff <default|flush|compact> <seed> [kill_ordinal]\n");
+    return 2;
+  }
+  rift::rig::DiffRunOptions o;
+  if (std::strcmp(argv[1], "default") == 0) {
+    o.regime = rift::rig::DiffRegime::kDefault;
+  } else if (std::strcmp(argv[1], "flush") == 0) {
+    o.regime = rift::rig::DiffRegime::kFlush;
+  } else if (std::strcmp(argv[1], "compact") == 0) {
+    o.regime = rift::rig::DiffRegime::kCompact;
+  } else {
+    std::fprintf(stderr, "unknown regime \"%s\"\n", argv[1]);
+    return 2;
+  }
+  o.seed = std::strtoull(argv[2], nullptr, 10);
+  if (argc > 3) o.kill_ordinal = std::strtoull(argv[3], nullptr, 10);
+
+  const char* engine = std::getenv("RIFT_ENGINE_COMMIT");
+  const char* model = std::getenv("RIFT_MODEL_COMMIT");
+  if (engine != nullptr) o.engine_commit = engine;
+  if (model != nullptr) o.model_commit = model;
+
+  const rift::rig::DiffArtifact a = rift::rig::RunDifferential(o);
+  const std::string bytes = rift::rig::EncodeDiffArtifact(a);
+  std::fwrite(bytes.data(), 1, bytes.size(), stdout);
+  return 0;
+}
