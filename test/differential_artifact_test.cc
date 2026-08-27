@@ -41,10 +41,12 @@ void U64(std::string* o, uint64_t v) {
 void Str(std::string* o, const std::string& s) { U32(o, static_cast<uint32_t>(s.size())); o->append(s); }
 
 std::string Provenance(const std::string& engine = "abc123",
-                       const std::string& model = "def456") {
+                       const std::string& model = "def456",
+                       const std::string& regime = "flush") {
   std::string p;
   Str(&p, engine);
   Str(&p, model);
+  Str(&p, regime);
   U64(&p, 7);            // seed
   U64(&p, 4194304);      // flush_bytes
   U64(&p, 268435456);    // wal_buffer_bytes
@@ -129,6 +131,7 @@ TEST(DiffArtifact, AcceptsTheCanonicalArtifactAndReportsWhatItHolds) {
   ASSERT_TRUE(v.ok()) << DiffFaultName(v.fault) << ": " << v.why;
   EXPECT_EQ("abc123", a.provenance.engine_commit);
   EXPECT_EQ("def456", a.provenance.model_commit);
+  EXPECT_EQ("flush", a.provenance.regime);
   EXPECT_EQ(7u, a.provenance.seed);
   ASSERT_EQ(1u, a.submission.size());
   EXPECT_EQ(DiffOpKind::kSet, a.submission[0].kind);
@@ -291,8 +294,46 @@ TEST(DiffArtifact, RefusesDuplicateRecoveredKeys) {
   EXPECT_EQ(DiffFault::kRecoveredNotAscending, v.fault);
 }
 
+// THE REGIME IS REQUIRED, AND IT IS NOT DERIVABLE FROM THE CAPS BESIDE IT: the
+// `flush` and `compact` regimes share caps and differ in workload. Provenance
+// that is derivable-in-principle is provenance nobody derives.
+TEST(DiffArtifact, RefusesAnArtifactThatNamesNoRegime) {
+  std::vector<Section> s = Good();
+  s[0].payload = Provenance("abc123", "def456", "");
+  const std::string image = Assemble(s);
+  DiffArtifact a;
+  const DiffCheck v = Check(image, &a);
+  ASSERT_FALSE(v.ok());
+  EXPECT_EQ(DiffFault::kMissingRegime, v.fault);
+}
+
+// AN UNJUDGED ARTIFACT PARSES -- the driver cannot reach a verdict, because
+// reaching one requires the model, which is Go. The corpus gate is separate.
+TEST(DiffArtifact, AnUnjudgedArtifactParsesAndFailsTheCorpusGate) {
+  std::vector<Section> s = Good();
+  s[4].payload = Verdict(0);
+  DiffArtifact a;
+  const std::string image = Assemble(s);
+  const DiffCheck parsed = Check(image, &a);
+  ASSERT_TRUE(parsed.ok()) << DiffFaultName(parsed.fault) << ": " << parsed.why;
+  EXPECT_EQ(DiffOutcome::kUnrun, a.outcome);
+
+  const DiffCheck gate = RequireJudged(a);
+  EXPECT_FALSE(gate.ok()) << "an unjudged artifact must not enter the corpus";
+  EXPECT_EQ(DiffFault::kUnjudged, gate.fault);
+}
+
+// GF-14: THE OTHER HALF. A judged artifact passes the gate, or the gate could
+// be one that refuses everything.
+TEST(DiffArtifact, AJudgedArtifactPassesTheCorpusGate) {
+  DiffArtifact a;
+  const std::string image = Assemble(Good());
+  ASSERT_TRUE(Check(image, &a).ok());
+  EXPECT_TRUE(RequireJudged(a).ok());
+}
+
 TEST(DiffArtifact, RefusesAVerdictThatNamesNoEnumerator) {
-  for (uint8_t bad : {uint8_t{0}, uint8_t{5}, uint8_t{200}}) {
+  for (uint8_t bad : {uint8_t{5}, uint8_t{200}}) {
     std::vector<Section> s = Good();
     s[4].payload = Verdict(bad);
     const std::string image = Assemble(s);
@@ -382,6 +423,7 @@ TEST(DiffArtifact, WhatTheEncoderWritesIsWhatTheClassifierAccepts) {
   DiffArtifact in;
   in.provenance.engine_commit = "cafe";
   in.provenance.model_commit = "babe";
+  in.provenance.regime = DiffRegimeName(DiffRegime::kCompact);
   in.provenance.seed = 99;
   in.provenance.flush_bytes = 4194304;
   DiffOp op;
@@ -415,6 +457,7 @@ TEST(DiffArtifact, TheSameContentEncodesToTheSameBytes) {
   DiffArtifact in;
   in.provenance.engine_commit = "cafe";
   in.provenance.model_commit = "babe";
+  in.provenance.regime = DiffRegimeName(DiffRegime::kFlush);
   DiffOp op;
   op.kind = DiffOpKind::kSet;
   op.seq = 1;

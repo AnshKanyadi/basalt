@@ -19,6 +19,15 @@ const char* DiffOutcomeName(DiffOutcome o) {
   RIFT_UNREACHABLE("DiffOutcome holds a value no enumerator names");
 }
 
+const char* DiffRegimeName(DiffRegime r) {
+  switch (r) {  // NO default: arm
+    case DiffRegime::kDefault: return "default";
+    case DiffRegime::kFlush:   return "flush";
+    case DiffRegime::kCompact: return "compact";
+  }
+  RIFT_UNREACHABLE("DiffRegime holds a value no enumerator names");
+}
+
 const char* DiffFaultName(DiffFault f) {
   switch (f) {  // NO default: arm
     case DiffFault::kNone:                  return "none";
@@ -40,6 +49,8 @@ const char* DiffFaultName(DiffFault f) {
     case DiffFault::kDirtyCommit:           return "provenance names an uncommitted tree";
     case DiffFault::kSequencesNotMonotone:  return "submission sequences are not non-decreasing";
     case DiffFault::kMalformedSection:      return "a section's payload is malformed";
+    case DiffFault::kMissingRegime:         return "provenance names no regime";
+    case DiffFault::kUnjudged:              return "artifact has not been judged";
   }
   RIFT_UNREACHABLE("DiffFault holds a value no enumerator names");
 }
@@ -121,7 +132,7 @@ std::string EncodeDiffArtifact(const DiffArtifact& a) {
   RIFT_CHECK(!a.submission.empty());
   RIFT_CHECK(!a.provenance.engine_commit.empty());
   RIFT_CHECK(!a.provenance.model_commit.empty());
-  RIFT_CHECK(a.outcome != DiffOutcome::kUnrun);
+  RIFT_CHECK(!a.provenance.regime.empty());
 
   std::string body;
   const auto section = [&body](DiffSection kind, const std::string& payload) {
@@ -137,6 +148,7 @@ std::string EncodeDiffArtifact(const DiffArtifact& a) {
     std::string p;
     PutStr(&p, a.provenance.engine_commit);
     PutStr(&p, a.provenance.model_commit);
+    PutStr(&p, a.provenance.regime);
     PutU64(&p, a.provenance.seed);
     PutU64(&p, a.provenance.flush_bytes);
     PutU64(&p, a.provenance.wal_buffer_bytes);
@@ -260,7 +272,8 @@ DiffCheck ParseDiffArtifact(Slice image, DiffArtifact* out) {
     switch (static_cast<DiffSection>(kind)) {  // NO default: arm
       case DiffSection::kProvenance: {
         DiffProvenance& v = out->provenance;
-        if (!c.Str(&v.engine_commit) || !c.Str(&v.model_commit) || !c.U64(&v.seed) ||
+        if (!c.Str(&v.engine_commit) || !c.Str(&v.model_commit) ||
+            !c.Str(&v.regime) || !c.U64(&v.seed) ||
             !c.U64(&v.flush_bytes) || !c.U64(&v.wal_buffer_bytes) ||
             !c.U64(&v.max_record_bytes) || !c.Done()) {
           return Fail(DiffFault::kMalformedSection, payload_at, "provenance");
@@ -275,6 +288,10 @@ DiffCheck ParseDiffArtifact(Slice image, DiffArtifact* out) {
         if (dirty(v.engine_commit) || dirty(v.model_commit)) {
           return Fail(DiffFault::kDirtyCommit, payload_at,
                       "a run at an uncommitted tree cannot be reproduced");
+        }
+        if (v.regime.empty()) {
+          return Fail(DiffFault::kMissingRegime, payload_at,
+                      "the caps identify the configuration and not the sweep");
         }
         break;
       }
@@ -355,7 +372,7 @@ DiffCheck ParseDiffArtifact(Slice image, DiffArtifact* out) {
         if (!c.U8(&o) || !c.Str(&out->why) || !c.Done()) {
           return Fail(DiffFault::kMalformedSection, payload_at, "verdict");
         }
-        if (o == 0 || o > static_cast<uint8_t>(DiffOutcome::kRecoveredNeither)) {
+        if (o > static_cast<uint8_t>(DiffOutcome::kRecoveredNeither)) {
           return Fail(DiffFault::kUnknownOutcome, payload_at, "outcome " + std::to_string(o));
         }
         out->outcome = static_cast<DiffOutcome>(o);
@@ -372,6 +389,14 @@ DiffCheck ParseDiffArtifact(Slice image, DiffArtifact* out) {
     if (!seen[k]) {
       return Fail(DiffFault::kMissingSection, 0, "section kind " + std::to_string(k));
     }
+  }
+  return DiffCheck();
+}
+
+DiffCheck RequireJudged(const DiffArtifact& a) {
+  if (a.outcome == DiffOutcome::kUnrun) {
+    return Fail(DiffFault::kUnjudged, 0,
+                "an artifact without a verdict cannot reproduce a finding");
   }
   return DiffCheck();
 }

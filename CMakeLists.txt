@@ -190,6 +190,7 @@ add_executable(rift_engine_test
   test/db_compaction_test.cc
   test/amplification_test.cc
   test/differential_artifact_test.cc
+  test/rng_test.cc
 )
 # rift_rig carries rift_testenv which carries rift_engine, both PUBLIC-ly;
 # naming any of them again makes the linker warn about a duplicate archive.
