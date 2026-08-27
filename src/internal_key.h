@@ -73,6 +73,32 @@ uint64_t ExtractTag(Slice internal_key);
 // User key ascending, tag descending. THE ONLY ORDER THIS ENGINE HAS.
 int CompareInternalKey(Slice a, Slice b);
 
+// A TABLE'S BOUNDS ARE STATEMENTS ABOUT USER KEYS, AND THIS IS THE ONE PLACE
+// THAT DECIDES WHETHER A CANDIDATE WIDENS ONE.
+//
+// DESIGN-B3 §6.1a: *"The bound is a statement about USER KEYS. It is compared
+// as one."* `CompareInternalKey` is the wrong comparator for the question,
+// because the internal order is user key ascending and TAG DESCENDING -- so at
+// one user key a SMALLER TAG SORTS LATER, and a candidate equal in user key can
+// compare "greater" or "lesser" purely by its sequence.
+//
+// BUG-006 was that mismatch across two implementations of this rule. It exists
+// as a function so there is ONE implementation and nothing to keep in step:
+// `TableBuilder` and `ValidateTable` both call it, so they cannot disagree.
+//
+// TIES DO NOT WIDEN. Equal user keys mean the bound already covers the
+// candidate, and a rule that widened on equality would make the recorded bound
+// depend on which sequence happened to arrive -- which is precisely how the two
+// sides diverged.
+inline bool WidensUpperBound(Slice candidate_user_key, Slice current_bound) {
+  if (current_bound.size() < kTagBytes) return true;  // no bound yet
+  return candidate_user_key.compare(ExtractUserKey(current_bound)) > 0;
+}
+inline bool WidensLowerBound(Slice candidate_user_key, Slice current_bound) {
+  if (current_bound.size() < kTagBytes) return true;
+  return candidate_user_key.compare(ExtractUserKey(current_bound)) < 0;
+}
+
 }  // namespace rift
 
 #endif  // RIFT_INTERNAL_KEY_H_

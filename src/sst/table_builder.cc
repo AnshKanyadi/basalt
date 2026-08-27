@@ -84,10 +84,9 @@ void TableBuilder::AddUnboundedRangeTombstone(Slice start, uint64_t tag) {
   ++range_count_;
   unbounded_end_ = true;
 
-  std::string lo;
-  AppendInternalKey(&lo, start, tag);
-  if (smallest_.empty() || CompareInternalKey(Slice(lo), Slice(smallest_)) < 0) {
-    smallest_ = lo;
+  if (WidensLowerBound(start, Slice(smallest_))) {
+    smallest_.clear();
+    AppendInternalKey(&smallest_, start, tag);
   }
   // NO `largest_` WIDENING, and that is the point: there is no finite key to
   // widen it to. `TableCheck::unbounded_end` carries the fact instead.
@@ -118,17 +117,18 @@ void TableBuilder::AddRangeTombstone(Slice start, Slice end, uint64_t tag) {
   // The end bound is EXCLUSIVE and is widened to `end` anyway: over-covering
   // costs a file that did not need to be read, UNDER-covering resurrects data.
   // The two directions are not symmetric, so the safe one is taken.
-  std::string lo;
-  AppendInternalKey(&lo, start, tag);
-  if (range_count_ == 1 && entries_ == 0) {
-    smallest_ = lo;
-  } else if (smallest_.empty() || CompareInternalKey(Slice(lo), Slice(smallest_)) < 0) {
-    smallest_ = lo;
+  // COMPARED AS USER KEYS, THROUGH THE ONE PREDICATE THE CLASSIFIER ALSO USES.
+  // This is BUG-006's fix: these two lines compared INTERNAL keys while
+  // `ValidateTable` compared user keys, so a tombstone whose end user key
+  // equalled the largest data key at a LOWER sequence widened here and not
+  // there -- and the manifest then recorded a bound the Open refused.
+  if (WidensLowerBound(start, Slice(smallest_))) {
+    smallest_.clear();
+    AppendInternalKey(&smallest_, start, tag);
   }
-  std::string hi;
-  AppendInternalKey(&hi, end, tag);
-  if (largest_.empty() || CompareInternalKey(Slice(hi), Slice(largest_)) > 0) {
-    largest_ = hi;
+  if (WidensUpperBound(end, Slice(largest_))) {
+    largest_.clear();
+    AppendInternalKey(&largest_, end, tag);
   }
   const SeqNum seq = SeqOfTag(tag);
   if (seq > largest_seq_) largest_seq_ = seq;

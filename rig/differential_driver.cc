@@ -1,6 +1,7 @@
 #include "differential_driver.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <vector>
 
@@ -207,6 +208,14 @@ DiffArtifact RunDifferential(const DiffRunOptions& o) {
   if (opened.ok()) {
     a.recovered = ExtractState(*reopened);
     (void)reopened->Close();
+    if (std::getenv("RIFT_DIFF_DEBUG") != nullptr) {
+      std::fprintf(stderr, "DEBUG recovered=%zu dead=%d watermark=%llu\n",
+                   a.recovered.size(), t.dead() ? 1 : 0,
+                   static_cast<unsigned long long>(a.watermark));
+      for (const auto& kv : t.Image()) {
+        std::fprintf(stderr, "  %s (%zu bytes)\n", kv.first.c_str(), kv.second.size());
+      }
+    }
   } else {
     // A FAILED REOPEN IS NOT AN EMPTY RECOVERY, AND THE FIRST VERSION COULD NOT
     // TELL THEM APART. It left `recovered` empty and the judge reported "the

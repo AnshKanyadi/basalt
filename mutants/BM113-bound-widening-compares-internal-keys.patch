@@ -1,0 +1,33 @@
+# id: BM113-bound-widening-compares-internal-keys
+# blinds: a table's bounds being statements about USER KEYS
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# BUG-006, PRESERVED AS A CLASS. The internal order is user key ascending and
+# TAG DESCENDING, so at one user key a SMALLER TAG SORTS LATER -- and a
+# candidate equal in user key compares "greater" or "lesser" purely by its
+# sequence.
+#
+# THE CONSEQUENCE IS A PERMANENT REFUSAL, NOT DATA LOSS. The manifest records
+# one bound, `VerifyTables` derives another, and the Open fails forever after:
+# the bytes are intact and the database can never be opened again.
+#
+# It is planted at the SHARED PREDICATE rather than at either caller, which is
+# the fix's whole shape: one implementation of one rule, so the writer and the
+# classifier cannot disagree. A mutant here changes both at once -- which is
+# exactly what makes the single predicate safe and is why it is worth asserting
+# that the pair still moves together.
+--- a/engine-cpp/src/internal_key.h
++++ b/engine-cpp/src/internal_key.h
+@@ -92,7 +92,8 @@
+ // sides diverged.
+ inline bool WidensUpperBound(Slice candidate_user_key, Slice current_bound) {
+   if (current_bound.size() < kTagBytes) return true;  // no bound yet
+-  return candidate_user_key.compare(ExtractUserKey(current_bound)) > 0;
++  // BM113: compared as internal keys, which is what BUG-006 was.
++  return candidate_user_key.compare(current_bound) > 0;
+ }
+ inline bool WidensLowerBound(Slice candidate_user_key, Slice current_bound) {
+   if (current_bound.size() < kTagBytes) return true;

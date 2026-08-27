@@ -220,11 +220,13 @@ TableCheck ValidateTable(Slice image) {
     // file that did not need reading, under-covering resurrects data, and the
     // two directions are not symmetric.
     for (const RangeTombstone& t : tombstones) {
-      std::string lo;
-      AppendInternalKey(&lo, t.start, t.tag);
-      if (ok.smallest_key.empty() ||
-          CompareInternalKey(Slice(lo), Slice(ok.smallest_key)) < 0) {
-        ok.smallest_key = lo;
+      // THE SAME PREDICATE THE WRITER USES. This one still compared INTERNAL
+      // keys after B3.5e corrected its sibling ten lines below -- the second
+      // instance of BUG-006's class, latent because the writer compared
+      // internal keys too and the two agreed while both were wrong.
+      if (WidensLowerBound(t.start, Slice(ok.smallest_key))) {
+        ok.smallest_key.clear();
+        AppendInternalKey(&ok.smallest_key, t.start, t.tag);
       }
       if (t.end_unbounded) {
         // NO FINITE KEY WIDENS THIS. The table's range is `[smallest, infinity)`
@@ -241,10 +243,9 @@ TableCheck ValidateTable(Slice image) {
         // the table plainly holds that key.
         //
         // The bound is a statement about USER KEYS. It is compared as one.
-        if (t.end.compare(ExtractUserKey(Slice(ok.largest_key))) > 0) {
-          std::string hi;
-          AppendInternalKey(&hi, t.end, t.tag);
-          ok.largest_key = hi;
+        if (WidensUpperBound(t.end, Slice(ok.largest_key))) {
+          ok.largest_key.clear();
+          AppendInternalKey(&ok.largest_key, t.end, t.tag);
           // AND IT IS AN EXCLUSIVE BOUND. Reaching this key is not holding it.
           ok.largest_is_exclusive = true;
         }
