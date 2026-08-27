@@ -127,14 +127,41 @@ rift_status rift_db_iter(const rift_db* db, const char* lower, size_t lower_len,
                          const char* upper, size_t upper_len, rift_iter** out);
 void rift_iter_free(rift_iter* it);
 
+/* POSITIONING IS SEPARATE FROM FETCHING, and that split is the whole reason a
+ * block interface can serve a CURSOR.
+ *
+ * The frozen `engine.Iterator` is a cursor -- SeekGE, Prev, Valid -- and a
+ * block API is natural for SCANS and awkward for cursors. Buffering the whole
+ * iteration in Go would resolve it and would defeat the amortisation the block
+ * interface exists to provide, so instead: the caller POSITIONS with one call
+ * and then FETCHES blocks in a direction, and the Go wrapper serves a cursor
+ * from the block it holds. */
+typedef enum {
+  RIFT_SEEK_FIRST = 0,
+  RIFT_SEEK_LAST = 1,
+  RIFT_SEEK_GE = 2,
+  RIFT_SEEK_LT = 3
+} rift_seek_mode;
+
+/* `key` is ignored for FIRST and LAST. Sets *valid to whether the cursor landed
+ * on an entry. */
+rift_status rift_iter_seek(rift_iter* it, rift_seek_mode mode,
+                           const char* key, size_t key_len, int* valid);
+
 /* Fills up to `n` pairs into caller memory laid out as:
  *   key_lens[i], val_lens[i]  -- the lengths of pair i
  *   keys, vals                -- the bytes, packed back to back
  * Sets *filled to how many pairs were written and *keys_used / *vals_used to
  * how many bytes. Returns RIFT_BUFFER_TOO_SMALL without consuming anything if
- * the NEXT pair does not fit, so a caller can grow and retry without losing a
- * position. */
-rift_status rift_iter_next_block(rift_iter* it, size_t n,
+ * the NEXT pair does not fit AND nothing was filled; in that case *keys_used
+ * and *vals_used carry the capacities that pair NEEDS, so one grow-and-retry
+ * always suffices. If something was filled, the short block is returned as
+ * RIFT_OK and the pair that did not fit is held for the next call. Either way
+ * no pair is ever dropped and no position is ever lost. */
+/* `forward` non-zero walks ascending, zero walks descending. The FIRST pair a
+ * block returns is the one the cursor is currently on, so a caller that seeks
+ * and then fetches gets the entry it sought. */
+rift_status rift_iter_block(rift_iter* it, int forward, size_t n,
                                  uint32_t* key_lens, uint32_t* val_lens,
                                  char* keys, size_t keys_cap, size_t* keys_used,
                                  char* vals, size_t vals_cap, size_t* vals_used,

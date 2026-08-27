@@ -96,7 +96,12 @@ struct rift_batch {
 };
 struct rift_iter {
   std::unique_ptr<Iterator> it;
-  bool started = false;
+  // POSITIONED means a seek has placed the cursor and the entry under it has
+  // not yet been returned. It replaces `started`, whose two-valued meaning
+  // could not express "seeked but not yet consumed" -- and a cursor that
+  // silently skipped the entry it was asked to seek to is a wrong answer with
+  // no failing structure anywhere.
+  bool positioned = false;
   // A PAIR THE CURSOR HAS ALREADY MOVED PAST BUT THE CALLER'S BUFFER COULD NOT
   // HOLD. It is held rather than dropped, because the alternative -- reporting
   // a short block and losing the pair -- makes the iterator silently skip
@@ -246,11 +251,39 @@ void rift_iter_free(rift_iter* it) {
   delete it;
 }
 
-rift_status rift_iter_next_block(rift_iter* it, size_t n,
-                                 uint32_t* key_lens, uint32_t* val_lens,
-                                 char* keys, size_t keys_cap, size_t* keys_used,
-                                 char* vals, size_t vals_cap, size_t* vals_used,
-                                 size_t* filled) {
+rift_status rift_iter_seek(rift_iter* it, rift_seek_mode mode,
+                           const char* key, size_t key_len, int* valid) {
+  return Guard([&]() -> rift_status {
+    if (it == nullptr) return RIFT_INVALID_ARGUMENT;
+    it->has_pending = false;
+    bool ok = false;
+    switch (mode) {
+      case RIFT_SEEK_FIRST: ok = it->it->First(); break;
+      case RIFT_SEEK_LAST:  ok = it->it->Last(); break;
+      case RIFT_SEEK_GE:
+        if (key == nullptr) return RIFT_INVALID_ARGUMENT;
+        ok = it->it->SeekGE(rift::Slice(key, key_len));
+        break;
+      case RIFT_SEEK_LT:
+        if (key == nullptr) return RIFT_INVALID_ARGUMENT;
+        ok = it->it->SeekLT(rift::Slice(key, key_len));
+        break;
+      default:
+        return RIFT_INVALID_ARGUMENT;
+    }
+    // THE ENTRY UNDER THE CURSOR HAS NOT BEEN RETURNED YET, so the next block
+    // must start with it rather than past it.
+    it->positioned = ok;
+    if (valid != nullptr) *valid = ok ? 1 : 0;
+    return RIFT_OK;
+  });
+}
+
+rift_status rift_iter_block(rift_iter* it, int forward, size_t n,
+                            uint32_t* key_lens, uint32_t* val_lens,
+                            char* keys, size_t keys_cap, size_t* keys_used,
+                            char* vals, size_t vals_cap, size_t* vals_used,
+                            size_t* filled) {
   return Guard([&]() -> rift_status {
     if (it == nullptr || filled == nullptr) return RIFT_INVALID_ARGUMENT;
     *filled = 0;
@@ -268,9 +301,13 @@ rift_status rift_iter_next_block(rift_iter* it, size_t n,
         // THE HELD PAIR GOES FIRST, and only then does the cursor advance.
         k = Slice(it->pending_key);
         v = Slice(it->pending_value);
+      } else if (it->positioned) {
+        // The seek's own entry, returned once and then stepped past.
+        it->positioned = false;
+        k = it->it->Key();
+        v = it->it->Value();
       } else {
-        const bool ok = it->started ? it->it->Next() : it->it->First();
-        it->started = true;
+        const bool ok = forward != 0 ? it->it->Next() : it->it->Prev();
         if (!ok) {
           if (keys_used != nullptr) *keys_used = ko;
           if (vals_used != nullptr) *vals_used = vo;
@@ -289,13 +326,22 @@ rift_status rift_iter_next_block(rift_iter* it, size_t n,
           it->pending_value.assign(v.data(), v.size());
           it->has_pending = true;
         }
-        if (keys_used != nullptr) *keys_used = ko;
-        if (vals_used != nullptr) *vals_used = vo;
         // A PAIR THAT FITS IN NO BUFFER THIS CALLER CAN OFFER must be reported
         // rather than held forever: with nothing filled, the caller is told to
         // grow. With something filled, the short block is the answer and the
         // pair waits.
-        if (*filled == 0) return RIFT_BUFFER_TOO_SMALL;
+        if (*filled == 0) {
+          // THE NEEDED CAPACITIES, not the used ones -- the same idiom
+          // rift_db_get uses, and for the same reason: a caller told only
+          // "too small" has to GUESS how much to grow, and a guess that is
+          // still too small loops. Reporting the requirement makes the retry
+          // exact and makes the caller's loop terminate in one step.
+          if (keys_used != nullptr) *keys_used = k.size();
+          if (vals_used != nullptr) *vals_used = v.size();
+          return RIFT_BUFFER_TOO_SMALL;
+        }
+        if (keys_used != nullptr) *keys_used = ko;
+        if (vals_used != nullptr) *vals_used = vo;
         return RIFT_OK;
       }
       it->has_pending = false;

@@ -1,0 +1,36 @@
+# id: BM116-wrapper-treats-short-as-fatal
+# blinds: the wrapper growing its block buffers instead of failing
+# covering-lane: cpp-cgo
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# THE FIRST MUTANT IN THIS CATALOGUE THAT PATCHES GO. The runner copies the
+# whole tree and applies a patch to it, so it never cared what language the
+# file was in; what was missing was a lane that ran the Go side of the boundary,
+# and cpp-cgo is that lane. Its control is still cpp-build, because a Go edit
+# must leave the C++ build untouched -- if it ever does not, the patch is
+# reaching something it has no business reaching.
+#
+# This is the DEFECT AS IT ACTUALLY OCCURRED, kept rather than invented. The
+# wrapper's first version carried a comment asserting that a short buffer was
+# "a performance choice and not a correctness one" -- true only of a caller
+# that grows, which that version did not do. The parity suite failed on its
+# first run against a 100 KB value, iterating.
+#
+# THE SHAPE IS GF-11's, one boundary out: a comment that states a property the
+# code beside it does not implement reads exactly like a comment that describes
+# one. The reviewer's eye supplies the missing half. Only a test that crosses
+# the buffer's size can tell the two apart, which is why the parity suite keeps
+# a value larger than any starting buffer in it permanently.
+--- a/engine/riftcgo/iter.go
++++ b/engine/riftcgo/iter.go
+@@ -115,7 +115,7 @@
+ 			(*C.uint32_t)(unsafe.Pointer(&i.vlen[0])),
+ 			(*C.char)(unsafe.Pointer(&i.keyBuf[0])), C.size_t(len(i.keyBuf)), &ku,
+ 			(*C.char)(unsafe.Pointer(&i.valBuf[0])), C.size_t(len(i.valBuf)), &vu, &filled)
+-		if st == C.RIFT_BUFFER_TOO_SMALL {
++		if st == C.RIFT_BUFFER_TOO_SMALL && false {
+ 			if pass > 0 {
+ 				// The needed capacities were honoured and it still did not fit,
+ 				// so the boundary is not reporting what it says it reports.

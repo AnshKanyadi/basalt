@@ -1,0 +1,35 @@
+# id: BM115-block-needed-unreported
+# blinds: a short block reporting the capacities the pair NEEDS
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# The patched boundary still refuses correctly, still consumes nothing, and
+# still holds the pair. Every property the previous test asserted is intact.
+# What it stops reporting is HOW MUCH TO GROW BY -- it hands back the bytes it
+# used, which on this path is always zero.
+#
+# THIS IS A MUTANT WHOSE DAMAGE IS ENTIRELY IN THE CALLER. Nothing in the engine
+# reads these fields; the C++ suite passed for the whole of B5.0-B5.1 with the
+# boundary reporting zero here, because no C++ caller ever grew. The defect
+# surfaces one language away, as a caller that either doubles blindly or gives
+# up on a value it could have read.
+#
+# It is caught only because CApi.ABlockTooSmallForOnePairIsToldTheCapacitiesItNeeds
+# asserts the two numbers rather than only the status code -- which is the whole
+# reason that test checks 7 and 5000 by name instead of checking that the call
+# refused.
+--- a/engine-cpp/capi/rift.cc
++++ b/engine-cpp/capi/rift.cc
+@@ -336,8 +336,8 @@
+           // "too small" has to GUESS how much to grow, and a guess that is
+           // still too small loops. Reporting the requirement makes the retry
+           // exact and makes the caller's loop terminate in one step.
+-          if (keys_used != nullptr) *keys_used = k.size();
+-          if (vals_used != nullptr) *vals_used = v.size();
++          if (keys_used != nullptr) *keys_used = ko;
++          if (vals_used != nullptr) *vals_used = vo;
+           return RIFT_BUFFER_TOO_SMALL;
+         }
+         if (keys_used != nullptr) *keys_used = ko;

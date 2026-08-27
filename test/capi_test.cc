@@ -5,6 +5,8 @@
 // underneath happen to do.
 #include "rift.h"
 
+#include <algorithm>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -133,15 +135,21 @@ TEST(CApi, NullBoundsAreUnboundedAndEmptyOnesAreTheEmptyKey) {
 
 std::vector<std::pair<std::string, std::string>> Drain(rift_iter* it, size_t block,
                                                        size_t key_cap = 4096,
-                                                       size_t val_cap = 4096) {
+                                                       size_t val_cap = 4096,
+                                                       bool forward = true) {
   std::vector<std::pair<std::string, std::string>> out;
   std::vector<uint32_t> klen(block), vlen(block);
   std::vector<char> keys(key_cap), vals(val_cap);
+  int valid = 0;
+  EXPECT_EQ(RIFT_OK, rift_iter_seek(it, forward ? RIFT_SEEK_FIRST : RIFT_SEEK_LAST,
+                                    nullptr, 0, &valid));
+  if (valid == 0) return out;
   for (;;) {
     size_t filled = 0, ku = 0, vu = 0;
-    const rift_status s = rift_iter_next_block(it, block, klen.data(), vlen.data(),
-                                               keys.data(), keys.size(), &ku,
-                                               vals.data(), vals.size(), &vu, &filled);
+    const rift_status s = rift_iter_block(it, forward ? 1 : 0, block,
+                                          klen.data(), vlen.data(),
+                                          keys.data(), keys.size(), &ku,
+                                          vals.data(), vals.size(), &vu, &filled);
     if (s != RIFT_OK) return out;
     if (filled == 0) return out;
     size_t ko = 0, vo = 0;
@@ -205,6 +213,55 @@ TEST(CApi, APairThatDoesNotFitIsHeldForTheNextCall) {
   EXPECT_EQ("c", got[2].first);
 }
 
+// THE FILLED == 0 CASE IS DIFFERENT IN KIND from the one above, and it is the
+// one a caller cannot recover from by guessing. When a pair does not fit and
+// nothing was filled, the caller has no short block to make progress with; it
+// must GROW. A boundary that said only "too small" would leave it doubling
+// blindly, and a caller that doubled to a cap and gave up would report a
+// perfectly good pair as unreadable.
+//
+// The Go wrapper depends on exactly this, and it depended on it BEFORE this
+// test existed: its grow-and-retry asserts a second RIFT_BUFFER_TOO_SMALL is
+// impossible. That assertion is only true because of what is checked here.
+TEST(CApi, ABlockTooSmallForOnePairIsToldTheCapacitiesItNeeds) {
+  Db d("needed");
+  rift_batch* b = rift_batch_new();
+  const std::string big(5000, 'v');
+  ASSERT_EQ(RIFT_OK, rift_batch_set(b, "the-key", 7, big.data(), big.size()));
+  uint64_t seq = 0;
+  ASSERT_EQ(RIFT_OK, rift_db_write(d.db, b, &seq));
+  rift_batch_free(b);
+
+  rift_iter* it = nullptr;
+  ASSERT_EQ(RIFT_OK, rift_db_iter(d.db, nullptr, 0, nullptr, 0, &it));
+  int valid = 0;
+  ASSERT_EQ(RIFT_OK, rift_iter_seek(it, RIFT_SEEK_FIRST, nullptr, 0, &valid));
+  ASSERT_EQ(1, valid);
+
+  uint32_t klen[4] = {0, 0, 0, 0};
+  uint32_t vlen[4] = {0, 0, 0, 0};
+  std::vector<char> keys(2);   // too small for a 7-byte key
+  std::vector<char> vals(16);  // far too small for a 5000-byte value
+  size_t ku = 0, vu = 0, filled = 99;
+  ASSERT_EQ(RIFT_BUFFER_TOO_SMALL,
+            rift_iter_block(it, 1, 4, klen, vlen, keys.data(), keys.size(), &ku,
+                            vals.data(), vals.size(), &vu, &filled));
+  EXPECT_EQ(0u, filled) << "nothing may be consumed when the caller is told to grow";
+  EXPECT_EQ(7u, ku) << "the NEEDED key capacity, not the used one";
+  EXPECT_EQ(5000u, vu) << "the NEEDED value capacity, not the used one";
+
+  // AND ONE GROW IS ENOUGH. This is the property the wrapper's loop bound is,
+  // so it is asserted here rather than left as a reading of the code.
+  keys.assign(ku, 0);
+  vals.assign(vu, 0);
+  ASSERT_EQ(RIFT_OK,
+            rift_iter_block(it, 1, 4, klen, vlen, keys.data(), keys.size(), &ku,
+                            vals.data(), vals.size(), &vu, &filled));
+  ASSERT_EQ(1u, filled);
+  EXPECT_EQ("the-key", std::string(keys.data(), klen[0]));
+  EXPECT_EQ(big, std::string(vals.data(), vlen[0]));
+}
+
 // ---------------------------------------------------------------- durability
 
 TEST(CApi, SyncReportsAWatermarkAndDurableSeqAgrees) {
@@ -264,6 +321,64 @@ TEST(CApi, NullHandlesAreRefusedRatherThanDereferenced) {
 // DESIGN-B5 section 2.1 and cpp-scan part 7.
 TEST(CApi, TheBoundaryReportsInternalWithoutAnExceptionMechanism) {
   EXPECT_EQ(RIFT_INTERNAL, rift_test_throw());
+}
+
+// POSITIONING IS SEPARATE FROM FETCHING, and the entry a seek lands on is
+// RETURNED rather than skipped. A cursor that silently skipped the entry it was
+// asked to seek to is a wrong answer with no failing structure anywhere.
+TEST(CApi, ASeekReturnsTheEntryItLandedOn) {
+  Db d("seek");
+  rift_batch* b = rift_batch_new();
+  for (const char* k : {"a", "c", "e"}) {
+    ASSERT_EQ(RIFT_OK, rift_batch_set(b, k, 1, k, 1));
+  }
+  uint64_t seq = 0;
+  ASSERT_EQ(RIFT_OK, rift_db_write(d.db, b, &seq));
+  rift_batch_free(b);
+
+  rift_iter* it = nullptr;
+  ASSERT_EQ(RIFT_OK, rift_db_iter(d.db, nullptr, 0, nullptr, 0, &it));
+  int valid = 0;
+  ASSERT_EQ(RIFT_OK, rift_iter_seek(it, RIFT_SEEK_GE, "b", 1, &valid));
+  ASSERT_EQ(1, valid);
+  uint32_t kl[4], vl[4];
+  char keys[64], vals[64];
+  size_t filled = 0, ku = 0, vu = 0;
+  ASSERT_EQ(RIFT_OK, rift_iter_block(it, 1, 4, kl, vl, keys, sizeof keys, &ku,
+                                     vals, sizeof vals, &vu, &filled));
+  ASSERT_EQ(2u, filled) << "SeekGE(b) must land on c and return it";
+  EXPECT_EQ("c", std::string(keys, kl[0]));
+  rift_iter_free(it);
+}
+
+// AND BACKWARDS IS THE SAME SEQUENCE REVERSED, which is the assertion a
+// forward-only implementation of Prev would fail.
+TEST(CApi, WalkingBackwardsGivesTheForwardSequenceReversed) {
+  Db d("reverse");
+  rift_batch* b = rift_batch_new();
+  for (int i = 0; i < 12; ++i) {
+    char k[8];
+    std::snprintf(k, sizeof k, "k%02d", i);
+    ASSERT_EQ(RIFT_OK, rift_batch_set(b, k, std::strlen(k), "v", 1));
+  }
+  uint64_t seq = 0;
+  ASSERT_EQ(RIFT_OK, rift_db_write(d.db, b, &seq));
+  rift_batch_free(b);
+
+  rift_iter* f = nullptr;
+  ASSERT_EQ(RIFT_OK, rift_db_iter(d.db, nullptr, 0, nullptr, 0, &f));
+  const auto forward = Drain(f, 5);
+  rift_iter_free(f);
+
+  rift_iter* r = nullptr;
+  ASSERT_EQ(RIFT_OK, rift_db_iter(d.db, nullptr, 0, nullptr, 0, &r));
+  auto backward = Drain(r, 5, 4096, 4096, false);
+  rift_iter_free(r);
+
+  ASSERT_EQ(12u, forward.size());
+  ASSERT_EQ(forward.size(), backward.size());
+  std::reverse(backward.begin(), backward.end());
+  EXPECT_EQ(forward, backward);
 }
 
 }  // namespace
