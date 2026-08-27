@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -165,6 +166,14 @@ const sst::Table* L1FileFor(const std::vector<std::shared_ptr<sst::Table>>& l1,
     } else {
       hi = mid;
     }
+  }
+  // AN EXCLUSIVE LARGEST DOES NOT HOLD THE KEY IT NAMES. Splitting a tombstone
+  // at an output boundary leaves file i bounded by `[.., B)` and file i+1
+  // starting at `B`; the binary search above finds file i for key B, and file i
+  // does not contain it. Step past it.
+  while (lo < l1.size() && l1[lo]->check().largest_is_exclusive &&
+         ExtractUserKey(Slice(l1[lo]->check().largest_key)).compare(key) == 0) {
+    ++lo;
   }
   if (lo == l1.size()) return nullptr;
   // A COST GUARD, NOT A CORRECTNESS ONE, AND THAT WAS MEASURED RATHER THAN
@@ -1005,10 +1014,16 @@ class DBImpl final : public DB {
 
     Status Add(Slice internal_key, Slice value, bool boundary) override {
       if (builder_ != nullptr && boundary && builder_->file_size() >= max_bytes_) {
+        // THE ROLL POINT IS THE BOUNDARY THE TOMBSTONES ARE CLIPPED AT. The
+        // file being closed covers `[file_start_, this key)`, and the next one
+        // begins here.
+        boundary_ = ExtractUserKey(internal_key).ToString();
         const Status s = CloseCurrent();
         if (!s.ok()) return s;
       }
       if (builder_ == nullptr) {
+        file_start_ = ExtractUserKey(internal_key).ToString();
+        have_start_ = true;
         const Status s = OpenNext();
         if (!s.ok()) return s;
       }
@@ -1016,8 +1031,35 @@ class DBImpl final : public DB {
       return builder_->status();
     }
 
+    void SetTombstones(std::vector<CompactionTombstone> tombstones) override {
+      tombstones_ = std::move(tombstones);
+      // ASCENDING BY START, which is what the block requires -- and ties broken
+      // by sequence so the order is total and no two are indistinguishable.
+      std::sort(tombstones_.begin(), tombstones_.end(),
+                [](const CompactionTombstone& a, const CompactionTombstone& b) {
+                  if (a.start != b.start) return a.start < b.start;
+                  return a.seq < b.seq;
+                });
+    }
+
     // Finishes whatever is open. Called once, after RunCompaction returns.
-    Status Finish() { return builder_ == nullptr ? Status::Ok() : CloseCurrent(); }
+    //
+    // The last file has no successor, so its tombstones are not clipped above
+    // and it is the one that may carry an unbounded piece.
+    Status Finish() {
+      boundary_.reset();
+      if (builder_ == nullptr) {
+        // NOTHING WAS EMITTED. Tombstones that survived still have to be
+        // written, or a compaction that dropped every point version would drop
+        // the tombstones with them -- and a tombstone survives precisely when
+        // something below it is still observable.
+        if (tombstones_.empty()) return Status::Ok();
+        const Status s = OpenNext();
+        if (!s.ok()) return s;
+        have_start_ = false;
+      }
+      return CloseCurrent();
+    }
 
     const std::vector<sst::TableMeta>& outputs() const { return outputs_; }
 
@@ -1038,7 +1080,36 @@ class DBImpl final : public DB {
     // ONE FILE'S WHOLE ORDERING, IN ONE PLACE: Finish, Sync, Close. The
     // DIRECTORY sync is the caller's, once, after the last file -- B2-D5's
     // step 2 for a run rather than for a file.
+    // EVERY TOMBSTONE OVERLAPPING THIS FILE, CLIPPED TO IT. See compaction.h:
+    // an unclipped tombstone reaches past its file's bounds, and input
+    // selection reads those bounds.
+    void WriteClippedTombstones() {
+      const bool last_file = !boundary_.has_value();
+      for (const CompactionTombstone& t : tombstones_) {
+        std::string lo = t.start;
+        if (have_start_ && lo < file_start_) lo = file_start_;
+        const uint64_t tag = MakeTag(t.seq, ValueType::kDeletion);
+        if (t.end_unbounded && last_file) {
+          // ONLY THE LAST FILE MAY CARRY THE UNBOUNDED PIECE, because only the
+          // last has no successor to overlap. Every earlier file gets the
+          // tombstone clipped to its own boundary instead.
+          builder_->AddUnboundedRangeTombstone(Slice(lo), tag);
+          continue;
+        }
+        std::string hi;
+        if (t.end_unbounded) {
+          hi = *boundary_;
+        } else {
+          hi = t.end;
+          if (!last_file && hi > *boundary_) hi = *boundary_;
+        }
+        if (!(lo < hi)) continue;  // the clip left nothing in this file
+        builder_->AddRangeTombstone(Slice(lo), Slice(hi), tag);
+      }
+    }
+
     Status CloseCurrent() {
+      WriteClippedTombstones();
       Status s = builder_->Finish();
       if (!s.ok()) return s;
       sst::TableMeta meta;
@@ -1050,6 +1121,7 @@ class DBImpl final : public DB {
       meta.largest_seq = builder_->largest_seq();
       outputs_.push_back(meta);
       builder_.reset();
+      have_start_ = false;
       s = file_->Sync();
       if (!s.ok()) return s;
       s = file_->Close();
@@ -1063,6 +1135,13 @@ class DBImpl final : public DB {
     WritableFilePtr file_;
     std::unique_ptr<sst::TableBuilder> builder_;
     std::vector<sst::TableMeta> outputs_;
+    std::vector<CompactionTombstone> tombstones_;
+    std::string file_start_;
+    bool have_start_ = false;
+    // Set when a roll happens, cleared for the file that has no successor. The
+    // LAST file is the only one whose upper bound is open, which is why it is
+    // the only one that may hold an unbounded tombstone.
+    std::optional<std::string> boundary_;
   };
 
   // `S`. Takes the lock itself, so it is called OUTSIDE one.
@@ -1093,14 +1172,30 @@ class DBImpl final : public DB {
     wal::SeqNum pin_seq = 0;
     std::vector<const sst::Table*> run;
     MergedIter merge;
+    // EVERY TOMBSTONE THE INPUTS HOLD, COPIED OUT. The input tables are deleted
+    // at step 5, so nothing may hold Slices into their images past the install
+    // -- and a `CompactionTombstone` owns its bounds for that reason.
+    std::vector<CompactionTombstone> tombstones;
+    const auto collect = [&tombstones](const sst::Table* t) {
+      for (const sst::RangeTombstone& rt : t->tombstones()) {
+        CompactionTombstone c;
+        c.start = rt.start.ToString();
+        if (!rt.end_unbounded) c.end = rt.end.ToString();
+        c.end_unbounded = rt.end_unbounded;
+        c.seq = rt.seq();
+        tombstones.push_back(std::move(c));
+      }
+    };
     for (const auto& t : in_l0) {
       bound += t->check().entries;
       if (t->check().largest_seq > pin_seq) pin_seq = t->check().largest_seq;
+      collect(t.get());
       merge.AddTable(t.get());
     }
     for (const auto& t : in_l1) {
       bound += t->check().entries;
       if (t->check().largest_seq > pin_seq) pin_seq = t->check().largest_seq;
+      collect(t.get());
       run.push_back(t.get());
     }
     merge.AddRun(std::move(run));
@@ -1163,12 +1258,15 @@ class DBImpl final : public DB {
     TableRoller roller(this, caps_.flush_bytes);
     {
       Status s = RunCompaction(&merge, observable, bottom_most, pin_seq, bound,
-                               &roller, &stats);
+                               tombstones, &roller, &stats);
       if (!s.ok()) return s;
       s = roller.Finish();
       if (!s.ok()) return s;
     }
     const std::vector<sst::TableMeta>& outputs = roller.outputs();
+    // A COMPACTION MAY EMIT NO POINT VERSIONS AND STILL PRODUCE A FILE, when
+    // tombstones survive but everything they hid is gone. `outputs` is the
+    // authority on what was written, never `stats.emitted`.
 
     // 2. the directory, so every output's NAME is durable. ONCE, after the last
     //    file: the manifest edit that names them has not been written yet, so

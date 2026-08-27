@@ -1,0 +1,26 @@
+# id: BM101-compaction-drops-every-tombstone
+# blinds: a compaction CARRYING its inputs' range tombstones into the output
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# BM98's shape one level along, and the same asymmetry: BM98 loses the tombstone
+# at the FLUSH, this loses it at the COMPACTION. Both leave the point versions
+# it hid perfectly intact, so every key the range deleted returns at once -- and
+# the failure is separated from the DeleteRange by however long it takes L0 to
+# reach its trigger.
+#
+# Nothing structural notices. The output table is valid, the manifest is
+# consistent, the checksums pass. The only evidence is a read.
+--- a/engine-cpp/src/db.cc
++++ b/engine-cpp/src/db.cc
+@@ -1176,6 +1176,8 @@
+     // install -- and a `CompactionTombstone` owns its bounds for that reason.
+     std::vector<CompactionTombstone> tombstones;
+     const auto collect = [&tombstones](const sst::Table* t) {
++      // BM101: the inputs' tombstones are not carried into the output.
++      if (true) return;
+       for (const sst::RangeTombstone& rt : t->tombstones()) {
+         CompactionTombstone c;
+         c.start = rt.start.ToString();

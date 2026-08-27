@@ -641,6 +641,154 @@ TEST(RangeDelete, TheSameRuleHoldsAtEveryPlaceItIsWritten) {
   EXPECT_FALSE(m2.Get(Slice(k), 5, &v).ok());
 }
 
+// ------------------------------------------- B3.5e: tombstones through compaction
+
+// A RANGE DELETE SURVIVES THE COMPACTION THAT MOVES IT TO L1 -- the step BM97
+// named and no earlier workload could reach.
+TEST(RangeDelete, ARangeSurvivesTheCompactionThatMovesItToLevelOne) {
+  TestEnvironment t;
+  std::unique_ptr<DB> db;
+  ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+  // A snapshot below the range keeps it alive: without one, clause 2 drops the
+  // tombstone at the compaction and the test would pass for the wrong reason.
+  FillAndFlush(db.get(), 0, 50);
+  std::unique_ptr<Snapshot> below = db->NewSnapshot();
+  WriteBatch b;
+  b.DeleteRange(BoundAt(10), BoundAt(20));
+  SeqNum s = 0;
+  ASSERT_TRUE(db->Write(b, &s).ok());
+  for (int round = 1; round < 4; ++round) FillAndFlush(db.get(), round * 50, 50);
+  ASSERT_EQ(0, LevelCounts(&t).first) << "the compaction ran";
+
+  EXPECT_EQ(Value(9, 512), Get(*db, KeyAt(9)));
+  EXPECT_EQ("<absent>", Get(*db, KeyAt(15))) << "the tombstone reached L1";
+  EXPECT_EQ(Value(20, 512), Get(*db, KeyAt(20)));
+  // AND THE SNAPSHOT BELOW IT STILL SEES WHAT IT HID.
+  std::string v;
+  const std::string k = KeyAt(15);
+  ASSERT_TRUE(below->Get(Slice(k), &v).ok());
+  EXPECT_EQ(Value(15, 512), v);
+  ASSERT_TRUE(below->Close().ok());
+  ASSERT_TRUE(db->Close().ok());
+}
+
+// AND ACROSS A REOPEN, which is where the run check and the exclusive bound are
+// read back: an Open that refuses is a split that produced overlapping bounds.
+TEST(RangeDelete, ACompactedRangeSurvivesAReopen) {
+  TestEnvironment t;
+  {
+    std::unique_ptr<DB> db;
+    ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+    FillAndFlush(db.get(), 0, 50);
+    std::unique_ptr<Snapshot> below = db->NewSnapshot();
+    WriteBatch b;
+    b.DeleteRange(BoundAt(10), BoundAt(20));
+    SeqNum s = 0;
+    ASSERT_TRUE(db->Write(b, &s).ok());
+    for (int round = 1; round < 4; ++round) FillAndFlush(db.get(), round * 50, 50);
+    ASSERT_TRUE(below->Close().ok());
+    ASSERT_TRUE(db->Close().ok());
+  }
+  std::unique_ptr<DB> db;
+  const Status s = DB::Open(t.env(), kDir, FlushingCaps(), &db);
+  ASSERT_TRUE(s.ok()) << s.ToString()
+                      << " -- a refused Open here means the split produced "
+                         "bounds that overlap";
+  EXPECT_EQ(Value(9, 512), Get(*db, KeyAt(9)));
+  EXPECT_EQ("<absent>", Get(*db, KeyAt(15)));
+  EXPECT_EQ(Value(20, 512), Get(*db, KeyAt(20)));
+  ASSERT_TRUE(db->Close().ok());
+}
+
+// A TOMBSTONE SPANNING SEVERAL OUTPUT FILES IS SPLIT, AND EVERY PIECE APPLIES.
+// The range covers most of the key space, so it crosses the roll boundaries --
+// and a piece lost at any boundary shows up as a key that came back.
+TEST(RangeDelete, ARangeSpanningOutputFilesIsSplitAndEveryPieceApplies) {
+  TestEnvironment t;
+  std::unique_ptr<DB> db;
+  ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+  FillAndFlush(db.get(), 0, 200);
+  std::unique_ptr<Snapshot> below = db->NewSnapshot();
+  WriteBatch b;
+  b.DeleteRange(BoundAt(10), BoundAt(190));
+  SeqNum s = 0;
+  ASSERT_TRUE(db->Write(b, &s).ok());
+  for (int round = 0; round < 3; ++round) FillAndFlush(db.get(), 1000 + round * 50, 50);
+  const std::pair<int, int> levels = LevelCounts(&t);
+  ASSERT_EQ(0, levels.first);
+  ASSERT_GT(levels.second, 1) << "the output must be a RUN for a split to exist";
+
+  for (int i = 0; i < 10; ++i) EXPECT_EQ(Value(i, 512), Get(*db, KeyAt(i))) << i;
+  for (int i = 10; i < 190; ++i) EXPECT_EQ("<absent>", Get(*db, KeyAt(i))) << i;
+  for (int i = 190; i < 200; ++i) EXPECT_EQ(Value(i, 512), Get(*db, KeyAt(i))) << i;
+  ASSERT_TRUE(below->Close().ok());
+  ASSERT_TRUE(db->Close().ok());
+}
+
+// CLAUSE 2 OVER A RANGE: with nothing observable below it, a tombstone whose
+// work is done is DROPPED -- and what it hid goes with it.
+TEST(RangeDelete, ATombstoneWithNothingLeftToHideIsDroppedByCompaction) {
+  TestEnvironment t;
+  std::unique_ptr<DB> db;
+  ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+  FillAndFlush(db.get(), 0, 50);
+  WriteBatch b;
+  b.DeleteRange(BoundAt(10), BoundAt(20));
+  SeqNum s = 0;
+  ASSERT_TRUE(db->Write(b, &s).ok());
+  for (int round = 1; round < 4; ++round) FillAndFlush(db.get(), round * 50, 50);
+  ASSERT_EQ(0, LevelCounts(&t).first);
+
+  // The answers are unchanged whether or not the tombstone survived -- which is
+  // the point of the drop claim -- so what is asserted is the ANSWER.
+  for (int i = 10; i < 20; ++i) EXPECT_EQ("<absent>", Get(*db, KeyAt(i))) << i;
+  EXPECT_EQ(Value(9, 512), Get(*db, KeyAt(9)));
+  ASSERT_TRUE(db->Close().ok());
+
+  // AND IT REALLY WAS DROPPED: no table names a range tombstone any more.
+  std::unique_ptr<DB> re;
+  ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &re).ok());
+  ASSERT_TRUE(re->Close().ok());
+  int with_tombstones = 0;
+  for (const std::string& name : Tables(&t)) {
+    const std::string image = t.ContentNow(kDir + "/" + name);
+    const sst::TableCheck v = sst::ValidateTable(Slice(image));
+    ASSERT_TRUE(v.ok()) << v.why;
+    if (v.range_tombstones > 0) ++with_tombstones;
+  }
+  EXPECT_EQ(0, with_tombstones)
+      << "the tombstone had nothing left to hide and should have gone with it";
+}
+
+// AN UNBOUNDED TOMBSTONE THROUGH A COMPACTION: only the LAST output may carry
+// the unbounded piece, and every earlier one gets it clipped. The Open would
+// refuse otherwise, so a passing reopen is the assertion.
+TEST(RangeDelete, AnUnboundedRangeIsSplitWithTheOpenPieceInTheLastFile) {
+  TestEnvironment t;
+  {
+    std::unique_ptr<DB> db;
+    ASSERT_TRUE(DB::Open(t.env(), kDir, FlushingCaps(), &db).ok());
+    FillAndFlush(db.get(), 0, 200);
+    std::unique_ptr<Snapshot> below = db->NewSnapshot();
+    WriteBatch b;
+    b.DeleteRange(BoundAt(50), Bound::Unbounded());
+    SeqNum s = 0;
+    ASSERT_TRUE(db->Write(b, &s).ok());
+    for (int round = 0; round < 3; ++round) FillAndFlush(db.get(), 1000 + round * 50, 50);
+    ASSERT_EQ(0, LevelCounts(&t).first);
+    ASSERT_TRUE(below->Close().ok());
+    ASSERT_TRUE(db->Close().ok());
+  }
+  std::unique_ptr<DB> db;
+  const Status s = DB::Open(t.env(), kDir, FlushingCaps(), &db);
+  ASSERT_TRUE(s.ok()) << s.ToString()
+                      << " -- the unbounded piece landed somewhere other than "
+                         "the last file of the run";
+  for (int i = 0; i < 50; ++i) EXPECT_EQ(Value(i, 512), Get(*db, KeyAt(i))) << i;
+  for (int i = 50; i < 200; ++i) EXPECT_EQ("<absent>", Get(*db, KeyAt(i))) << i;
+  ASSERT_TRUE(db->Close().ok());
+}
+
 // ------------------------------------------------------- the Sync precondition
 //
 // SINGLE-CALLER, INDUCED IN BOTH DIRECTIONS (GF-14). One direction alone would

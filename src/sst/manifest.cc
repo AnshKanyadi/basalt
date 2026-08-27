@@ -306,27 +306,62 @@ Status Replay(const std::string& path, uint64_t expected_number, Slice image,
 // binary search finds one of them and the other's version is INVISIBLE -- a
 // deletion that stops hiding a value, which reads as data returning from the
 // dead and has no structural signature at all.
-Status VerifyL1IsARun(const ManifestState& state) {
-  // std::map iterates by file number; the RUN's order is by KEY, and the two
-  // are unrelated once compaction starts reusing low numbers.
-  std::vector<const TableMeta*> l1;
+Status VerifyL1IsARun(const ManifestState& state,
+                      const std::vector<std::shared_ptr<Table>>& opened) {
+  // OVER THE OPENED TABLES AS WELL AS THE METAS, and that is B3.5e's change.
+  // Whether a bound is EXCLUSIVE, and whether a table reaches to infinity, are
+  // derived from the table's own bytes -- deliberately NOT manifest fields, so
+  // D4 §5.1 point 2 is satisfied by not adding a number rather than by adding
+  // one carefully. The check therefore has to look where the facts live.
+  std::map<uint64_t, const Table*> by_number;
+  for (const auto& t : opened) by_number[t->number()] = t.get();
+
+  std::vector<const Table*> l1;
   for (const auto& entry : state.tables) {
-    if (entry.second.level == 1) l1.push_back(&entry.second);
+    if (entry.second.level != 1) continue;
+    const auto it = by_number.find(entry.first);
+    if (it == by_number.end()) continue;
+    l1.push_back(it->second);
   }
-  std::sort(l1.begin(), l1.end(), [](const TableMeta* a, const TableMeta* b) {
-    const int c = ExtractUserKey(Slice(a->smallest))
-                      .compare(ExtractUserKey(Slice(b->smallest)));
+  std::sort(l1.begin(), l1.end(), [](const Table* a, const Table* b) {
+    const int c = ExtractUserKey(Slice(a->check().smallest_key))
+                      .compare(ExtractUserKey(Slice(b->check().smallest_key)));
     if (c != 0) return c < 0;
-    return a->number < b->number;
+    return a->number() < b->number();
   });
+
   for (std::size_t i = 1; i < l1.size(); ++i) {
-    const Slice prev_last = ExtractUserKey(Slice(l1[i - 1]->largest));
-    const Slice next_first = ExtractUserKey(Slice(l1[i]->smallest));
-    if (prev_last.compare(next_first) >= 0) {
+    const Table* prev = l1[i - 1];
+    const Table* next = l1[i];
+    const Slice prev_last = ExtractUserKey(Slice(prev->check().largest_key));
+    const Slice next_first = ExtractUserKey(Slice(next->check().smallest_key));
+    const int c = prev_last.compare(next_first);
+    if (c > 0) {
       return Status::Corruption(
-          "level 1 is not a run: table " + std::to_string(l1[i - 1]->number) +
-          " ends at a user key at or after where table " +
-          std::to_string(l1[i]->number) + " begins");
+          "level 1 is not a run: table " + std::to_string(prev->number()) +
+          " ends at a user key after where table " +
+          std::to_string(next->number()) + " begins");
+    }
+    // TOUCHING IS LEGAL EXACTLY WHEN THE FIRST BOUND IS EXCLUSIVE. Splitting a
+    // tombstone at an output boundary produces `[.., B)` and `[B, ..)`, which
+    // name B in both bounds and share no key at all.
+    if (c == 0 && !prev->check().largest_is_exclusive) {
+      return Status::Corruption(
+          "level 1 is not a run: table " + std::to_string(prev->number()) +
+          " and table " + std::to_string(next->number()) +
+          " both hold the user key their bounds meet at");
+    }
+  }
+  // AND ONLY THE LAST MAY REACH TO INFINITY, for the reason db.cc's install
+  // path states: an unbounded tombstone anywhere else is invisible to every
+  // read that does not land on its file, so the range delete silently stops
+  // applying above that file's bounds.
+  for (std::size_t i = 0; i + 1 < l1.size(); ++i) {
+    if (l1[i]->check().unbounded_end) {
+      return Status::Corruption(
+          "level 1 file " + std::to_string(l1[i]->number()) +
+          " holds a range tombstone with no upper bound and is not the last of "
+          "the run: every read that does not land on this file would miss it");
     }
   }
   return Status::Ok();
@@ -372,7 +407,7 @@ Status VerifyTables(Env* env, const std::string& dir, const ManifestState& state
   if (opened != nullptr) {
     opened->assign(built.rbegin(), built.rend());
   }
-  return VerifyL1IsARun(state);
+  return VerifyL1IsARun(state, built);
 }
 
 }  // namespace

@@ -114,6 +114,22 @@ struct TableCheck {
   // as written; it is the set it was applied to that was wrong. `BM91` is the
   // mutant.
   bool unbounded_end = false;
+
+  // B3.5e: `largest_key` came from a range tombstone's END, which is EXCLUSIVE
+  // -- so this table's range reaches that key WITHOUT CONTAINING IT.
+  //
+  // It exists because splitting a tombstone at an output-file boundary makes
+  // two files TOUCH: the first is clipped to `[.., B)` and the second begins at
+  // `B`. Both then name `B` in their bounds, and without this flag:
+  //
+  //   `VerifyL1IsARun` refuses the Open, because the bounds appear to overlap;
+  //   `L1FileFor` returns the FIRST file for key `B`, which does not hold it.
+  //
+  // The bound cannot simply be trimmed instead. Input selection reads these
+  // bounds, and a tombstone clipped to `[.., B)` covers keys ABOVE this table's
+  // last data key -- so a compaction that selected by data keys alone would
+  // miss this file and resurrect what the tombstone masked.
+  bool largest_is_exclusive = false;
   std::string smallest_key;
   std::string largest_key;
   uint64_t largest_seq = 0;

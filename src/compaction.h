@@ -43,6 +43,7 @@
 #define RIFT_COMPACTION_H_
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "internal_key.h"
@@ -63,10 +64,39 @@ namespace rift {
 // that rolls to a new file may roll ONLY THERE: two files of one run that share
 // a user key are not a run, `L1FileFor` would find one of them, and the other's
 // versions would be unreachable -- a deletion that stops hiding a value.
+// One range tombstone as a compaction carries it: owning its bounds, because
+// the input tables it came from may be deleted before the output is installed.
+struct CompactionTombstone {
+  std::string start;
+  std::string end;              // unused when `end_unbounded`
+  bool end_unbounded = false;
+  SeqNum seq = 0;
+};
+
 class CompactionSink {
  public:
   virtual ~CompactionSink() = default;
   virtual Status Add(Slice internal_key, Slice value, bool boundary) = 0;
+
+  // THE TOMBSTONES THAT SURVIVED, HANDED OVER BEFORE THE FIRST ENTRY.
+  //
+  // The sink -- not the merge -- decides where output files begin and end, so
+  // the sink is what must SPLIT a tombstone at each boundary. A tombstone
+  // spanning a roll is written into BOTH files, clipped to each file's own key
+  // range:
+  //
+  //   file `[A, B)` gets `[max(start, A), min(end, B))`
+  //
+  // Clipping is not tidiness. An unclipped tombstone would reach past its
+  // file's bounds, and INPUT SELECTION READS THOSE BOUNDS -- so a later
+  // compaction would not read this file for a key the tombstone covers, and
+  // clause 2 would then permit dropping a deletion whose masked value survives
+  // elsewhere.
+  //
+  // The clipped end is EXCLUSIVE, which is why `TableCheck` reports
+  // `largest_is_exclusive`: two files that meet at `B` share no key, and both
+  // the run check and the L1 search have to know that.
+  virtual void SetTombstones(std::vector<CompactionTombstone> tombstones) = 0;
 };
 
 struct CompactionStats {
@@ -79,6 +109,8 @@ struct CompactionStats {
   // 1 if the watermark pin below forced an entry to be kept that the drop claim
   // would have permitted dropping. Asserted by a test, per section 8.4.
   uint64_t pinned = 0;
+  uint64_t tombstones_kept = 0;
+  uint64_t tombstones_dropped = 0;
 };
 
 // `observable` is `S`: every live snapshot sequence plus the current visible
@@ -117,8 +149,21 @@ struct CompactionStats {
 //
 // `out` may receive NO ENTRIES at all: a compaction that drops everything is
 // the correct outcome for a key written and deleted with no snapshot below it.
+//
+// `tombstones` are every range tombstone the inputs hold. They do two jobs:
+//
+//   THEY HIDE POINT VERSIONS, so clause 1 must consult them -- a version a
+//   tombstone shadows is not required at any observable sequence, exactly as
+//   the harness's `Required()` computes it. Without this the merge would KEEP a
+//   version the tombstone hides while DROPPING the tombstone, and the value
+//   would come back.
+//
+//   THEY ARE DROPPED BY CLAUSE 2, over a range rather than over a key: a
+//   tombstone may go when nothing observable is below it and the inputs are
+//   bottom-most, which is the same condition a point deletion answers.
 Status RunCompaction(MergedIter* input, const std::vector<SeqNum>& observable,
                      bool bottom_most, SeqNum pin_seq, uint64_t bound,
+                     const std::vector<CompactionTombstone>& tombstones,
                      CompactionSink* out, CompactionStats* stats);
 
 }  // namespace rift

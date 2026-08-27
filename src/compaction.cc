@@ -4,6 +4,7 @@
 #include <string>
 
 #include "check.h"
+#include "range_tombstone.h"
 
 namespace rift {
 namespace {
@@ -27,8 +28,35 @@ bool AnyObservableBelow(const std::vector<SeqNum>& s, SeqNum q) {
 
 }  // namespace
 
+namespace {
+
+bool CoversKey(const CompactionTombstone& t, Slice user_key) {
+  // ONE PREDICATE, and it is `sst::RangeTombstone::Covers` -- the engine has
+  // exactly one answer to "does this range contain this key", shared by the
+  // memtable, the table and the compaction.
+  sst::RangeTombstone v;
+  v.start = Slice(t.start);
+  v.end = Slice(t.end);
+  v.end_unbounded = t.end_unbounded;
+  return v.Covers(user_key);
+}
+
+// The newest tombstone at or below `at` covering `user_key`, or 0.
+SeqNum NewestCoveringTombstone(const std::vector<CompactionTombstone>& ts,
+                               Slice user_key, SeqNum at) {
+  SeqNum best = 0;
+  for (const CompactionTombstone& t : ts) {
+    if (t.seq > at || t.seq <= best) continue;
+    if (CoversKey(t, user_key)) best = t.seq;
+  }
+  return best;
+}
+
+}  // namespace
+
 Status RunCompaction(MergedIter* input, const std::vector<SeqNum>& observable,
                      bool bottom_most, SeqNum pin_seq, uint64_t bound,
+                     const std::vector<CompactionTombstone>& tombstones,
                      CompactionSink* out, CompactionStats* stats) {
   // ASCENDING AND DISTINCT is a precondition, asserted rather than sorted for:
   // a caller that hands over an unsorted S has a bug in how it collected live
@@ -83,6 +111,20 @@ Status RunCompaction(MergedIter* input, const std::vector<SeqNum>& observable,
       // sequence sees it -- that is, lands in the interval over which it is the
       // newest version of its key.
       keep = AnyObservableIn(observable, seq, newer_seq);
+      // AND A RANGE TOMBSTONE ABOVE IT HIDES IT, at every sequence that can see
+      // the tombstone. If the newest covering tombstone at the top of this
+      // version's interval is above the version, no observable sequence returns
+      // it and it is not required.
+      //
+      // THIS IS NOT AN OPTIMISATION. Without it the merge could KEEP a version
+      // a tombstone hides while DROPPING the tombstone -- clause 2 drops a
+      // tombstone when nothing observable is below it, and that is exactly when
+      // every version beneath it is unobservable too. Keeping one and dropping
+      // the other resurrects the value.
+      if (keep) {
+        const SeqNum ceiling = newer_seq > kMaxSeqNum ? kMaxSeqNum : newer_seq - 1;
+        if (NewestCoveringTombstone(tombstones, user_key, ceiling) > seq) keep = false;
+      }
     } else {
       // CLAUSE 2, AND IT IS DELIBERATELY CONSERVATIVE. The tombstone drops when
       // no observable sequence is below it, because then nothing older is in
@@ -125,6 +167,28 @@ Status RunCompaction(MergedIter* input, const std::vector<SeqNum>& observable,
     }
     newer_seq = seq;
   }
+
+  // THE TOMBSTONES, JUDGED BY CLAUSE 2 OVER A RANGE RATHER THAN OVER A KEY.
+  //
+  // A tombstone may be dropped when NOTHING OBSERVABLE IS BELOW IT -- then no
+  // reader can ask what the key held before it, so it has no work left -- and
+  // when the inputs are BOTTOM-MOST, because an older value in a file this
+  // compaction did not read would come back.
+  //
+  // It is the same pair of conditions a point deletion answers, and the
+  // watermark pin cannot conflict with it: the pinned entry sits at `pin_seq`,
+  // which is the maximum sequence the inputs hold and is therefore at or above
+  // every tombstone in them, so a dropped tombstone never had it to hide.
+  std::vector<CompactionTombstone> survivors;
+  for (const CompactionTombstone& t : tombstones) {
+    if (bottom_most && !AnyObservableBelow(observable, t.seq)) {
+      ++stats->tombstones_dropped;
+      continue;
+    }
+    survivors.push_back(t);
+    ++stats->tombstones_kept;
+  }
+  out->SetTombstones(std::move(survivors));
   return Status::Ok();
 }
 

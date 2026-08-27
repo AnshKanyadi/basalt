@@ -100,6 +100,16 @@ class OneFile final : public CompactionSink {
     return b_->status();
   }
 
+  // Recorded rather than written: these tests are about the DROP RULES, and
+  // what the engine's roller does with a surviving tombstone -- clipping and
+  // splitting it -- is asserted end to end instead, where output boundaries
+  // exist at all.
+  void SetTombstones(std::vector<CompactionTombstone> t) override {
+    survivors = std::move(t);
+  }
+
+  std::vector<CompactionTombstone> survivors;
+
  private:
   sst::TableBuilder* b_;
 };
@@ -150,7 +160,7 @@ CompactResult Compact(const std::vector<std::vector<Cell>>& groups,
   sst::TableBuilder b(out.get());
   OneFile sink(&b);
   EXPECT_TRUE(RunCompaction(&merge, observable, bottom_most, r.pin_seq, r.bound,
-                            &sink, &r.stats)
+                            {}, &sink, &r.stats)
                   .ok());
   if (r.stats.emitted > 0) {
     EXPECT_TRUE(b.Finish().ok());

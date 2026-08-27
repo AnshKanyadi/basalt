@@ -233,11 +233,20 @@ TableCheck ValidateTable(Slice image) {
         // clause 2 drop a deletion whose masked value survives above.
         ok.unbounded_end = true;
       } else {
-        std::string hi;
-        AppendInternalKey(&hi, t.end, t.tag);
-        if (ok.largest_key.empty() ||
-            CompareInternalKey(Slice(hi), Slice(ok.largest_key)) > 0) {
+        // COMPARED AS USER KEYS, NOT AS INTERNAL KEYS, and the difference is a
+        // bug the first version had. The internal order is user key ascending
+        // and TAG DESCENDING, so at one user key a SMALLER tag sorts LATER --
+        // a tombstone whose sequence is below a data entry's would have
+        // compared "greater" and taken the bound, marking it exclusive while
+        // the table plainly holds that key.
+        //
+        // The bound is a statement about USER KEYS. It is compared as one.
+        if (t.end.compare(ExtractUserKey(Slice(ok.largest_key))) > 0) {
+          std::string hi;
+          AppendInternalKey(&hi, t.end, t.tag);
           ok.largest_key = hi;
+          // AND IT IS AN EXCLUSIVE BOUND. Reaching this key is not holding it.
+          ok.largest_is_exclusive = true;
         }
       }
       if (t.seq() > ok.largest_seq) ok.largest_seq = t.seq();

@@ -1,0 +1,31 @@
+# id: BM102-tombstones-not-clipped-to-the-file
+# blinds: a split tombstone being CLIPPED to the file it is written into
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# An unclipped tombstone reaches past its own file's bounds, so two files of the
+# run both claim keys the other holds -- and L1 stops being a run. The Open
+# refuses, which is the loud failure.
+#
+# THE QUIET ONE IS WHY THE CLIP EXISTS. Input selection reads those bounds. A
+# tombstone that covers keys outside its file's range is one a later compaction
+# will not read for those keys, and clause 2 then permits dropping a deletion
+# whose masked value survives in a file nobody looked at.
+--- a/engine-cpp/src/db.cc
++++ b/engine-cpp/src/db.cc
+@@ -1095,12 +1095,12 @@
+           builder_->AddUnboundedRangeTombstone(Slice(lo), tag);
+           continue;
+         }
++        // BM102: the tombstone is written whole into every file it touches.
+         std::string hi;
+         if (t.end_unbounded) {
+           hi = *boundary_;
+         } else {
+           hi = t.end;
+-          if (!last_file && hi > *boundary_) hi = *boundary_;
+         }
+         if (!(lo < hi)) continue;  // the clip left nothing in this file
+         builder_->AddRangeTombstone(Slice(lo), Slice(hi), tag);

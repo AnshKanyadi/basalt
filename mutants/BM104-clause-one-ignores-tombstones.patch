@@ -1,0 +1,34 @@
+# id: BM104-clause-one-ignores-tombstones
+# blinds: clause 1 knowing that a range tombstone hides a version
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# ON ITS OWN THIS IS ONLY OVER-KEEPING, WHICH THE CLAIM PERMITS -- and that is
+# what makes it worth planting rather than obvious. It becomes a wrong answer
+# only in combination with clause 2:
+#
+#   clause 2 drops a tombstone when nothing observable is below it;
+#   that is exactly when every version beneath it is unobservable too;
+#   so keeping one and dropping the other RESURRECTS the value.
+#
+# The two rules have to agree about what a tombstone hides, and this is the half
+# that would silently stop agreeing. It is also the half the harness's own
+# `Required()` has computed correctly since B3.5a -- so a divergence here is the
+# engine disagreeing with the model, which is what B4 exists to catch and what
+# this catches first.
+--- a/engine-cpp/src/compaction.cc
++++ b/engine-cpp/src/compaction.cc
+@@ -121,10 +121,7 @@
+       // tombstone when nothing observable is below it, and that is exactly when
+       // every version beneath it is unobservable too. Keeping one and dropping
+       // the other resurrects the value.
+-      if (keep) {
+-        const SeqNum ceiling = newer_seq > kMaxSeqNum ? kMaxSeqNum : newer_seq - 1;
+-        if (NewestCovering(tombstones, user_key, ceiling) > seq) keep = false;
+-      }
++      // BM104: clause 1 does not know about range tombstones.
+     } else {
+       // CLAUSE 2, AND IT IS DELIBERATELY CONSERVATIVE. The tombstone drops when
+       // no observable sequence is below it, because then nothing older is in

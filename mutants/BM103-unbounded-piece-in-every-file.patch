@@ -1,0 +1,26 @@
+# id: BM103-unbounded-piece-in-every-file
+# blinds: only the LAST output file carrying an unbounded tombstone
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# A tombstone with no upper bound covers every key above its start, so a file
+# holding one overlaps every file after it. Put it in each and L1 is no longer a
+# run: the Open refuses, and before that `L1FileFor` would have been searching a
+# structure whose precondition does not hold.
+#
+# Only the last file has no successor to overlap, which is the whole reason the
+# split leaves the open piece there and clips it everywhere else.
+--- a/engine-cpp/src/db.cc
++++ b/engine-cpp/src/db.cc
+@@ -1088,7 +1088,8 @@
+         std::string lo = t.start;
+         if (have_start_ && lo < file_start_) lo = file_start_;
+         const uint64_t tag = MakeTag(t.seq, ValueType::kDeletion);
+-        if (t.end_unbounded && last_file) {
++        // BM103: every file keeps the unbounded piece, not just the last.
++        if (t.end_unbounded) {
+           // ONLY THE LAST FILE MAY CARRY THE UNBOUNDED PIECE, because only the
+           // last has no successor to overlap. Every earlier file gets the
+           // tombstone clipped to its own boundary instead.
