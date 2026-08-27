@@ -22,6 +22,18 @@
 # So: the COUNT is immune to the denominator and blind to per-point dilution;
 # the RATE is the reverse; the CEILING is blind to both and sees only how early.
 #
+# THE KILL-POINT COUNTS, AS OF B3.7, and they are recorded here because every
+# rate in this file is a fraction of one of them:
+#
+#   default  305    flush  990    compact  3545
+#
+# `compact` was ADDED at B3.7 rather than `flush` being grown, precisely so the
+# other two counts did not move -- see DESIGN-B3 section 8.2a. `default` read
+# 300 at B2.7 and reads 305 now; the five extra calls arrived during B3 and are
+# recorded rather than absorbed. Every default-regime floor was set with margin
+# and holds at the new denominator, and the DETECTION COUNTS -- the bound a
+# denominator cannot touch -- are unchanged.
+#
 # FLOORS WITH MARGIN, NEVER EXACT VALUES. The sweep is deterministic, so exact
 # assertions are possible and are deliberately not used: they fail on any benign
 # change -- one more Env call, one more key in the workload -- and a lane that
@@ -319,5 +331,4 @@ BM108-obsolete-never-collected | covered-by: FileLifetime.WithNoReaderTheInputFi
 # a lane whose sensitivity is unmeasured is the shape section 7.5 warns about
 # one level up.
 #
-# The floors below are placeholders until the first measurement fills them in;
-# `cpp-campaign` prints the measured value and fails if a row is missing.
+BM109-no-dirsync-after-the-compaction-output | 1 | 1400 | measured 10/3530 = 2 per mille, first at kill point 663 (B3.7) | THE ROW THAT GIVES THE `compact` REGIME A MEASURED POWER RATHER THAN A GREEN LANE. Ten detections is few, so the rate is floored at roughly a third of the measurement rather than a half -- BM5's precedent: at this count the rate is sensitive to workload shape and a floor set close to the measurement would assert noise. What must not silently change is that a lost directory entry on the COMPACTION install path stays detectable at all. The count floor is the bound that means most here. It also discharges section 7.5: the install ordering was argued and unswept, and this is the class that proves a defect in it would be seen. | compact | 4
