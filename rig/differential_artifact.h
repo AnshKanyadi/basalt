@@ -104,6 +104,14 @@ struct DiffOp {
   // clear-everything case.
   bool start_bounded = false;
   bool end_bounded = false;
+  // DRIVER-SIDE ONLY, and NOT IN THE FORMAT. It marks where the author decided
+  // a new batch begins; the ARTIFACT expresses the same fact by every op in a
+  // batch carrying one sequence, which is what a batch is in this engine.
+  //
+  // Keeping it out of the format is deliberate: a field recording something the
+  // sequences already say is a second source of truth about one fact, and the
+  // two would drift.
+  bool batch_head = false;
 };
 
 // THE REGIMES THE DIFFERENTIAL RIG RUNS. Closed, -Werror=switch, no default.

@@ -1,0 +1,34 @@
+# id: BM114-batch-range-merge-takes-the-narrower-end
+# blinds: two DeleteRanges in ONE BATCH sharing a start merging to their UNION
+# covering-lane: cpp-diff
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# THE CLASS THAT FLOORS THE DIFFERENTIAL REGIME (GF-26). A lane with no class
+# measured against it is a green whose sensitivity is unknown, and ninety-six
+# agreeing runs read as thorough while proving only that the lane ran.
+#
+# IT IS PLANTED WHERE ONLY THE DIFFERENTIAL LOOKS. Two range deletions in one
+# batch sharing a start is a shape no unit test constructs and no sweep workload
+# emits -- they are written by hand, and nobody writes that by hand. A random
+# workload over hundreds of operations emits it, and the model applies both
+# ranges natively while the engine must merge them into one tombstone, because
+# the block format refuses a duplicate start-and-tag.
+#
+# The merge must take the UNION. Taking the narrower end leaves keys alive that
+# the caller deleted -- and the engine is internally consistent about it: the
+# tombstone it wrote is valid, its bounds are right, every checksum passes, and
+# the answer is simply wrong in a way only a second implementation can see.
+--- a/engine-cpp/src/db.cc
++++ b/engine-cpp/src/db.cc
+@@ -309,7 +309,8 @@
+           if (r.end_unbounded) {
+             existing.end_unbounded = true;
+             existing.end.clear();
+-          } else if (!existing.end_unbounded && r.end > existing.end) {
++          } else if (!existing.end_unbounded && r.end < existing.end) {
++            // BM114: two ranges sharing a start merge to the NARROWER end.
+             existing.end = r.end;
+           }
+           merged = true;

@@ -42,12 +42,35 @@ std::string KeyOf(uint64_t i) {
 // sequence of operations the rig DECIDED to issue, not a transcript of what an
 // engine did with them -- which is what makes it a shared input rather than a
 // witness.
+//
+// ---------------------------------------------------------------------------
+// BATCHES ARE EXPRESSED BY A SHARED SEQUENCE, AND THAT NEEDED NO FORMAT CHANGE.
+//
+// Every op in one batch is applied at ONE sequence -- that is what a batch IS
+// in this engine -- so consecutive ops carrying the same non-zero sequence are
+// one batch, and the format already carried the sequence per op.
+//
+// WITHOUT MULTI-OP BATCHES THE RIG NEVER REACHED THE INTRA-BATCH RULES AT ALL:
+// a `DeleteRange` covering keys written earlier in the same batch, a `Set`
+// after one re-adding a key, two ranges sharing a start merging to their union,
+// and batch atomicity itself. `BM114` survived BOTH lanes and that survival is
+// what found the gap -- section 8's expectation exactly: a rig that finds
+// nothing has said something about itself.
 std::vector<DiffOp> Author(const DiffRunOptions& o) {
   std::vector<DiffOp> ops;
   Pcg64 rng(o.seed);
   const uint32_t count = o.regime == DiffRegime::kCompact ? o.ops * 4 : o.ops;
+  uint32_t left_in_batch = 0;
   for (uint32_t i = 0; i < count; ++i) {
     DiffOp op;
+    // BATCHES OF ONE TO FOUR WRITES. One-op batches stay the common case, so
+    // the workload still resembles ordinary use, and multi-op batches arrive
+    // often enough to reach the intra-batch rules within a few hundred ops.
+    if (left_in_batch == 0) {
+      op.batch_head = true;
+      left_in_batch = static_cast<uint32_t>(1 + rng.Below(4));
+    }
+    --left_in_batch;
     const uint64_t roll = rng.Below(100);
     if (roll < 55) {
       op.kind = DiffOpKind::kSet;
@@ -75,10 +98,13 @@ std::vector<DiffOp> Author(const DiffRunOptions& o) {
       if (op.end_bounded) op.value = KeyOf(hi == lo ? hi + 1 : hi);
     } else if (roll < 92) {
       op.kind = DiffOpKind::kSync;
+      left_in_batch = 0;  // a non-write ends the batch
     } else if (roll < 96) {
       op.kind = DiffOpKind::kSnapshotTake;
+      left_in_batch = 0;
     } else {
       op.kind = DiffOpKind::kSnapshotRelease;
+      left_in_batch = 0;
     }
     ops.push_back(std::move(op));
   }
@@ -93,33 +119,50 @@ Bound BoundFrom(bool bounded, const std::string& key) {
 // assigned. Returns false once the engine stops accepting (a kill).
 bool Issue(DB* db, std::vector<DiffOp>* ops,
            std::vector<std::unique_ptr<Snapshot>>* snapshots, uint64_t* watermark) {
-  for (DiffOp& op : *ops) {
+  for (std::size_t i = 0; i < ops->size(); ++i) {
+    DiffOp& op = (*ops)[i];
+    // A RUN OF WRITES IS ONE BATCH. `batch_head` marks where a batch begins;
+    // every write from there until the next non-write op goes in together and
+    // they all record the ONE sequence the engine assigned.
+    if (op.kind == DiffOpKind::kSet || op.kind == DiffOpKind::kDelete ||
+        op.kind == DiffOpKind::kDeleteRange) {
+      WriteBatch b;
+      std::size_t j = i;
+      for (; j < ops->size(); ++j) {
+        DiffOp& w = (*ops)[j];
+        if (j > i && w.batch_head) break;
+        switch (w.kind) {  // NO default: arm
+          case DiffOpKind::kSet:
+            b.Set(Slice(w.key), Slice(w.value));
+            break;
+          case DiffOpKind::kDelete:
+            b.Delete(Slice(w.key));
+            break;
+          case DiffOpKind::kDeleteRange:
+            b.DeleteRange(BoundFrom(w.start_bounded, w.key),
+                          BoundFrom(w.end_bounded, w.value));
+            break;
+          case DiffOpKind::kSync:
+          case DiffOpKind::kSnapshotTake:
+          case DiffOpKind::kSnapshotRelease:
+            goto issue;  // a non-write ends the batch
+        }
+      }
+    issue:
+      wal::SeqNum s = 0;
+      if (!db->Write(b, &s).ok()) return false;
+      // EVERY OP IN THE BATCH RECORDS THE SAME SEQUENCE, which is how the
+      // artifact expresses batching without a new field: that is what a batch
+      // IS here.
+      for (std::size_t k = i; k < j; ++k) (*ops)[k].seq = s;
+      i = j - 1;
+      continue;
+    }
     switch (op.kind) {  // NO default: arm
-      case DiffOpKind::kSet: {
-        WriteBatch b;
-        b.Set(Slice(op.key), Slice(op.value));
-        wal::SeqNum s = 0;
-        if (!db->Write(b, &s).ok()) return false;
-        op.seq = s;
-        break;
-      }
-      case DiffOpKind::kDelete: {
-        WriteBatch b;
-        b.Delete(Slice(op.key));
-        wal::SeqNum s = 0;
-        if (!db->Write(b, &s).ok()) return false;
-        op.seq = s;
-        break;
-      }
-      case DiffOpKind::kDeleteRange: {
-        WriteBatch b;
-        b.DeleteRange(BoundFrom(op.start_bounded, op.key),
-                      BoundFrom(op.end_bounded, op.value));
-        wal::SeqNum s = 0;
-        if (!db->Write(b, &s).ok()) return false;
-        op.seq = s;
-        break;
-      }
+      case DiffOpKind::kSet:
+      case DiffOpKind::kDelete:
+      case DiffOpKind::kDeleteRange:
+        RIFT_UNREACHABLE("a write reached the single-op switch");
       case DiffOpKind::kSync: {
         wal::SeqNum mark = 0;
         if (!db->Sync(&mark).ok()) return false;
