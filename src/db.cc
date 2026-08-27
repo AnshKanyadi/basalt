@@ -894,8 +894,14 @@ class DBImpl final : public DB {
   // THE COUNT IS `shared_ptr::use_count()`, NOT A SECOND COUNTER. Every reader
   // already holds a `shared_ptr<Table>` for exactly as long as it may read:
   // `Version` copies them under the lock, and a `Snapshot` or `Iterator` holds
-  // its `Version` for its whole life. A separate refcount would be a second
-  // source of truth about the same fact, and the two would drift.
+  // its `Version` for its whole life.
+  //
+  //   A SEPARATE REFCOUNT WOULD BE A SECOND SOURCE OF TRUTH ABOUT ONE FACT.
+  //
+  // That is the one-fact-two-places class -- the shape Track A paid for in
+  // `BUG-032` -- and it is avoided here BY CONSTRUCTION rather than by keeping
+  // two numbers in step. There is no second number to keep in step: the thing
+  // that makes a reader a reader is the same thing that counts it.
   //
   // EVERY RETIRED TABLE GOES THROUGH `obsolete_`, AND THAT IS THE WHOLE POINT
   // OF THE DESIGN RATHER THAN A DETOUR.

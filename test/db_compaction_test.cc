@@ -805,11 +805,20 @@ TEST(RangeDelete, AnUnboundedRangeIsSplitWithTheOpenPieceInTheLastFile) {
 
 // ------------------------------- B3.6: file lifetime by reference count
 //
-// THE ASSERTION IS ABOUT THE FILE, NOT ABOUT THE ANSWER. A snapshot reading
-// through a deleted file returns the right answer today because `table.h` holds
-// the image resident -- so a test that only read through the snapshot would
-// pass with or without the reference count. What is asserted is that THE FILE
-// IS STILL THERE while a reader holds it, and gone once the reader does not.
+// TWO INSTRUMENTS, NOT ONE -- GF-25. A snapshot reading through a deleted file
+// returns the RIGHT ANSWER today, because `table.h` holds the image resident:
+// so a test that only read through the snapshot passes with or without the
+// reference count, and three of the four tests below did pass while it was
+// wrong.
+//
+//   THE GATE ON THE MECHANISM  asserts THE FILE IS ON DISK while a reader holds
+//                              it, and gone once the reader does not.
+//   THE TEST ON THE ANSWER     asserts the snapshot still reads what it was
+//                              promised, across two compactions.
+//
+// Drop the first and the reference count can be deleted entirely with every
+// test green. Drop the second and the file can be kept alive while the version
+// it holds is wrong. Neither is sufficient; neither is redundant.
 
 TEST(FileLifetime, AnInputFileOutlivesTheCompactionWhileASnapshotHoldsIt) {
   TestEnvironment t;
