@@ -723,6 +723,20 @@ TEST(RangeDelete, ARangeSpanningOutputFilesIsSplitAndEveryPieceApplies) {
   for (int i = 190; i < 200; ++i) EXPECT_EQ(Value(i, 512), Get(*db, KeyAt(i))) << i;
   ASSERT_TRUE(below->Close().ok());
   ASSERT_TRUE(db->Close().ok());
+
+  // AND THE REOPEN, WHICH IS WHERE THE CLIP IS ACTUALLY CHECKED. In-process
+  // reads cannot see an unclipped tombstone: every file it was wrongly written
+  // into answers the same way the clipped one would. What an unclipped
+  // tombstone breaks is the BOUNDS -- it reaches past its own file's range, so
+  // two files of the run overlap -- and `VerifyL1IsARun` is the thing that
+  // says so. `BM102` survived until this reopen existed.
+  std::unique_ptr<DB> re;
+  const Status s2 = DB::Open(t.env(), kDir, FlushingCaps(), &re);
+  ASSERT_TRUE(s2.ok()) << s2.ToString()
+                       << " -- a tombstone was written past its file's bounds, "
+                          "so the run overlaps";
+  for (int i = 10; i < 190; ++i) EXPECT_EQ("<absent>", Get(*re, KeyAt(i))) << i;
+  ASSERT_TRUE(re->Close().ok());
 }
 
 // CLAUSE 2 OVER A RANGE: with nothing observable below it, a tombstone whose
