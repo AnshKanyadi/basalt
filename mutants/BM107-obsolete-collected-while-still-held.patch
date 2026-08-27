@@ -1,0 +1,28 @@
+# id: BM107-obsolete-collected-while-still-held
+# blinds: the reference count DECIDING when an obsolete file may go
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# BM106 deletes at retirement; this one waits, puts the file on the list, and
+# then collects it anyway on the next Sync. The window is different and the
+# outcome is the same: a file deleted while a reader still holds it.
+#
+# It is the half that would survive a reviewer's eye, because the LIST exists
+# and is used -- the mechanism is visibly present and simply does not decide
+# anything. A structure that is built and then not consulted is the shape a
+# reader trusts most.
+--- a/engine-cpp/src/db.cc
++++ b/engine-cpp/src/db.cc
+@@ -939,7 +939,9 @@
+       std::vector<std::shared_ptr<sst::Table>> still_held;
+       for (const auto& t : obsolete_) {
+         // One reference is `obsolete_`'s own; anything more is a live reader.
+-        (t.use_count() > 1 ? still_held : ready).push_back(t);
++        // BM107: everything on the list is collected, held or not.
++        (void)t.use_count();
++        ready.push_back(t);
+       }
+       obsolete_ = std::move(still_held);
+     }
