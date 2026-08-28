@@ -482,6 +482,10 @@ TEST(DBDeleteRange, AClearEverythingIsOneSmallRecordWhateverTheDatabaseHolds) {
   Caps small;
   small.max_record_bytes = 20000;
   small.wal_buffer_bytes = 100000;
+  // Backpressure off: this test is about the SIZE of the record, and a policy
+  // refusing the write before the record is built would answer a different
+  // question with the same green.
+  small.busy_bytes = 0;
   ASSERT_TRUE(small.Ordered());
   rig::RunRecord record;
   record.caps = small;

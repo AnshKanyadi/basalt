@@ -32,8 +32,36 @@ static_assert(static_cast<int>(Status::Code::kDiskFull) == RIFT_DISK_FULL, "");
 static_assert(static_cast<int>(Status::Code::kCorruption) == RIFT_CORRUPTION, "");
 static_assert(static_cast<int>(Status::Code::kKilled) == RIFT_KILLED, "");
 static_assert(static_cast<int>(Status::Code::kInvalidArgument) == RIFT_INVALID_ARGUMENT, "");
+static_assert(static_cast<int>(Status::Code::kBusy) == RIFT_BUSY, "");
 
-rift_status ToC(const Status& s) { return static_cast<rift_status>(s.code()); }
+// A SWITCH AND NOT A CAST, AND THE DIFFERENCE IS THE WHOLE POINT OF THE
+// FUNCTION. This is the one place two independently-declared enums have to
+// agree, and a static_cast agrees with anything: kBusy was added to
+// Status::Code at B5.3, this file compiled without a word, and the new code
+// crossed as rift_status(9) -- an integer no C header names.
+//
+// The static_asserts below pin each code that EXISTS. Nothing pinned that the
+// set was COMPLETE, which is GF-25 at the boundary: assertions about the
+// members present cannot fail on a member added. -Werror=switch can, and it is
+// the mechanism status.h already relies on for exactly this.
+rift_status ToC(const Status& s) {
+  switch (s.code()) {  // NO default: arm -- a new code must be mapped here
+    case Status::Code::kOk:              return RIFT_OK;
+    case Status::Code::kNotFound:        return RIFT_NOT_FOUND;
+    case Status::Code::kRecordTooLarge:  return RIFT_RECORD_TOO_LARGE;
+    case Status::Code::kWalBufferFull:   return RIFT_WAL_BUFFER_FULL;
+    case Status::Code::kIoError:         return RIFT_IO_ERROR;
+    case Status::Code::kDiskFull:        return RIFT_DISK_FULL;
+    case Status::Code::kCorruption:      return RIFT_CORRUPTION;
+    case Status::Code::kKilled:          return RIFT_KILLED;
+    case Status::Code::kInvalidArgument: return RIFT_INVALID_ARGUMENT;
+    case Status::Code::kBusy:            return RIFT_BUSY;
+  }
+  // Unreachable while the switch is exhaustive, and RIFT_INTERNAL rather than
+  // a cast if it ever is not: an unmapped code must arrive as the boundary's
+  // own "something is wrong here", never as a number that looks like a verdict.
+  return RIFT_INTERNAL;
+}
 
 // NO EXCEPTION CROSSES THIS BOUNDARY, AND THE ENFORCEMENT IS THE COMPILER
 // RATHER THAN A CATCH-ALL. This translation unit and every archive it links are

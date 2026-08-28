@@ -10,6 +10,7 @@ const char* CodeName(Status::Code code) {
     case Status::Code::kNotFound:        return "kNotFound";
     case Status::Code::kRecordTooLarge:  return "kRecordTooLarge";
     case Status::Code::kWalBufferFull:   return "kWalBufferFull";
+    case Status::Code::kBusy:            return "kBusy";
     case Status::Code::kIoError:         return "kIoError";
     case Status::Code::kDiskFull:        return "kDiskFull";
     case Status::Code::kCorruption:      return "kCorruption";

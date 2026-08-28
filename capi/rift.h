@@ -64,9 +64,15 @@ typedef enum {
   RIFT_CORRUPTION = 6,
   RIFT_KILLED = 7,
   RIFT_INVALID_ARGUMENT = 8,
-  /* NOT A Status::Code. It is the boundary's own: an exception reached the
-   * catch-all, or a handle was used after it was closed. It exists so those
-   * are DISTINGUISHABLE from anything the engine can report. */
+  /* Backpressure: the caller has submitted more than the engine's busy
+   * threshold and the poller has not drained it. THE WRITE WAS NOT APPLIED.
+   * Retry after draining -- a caller that ignores it makes no progress rather
+   * than losing data. */
+  RIFT_BUSY = 9,
+  /* NOT A Status::Code. It is the boundary's own: a handle was used after it
+   * was closed. It exists so that is DISTINGUISHABLE from anything the engine
+   * can report. (It once also covered "an exception reached the catch-all";
+   * there is no catch-all and no exception -- see rift.cc on -fno-exceptions.) */
   RIFT_INTERNAL = 100,
   /* The caller's buffer was too small; *needed holds the required length. */
   RIFT_BUFFER_TOO_SMALL = 101

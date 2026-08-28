@@ -68,16 +68,54 @@ inline constexpr uint64_t kWalBufferBytes = 256ull * 1024 * 1024;
 // recovery time attributed by profile rather than inferred.
 inline constexpr uint64_t kFlushBytes = 4ull * 1024 * 1024;
 
+// kBusyBytes -- 192 MiB, three quarters of the buffer cap, and IT IS A
+// DIFFERENT QUANTITY FROM THE TRIPWIRE'S.
+//
+// The tripwire counts `buffered_bytes_`: bytes accepted and not yet handed to a
+// Sync. Sync ZEROES that at the swap and then does its I/O with the lock
+// released, so for the whole duration of a slow fsync the engine counts nothing
+// while memory holds both the in-flight batch AND everything arriving behind
+// it. That window is exactly "the poller is behind", and it is invisible to a
+// byte counter that only sees what has not been handed over yet.
+//
+// So this threshold is charged against BUFFERED PLUS IN-FLIGHT, which is the
+// same quantity a harness computes from its own record as
+//
+//     owed = submitted - drained
+//
+// and that identity is what makes section 7.6.1's bidirectional predicate
+// constructible without asking the engine anything (B5-D4, ruling 4).
+//
+// ZERO MEANS DISABLED, and it is a real regime rather than a hole. With
+// backpressure ON the tripwire is UNREACHABLE through Apply -- a policy in
+// front of a last resort is what makes the last resort unreached, which is what
+// "tripwire, not policy" meant. The tripwire's own tests therefore run at
+// busy_bytes = 0, stated in each of them as a regime and visible in the diff,
+// rather than being quietly starved of the state they assert.
+inline constexpr uint64_t kBusyBytes = 192ull * 1024 * 1024;
+
 struct Caps {
   uint64_t max_record_bytes = kMaxRecordBytes;
   uint64_t wal_buffer_bytes = kWalBufferBytes;
   uint64_t flush_bytes = kFlushBytes;
+  uint64_t busy_bytes = kBusyBytes;  // 0 disables backpressure
 
   bool IsDefault() const {
     return max_record_bytes == kMaxRecordBytes &&
-           wal_buffer_bytes == kWalBufferBytes && flush_bytes == kFlushBytes;
+           wal_buffer_bytes == kWalBufferBytes && flush_bytes == kFlushBytes &&
+           busy_bytes == kBusyBytes;
   }
-  bool Ordered() const { return wal_buffer_bytes >= 2 * max_record_bytes; }
+  // TWO CLAUSES, AND THE SECOND IS WHY THE FIRST IS NOT ENOUGH. A busy
+  // threshold within one maximum record of the tripwire would let a single
+  // legal record cross BOTH lines at once, so the caller is told to back off by
+  // the same Apply that would have hit the cap -- backpressure arriving too
+  // late to be backpressure. The margin makes the policy strictly earlier than
+  // the tripwire, which is the entire ordering between them.
+  bool Ordered() const {
+    if (wal_buffer_bytes < 2 * max_record_bytes) return false;
+    if (busy_bytes == 0) return true;  // disabled
+    return busy_bytes + max_record_bytes <= wal_buffer_bytes;
+  }
 };
 
 }  // namespace wal

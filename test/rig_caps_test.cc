@@ -125,6 +125,16 @@ TEST(Regime, IsComputedFromTheActualCapValues) {
     EXPECT_EQ(x.regime(), Regime::kNonDefault) << "flush_bytes";
     ++fields;
   }
+  {
+    // B5.3's backpressure threshold. Zero is DISABLED and is a regime in its
+    // own right -- the WAL tripwire's tests run there, because with the policy
+    // on the tripwire cannot be reached -- so a run with it off must never
+    // aggregate with one that had it on.
+    RunRecord x;
+    x.caps.busy_bytes = 0;
+    EXPECT_EQ(x.regime(), Regime::kNonDefault) << "busy_bytes";
+    ++fields;
+  }
   // sizeof is the crudest possible proxy and it is deliberate: it is the one
   // thing that changes when a field is added and cannot be kept in step by
   // accident. A new cap makes this fail, and the failure names the reason.

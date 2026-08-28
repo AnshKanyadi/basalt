@@ -42,13 +42,12 @@ class [[nodiscard]] Status {
   // one-directional makes clause 4 vacuous for that code and reopens the
   // escape hatch under a new name, so it does not get added.
   //
-  // kBusy IS DELIBERATELY ABSENT. It is the poller-backpressure policy and it
-  // lands at B5 -- not "with a recorded gap", not "one-directional and
-  // tightened later" (DESIGN-B1 section 7.6.1). Its bidirectional predicate
-  // requires B5's rig to DRIVE the poller rather than observe it, because a rig
-  // that can only observe can never construct the negative direction. That is
-  // strictly more work and is being paid on purpose: a one-directional
-  // predicate is an oracle asking the engine whether it was justified.
+  // kBusy LANDED AT B5.3, under section 7.6.1's precondition and not around it.
+  // Its predicate is stated in both directions below and BOTH ARE INDUCED; the
+  // rig that asserts it DRIVES the poller rather than observing one, because a
+  // rig that can only observe can never construct the negative direction. That
+  // was known to be strictly more work when B1 ruled it and it was paid: the
+  // alternative is an oracle asking the engine whether it was justified.
   //
   // NO `default:` ARM MAY EVER SWITCH OVER THIS TYPE. -Werror=switch is what
   // makes adding an enumerator a build failure until somebody classifies it.
@@ -65,6 +64,11 @@ class [[nodiscard]] Status {
     kCorruption,        // predicate: harness planted corruption in a region read
     kKilled,            // predicate: the fault controller's dead flag is set
     kInvalidArgument,   // predicate: harness submitted outside the frozen contract
+    // BOTH DIRECTIONS, AND THE QUANTITY IS THE HARNESS'S OWN, never ours:
+    //   owed = (bytes the harness submitted) - (bytes its poller has drained)
+    //   spurious: engine returned kBusy while owed + this batch <= busy_bytes
+    //   missing : owed + this batch > busy_bytes and the engine returned kOk
+    kBusy,              // predicate: owed + record_bytes(submitted) > busy_bytes
   };
 
   Status() = default;  // kOk, and no allocation
@@ -81,6 +85,7 @@ class [[nodiscard]] Status {
   static Status NotFound(std::string m)        { return Make(Code::kNotFound, std::move(m)); }
   static Status RecordTooLarge(std::string m)  { return Make(Code::kRecordTooLarge, std::move(m)); }
   static Status WalBufferFull(std::string m)   { return Make(Code::kWalBufferFull, std::move(m)); }
+  static Status Busy(std::string m)            { return Make(Code::kBusy, std::move(m)); }
   static Status IoError(std::string m)         { return Make(Code::kIoError, std::move(m)); }
   static Status DiskFull(std::string m)        { return Make(Code::kDiskFull, std::move(m)); }
   static Status Corruption(std::string m)      { return Make(Code::kCorruption, std::move(m)); }

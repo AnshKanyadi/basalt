@@ -205,6 +205,12 @@ TEST(WalCaps, ConstructionFailsWhenTheBufferCapIsBelowTwiceTheRecordCap) {
   Caps bad;
   bad.max_record_bytes = 1024;
   bad.wal_buffer_bytes = 2047;  // one byte short of 2x
+  // BACKPRESSURE OFF, AND IT IS A REGIME STATEMENT RATHER THAN A CONVENIENCE.
+  // With the policy on, the tripwire is UNREACHABLE through Apply: kBusy fires
+  // strictly earlier by Caps::Ordered()'s margin, so this test would assert
+  // nothing and would be green for it. Turning the policy off is what puts the
+  // tripwire back in reach of the thing that tests it.
+  bad.busy_bytes = 0;
   EXPECT_FALSE(bad.Ordered());
   std::unique_ptr<Wal> w;
   const Status s = Wal::Open(t.env(), kDir, 1, bad, &w);
@@ -228,6 +234,12 @@ TEST(WalCaps, TheBufferTripwireHaltsInsteadOfGrowing) {
   Caps small;
   small.max_record_bytes = 200;
   small.wal_buffer_bytes = 1000;
+  // BACKPRESSURE OFF, AND IT IS A REGIME STATEMENT RATHER THAN A CONVENIENCE.
+  // With the policy on, the tripwire is UNREACHABLE through Apply: kBusy fires
+  // strictly earlier by Caps::Ordered()'s margin, so this test would assert
+  // nothing and would be green for it. Turning the policy off is what puts the
+  // tripwire back in reach of the thing that tests it.
+  small.busy_bytes = 0;
   std::unique_ptr<Wal> w;
   ASSERT_TRUE(Wal::Open(t.env(), kDir, 1, small, &w).ok());
 
@@ -248,6 +260,12 @@ TEST(WalCaps, AnOverCapRecordIsRefusedAndAppliesNothing) {
   Caps small;
   small.max_record_bytes = 100;
   small.wal_buffer_bytes = 10000;
+  // BACKPRESSURE OFF, AND IT IS A REGIME STATEMENT RATHER THAN A CONVENIENCE.
+  // With the policy on, the tripwire is UNREACHABLE through Apply: kBusy fires
+  // strictly earlier by Caps::Ordered()'s margin, so this test would assert
+  // nothing and would be green for it. Turning the policy off is what puts the
+  // tripwire back in reach of the thing that tests it.
+  small.busy_bytes = 0;
   std::unique_ptr<Wal> w;
   ASSERT_TRUE(Wal::Open(t.env(), kDir, 1, small, &w).ok());
   const Status s = w->Apply(1, OneSet(std::string(200, 'k'), "v"));
@@ -281,6 +299,12 @@ TEST(WalAdjudication, RecordCapBothDirections) {
   Caps c;
   c.max_record_bytes = 100;
   c.wal_buffer_bytes = 100000;
+  // BACKPRESSURE OFF, AND IT IS A REGIME STATEMENT RATHER THAN A CONVENIENCE.
+  // With the policy on, the tripwire is UNREACHABLE through Apply: kBusy fires
+  // strictly earlier by Caps::Ordered()'s margin, so this test would assert
+  // nothing and would be green for it. Turning the policy off is what puts the
+  // tripwire back in reach of the thing that tests it.
+  c.busy_bytes = 0;
   std::unique_ptr<Wal> w;
   ASSERT_TRUE(Wal::Open(t.env(), kDir, 1, c, &w).ok());
 
@@ -303,6 +327,12 @@ TEST(WalAdjudication, BufferCapBothDirections) {
   Caps c;
   c.max_record_bytes = 200;
   c.wal_buffer_bytes = 400;
+  // BACKPRESSURE OFF, AND IT IS A REGIME STATEMENT RATHER THAN A CONVENIENCE.
+  // With the policy on, the tripwire is UNREACHABLE through Apply: kBusy fires
+  // strictly earlier by Caps::Ordered()'s margin, so this test would assert
+  // nothing and would be green for it. Turning the policy off is what puts the
+  // tripwire back in reach of the thing that tests it.
+  c.busy_bytes = 0;
   std::unique_ptr<Wal> w;
   ASSERT_TRUE(Wal::Open(t.env(), kDir, 1, c, &w).ok());
 

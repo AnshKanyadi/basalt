@@ -1,0 +1,39 @@
+# id: BM118-busy-at-the-boundary
+# blinds: the threshold comparison being STRICTLY greater on both sides
+# covering-lane: cpp-test
+# expect: killed
+# control-lane: cpp-build
+# expect-control: alive
+#
+# One character, and the resulting divergence exists at EXACTLY ONE OCCUPANCY.
+# The harness and the engine agree everywhere except when the backlog lands
+# precisely on busy_bytes, where the engine refuses a write the harness's
+# arithmetic says is owed nothing -- a spurious-busy divergence that a random
+# workload hits with probability near zero and that would surface, if ever, as
+# one unreproducible failure in a soak ledger.
+#
+# IT SURVIVED ITS FIRST AIM, and the survival is the more useful half. It was
+# pointed at Poller.TheBoundaryValueItselfIsNotOwed, which asserts this exact
+# edge -- on AdjudicateBusy, the HARNESS's arithmetic, while the patch changes
+# the ENGINE's. Two implementations of one comparison exist precisely so they
+# can be checked against each other, and a test of one says nothing about the
+# other:
+#
+#   A SECOND IMPLEMENTATION IS ONLY A CHECK WHEN SOMETHING RUNS BOTH.
+#
+# The workload was reached rather than the mutant relabelled (GF-16): the
+# covering test now drives real writes onto a threshold chosen as an exact
+# multiple of one write's cost, so the backlog lands on busy_bytes exactly --
+# legal under `>`, refused under `>=`, and nothing else in the suite can tell
+# those apart.
+--- a/engine-cpp/src/wal/wal.cc
++++ b/engine-cpp/src/wal/wal.cc
+@@ -114,7 +114,7 @@
+   // that invariant surfaces as the cap firing rather than as the cap becoming
+   // silently unreachable.
+   if (caps_.busy_bytes != 0 &&
+-      buffered_bytes_ + in_flight_bytes_ + bytes > caps_.busy_bytes) {
++      buffered_bytes_ + in_flight_bytes_ + bytes >= caps_.busy_bytes) {
+     return Status::Busy("unsynced " +
+                         std::to_string(buffered_bytes_ + in_flight_bytes_ + bytes) +
+                         " > busy " + std::to_string(caps_.busy_bytes));

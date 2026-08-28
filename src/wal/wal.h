@@ -98,6 +98,13 @@ class Wal {
   mutable std::mutex mu_;
   std::vector<std::string> buffered_;  // encoded BATCH records
   uint64_t buffered_bytes_ = 0;        // by the FROZEN formula, not by encoding
+  // BYTES HANDED TO A SYNC THAT HAS NOT RETURNED. Sync zeroes buffered_bytes_
+  // at the swap and then does its I/O with the mutex released, so without this
+  // the engine counts NOTHING for the entire duration of an fsync while memory
+  // holds the in-flight batch and everything arriving behind it. That window is
+  // what "the poller is behind" means, and it is the half a byte counter over
+  // un-handed-over bytes cannot see.
+  uint64_t in_flight_bytes_ = 0;
   SeqNum high_seq_ = 0;
   SeqNum durable_ = 0;
   bool closed_ = false;

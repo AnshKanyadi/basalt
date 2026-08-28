@@ -216,6 +216,17 @@ bool PredicateSatisfied(Status::Code code, const TestEnvironment& t) {
     case Status::Code::kWalBufferFull:
     case Status::Code::kInvalidArgument:
       return false;
+    case Status::Code::kBusy:
+      // THE SWEEP DRIVES NO POLLER. It calls Sync itself, in-line, so nothing
+      // is ever in flight and its workloads submit kilobytes against a
+      // 192 MiB threshold -- the condition is unreachable here by two
+      // independent margins.
+      //
+      // FALSE IS THEREFORE AN ASSERTION, not a placeholder: if this sweep ever
+      // sees kBusy, the engine signalled backpressure that the harness's own
+      // record says is not owed, which is direction 1 of section 7.6.1's
+      // predicate and a divergence exactly like the injected-fault codes above.
+      return false;
   }
   return false;
 }

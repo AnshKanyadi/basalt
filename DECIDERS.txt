@@ -42,3 +42,5 @@ OutcomeFloor            | RunOutcome.TheFloorSuspendsOnlyWhenSomethingSuspendedI
 IsDivergence            | CapAdjudication.BothDivergencesFailTheRunAndNeitherVoidsIt | CapAdjudication.BothDivergencesFailTheRunAndNeitherVoidsIt
 OutcomeForCapVerdict    | CapAdjudication.BothDivergencesFailTheRunAndNeitherVoidsIt | CapAdjudication.BothDivergencesFailTheRunAndNeitherVoidsIt
 AggregateRuns           | Regime.RunsOfOneRegimeAggregate | Regime.RunsOfDifferentRegimesRefuseToAggregate
+IsBusyDivergence        | Poller.BothDivergencesFailTheRunAndNeitherIsVoided | Poller.BothDivergencesFailTheRunAndNeitherIsVoided
+OutcomeForBusyVerdict   | Poller.BothDivergencesFailTheRunAndNeitherIsVoided | Poller.BothDivergencesFailTheRunAndNeitherIsVoided

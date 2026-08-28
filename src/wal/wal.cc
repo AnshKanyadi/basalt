@@ -101,6 +101,24 @@ Status Wal::Apply(SeqNum seq, const std::vector<Op>& ops) {
     return Status::WalBufferFull("buffer " + std::to_string(buffered_bytes_ + bytes) +
                                  " > cap " + std::to_string(caps_.wal_buffer_bytes));
   }
+  // THE POLICY, AND IT IS CHARGED AGAINST BOTH HALVES. buffered_ is what has
+  // not been handed to a Sync; in_flight_ is what has been handed to one that
+  // has not returned. Their sum is what the caller has submitted and the poller
+  // has not drained -- the identical quantity a harness computes as
+  // (submitted - drained) from its own record, which is what lets section
+  // 7.6.1's predicate be stated in both directions without asking us anything.
+  //
+  // AFTER THE TRIPWIRE, DELIBERATELY. The cap is a last resort and must keep
+  // answering first if a configuration ever puts the two in reach of each other;
+  // Caps::Ordered() makes that unreachable, and this ordering means a bug in
+  // that invariant surfaces as the cap firing rather than as the cap becoming
+  // silently unreachable.
+  if (caps_.busy_bytes != 0 &&
+      buffered_bytes_ + in_flight_bytes_ + bytes > caps_.busy_bytes) {
+    return Status::Busy("unsynced " +
+                        std::to_string(buffered_bytes_ + in_flight_bytes_ + bytes) +
+                        " > busy " + std::to_string(caps_.busy_bytes));
+  }
 
   // COLLAPSED BEFORE ENCODING, CHARGED BEFORE COLLAPSING. The cap is computed
   // over the ops AS SUBMITTED, because section 7.6's predicate is a sum over
@@ -119,6 +137,7 @@ Status Wal::Apply(SeqNum seq, const std::vector<Op>& ops) {
 Status Wal::Sync(SeqNum* watermark) {
   std::vector<std::string> batch;
   SeqNum high = 0;
+  uint64_t charged = 0;
   {
     DbLock lock(mu_);
     if (closed_) return Status::InvalidArgument("Sync after Close");
@@ -127,11 +146,30 @@ Status Wal::Sync(SeqNum* watermark) {
       return Status::Ok();
     }
     batch.swap(buffered_);
+    // MOVED, NOT DISCARDED. These bytes are still resident and still undrained;
+    // they have only changed which counter answers for them.
+    charged = buffered_bytes_;
+    in_flight_bytes_ += charged;
     buffered_bytes_ = 0;
     high = high_seq_;
   }
   // MUTEX RELEASED. Everything below makes Env calls, and every one of them
   // would trip the guard if the lock were still held.
+
+  // RELEASED ON EVERY EXIT, INCLUDING THE FAILING ONES. A Sync that returns an
+  // IO error has finished being in flight; the bytes are lost, not pending, and
+  // a charge that survived a failed Sync would wedge the engine in permanent
+  // backpressure with nothing able to clear it. Scoped rather than written out
+  // at each of the five returns below, because five returns is exactly how many
+  // chances there are to forget one.
+  struct ReleaseInFlight {
+    Wal* w;
+    uint64_t n;
+    ~ReleaseInFlight() {
+      DbLock lock(w->mu_);
+      w->in_flight_bytes_ -= n;
+    }
+  } release{this, charged};
 
   for (const std::string& rec : batch) {
     Status s = writer_->AddRecord(Slice(rec));
