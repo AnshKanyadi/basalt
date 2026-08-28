@@ -222,7 +222,7 @@ TableCheck ValidateTable(Slice image) {
     for (const RangeTombstone& t : tombstones) {
       // THE SAME PREDICATE THE WRITER USES. This one still compared INTERNAL
       // keys after B3.5e corrected its sibling ten lines below -- the second
-      // instance of BUG-006's class, latent because the writer compared
+      // instance of BUG-B006's class, latent because the writer compared
       // internal keys too and the two agreed while both were wrong.
       if (WidensLowerBound(t.start, Slice(ok.smallest_key))) {
         ok.smallest_key.clear();

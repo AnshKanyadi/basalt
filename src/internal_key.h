@@ -82,7 +82,7 @@ int CompareInternalKey(Slice a, Slice b);
 // one user key a SMALLER TAG SORTS LATER, and a candidate equal in user key can
 // compare "greater" or "lesser" purely by its sequence.
 //
-// BUG-006 was that mismatch across two implementations of this rule. It exists
+// BUG-B006 was that mismatch across two implementations of this rule. It exists
 // as a function so there is ONE implementation and nothing to keep in step:
 // `TableBuilder` and `ValidateTable` both call it, so they cannot disagree.
 //

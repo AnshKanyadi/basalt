@@ -479,7 +479,7 @@ TEST(SstWriter, ATombstoneEndingAtTheLargestDataKeyDoesNotMoveTheBound) {
 }
 
 // THE PREDICATE ITSELF, ASSERTED DIRECTLY. One implementation of one rule means
-// one place to hold to the rule -- and after BUG-006 that place is here rather
+// one place to hold to the rule -- and after BUG-B006 that place is here rather
 // than in a comparison between two callers.
 TEST(SstWriter, BoundWideningIsAStatementAboutUserKeys) {
   const std::string bound = IKey("m", 9);

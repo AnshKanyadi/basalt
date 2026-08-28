@@ -118,7 +118,7 @@ void TableBuilder::AddRangeTombstone(Slice start, Slice end, uint64_t tag) {
   // costs a file that did not need to be read, UNDER-covering resurrects data.
   // The two directions are not symmetric, so the safe one is taken.
   // COMPARED AS USER KEYS, THROUGH THE ONE PREDICATE THE CLASSIFIER ALSO USES.
-  // This is BUG-006's fix: these two lines compared INTERNAL keys while
+  // This is BUG-B006's fix: these two lines compared INTERNAL keys while
   // `ValidateTable` compared user keys, so a tombstone whose end user key
   // equalled the largest data key at a LOWER sequence widened here and not
   // there -- and the manifest then recorded a bound the Open refused.
