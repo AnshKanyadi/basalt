@@ -242,10 +242,23 @@ TEST(Poller, BackpressureIsOwedForBytesStillInFlightInsideASync) {
   // Fill to just under the threshold, so the one write issued from inside the
   // Sync is what crosses it -- and it can only cross it if the bytes handed to
   // that very Sync are still being charged.
+  // CF-3: THE PROGRESS QUANTITY IS owed(), AND IT IS NOT GUARANTEED TO MOVE.
+  //
+  // Every accepted write raises it; a REFUSED one does not. So on an engine
+  // that returns kBusy early -- exactly the defect a mutant here would plant --
+  // this loop would spin forever and the lane would HANG rather than go red. A
+  // hanging lane reports nothing at all, which is worse than a failing one.
+  //
+  // The bound is the iteration count, and exhausting it is an assertion rather
+  // than an exit: if 4096 bytes cannot be reached in 200 writes of ~90 bytes,
+  // something refused writes it should have taken.
   int i = 0;
-  while (p.owed() + 128 < 4096) {
-    ASSERT_FALSE(IsBusyDivergence(p.Put("k" + std::to_string(i++), std::string(64, 'v'))));
+  for (; i < 200 && p.owed() + 128 < 4096; i++) {
+    ASSERT_FALSE(IsBusyDivergence(p.Put("k" + std::to_string(i), std::string(64, 'v'))));
   }
+  ASSERT_LT(i, 200) << "200 writes did not reach the threshold; owed() stopped "
+                       "advancing, which means writes were refused before any "
+                       "backpressure was owed";
   const uint64_t before = p.owed();
   ASSERT_GT(before, 0u);
 
