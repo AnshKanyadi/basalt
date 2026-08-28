@@ -204,6 +204,7 @@ add_executable(rift_engine_test
   test/differential_driver_test.cc
   test/capi_test.cc
   test/poller_test.cc
+  test/bench_keys_test.cc
 )
 # rift_rig carries rift_testenv which carries rift_engine, both PUBLIC-ly;
 # naming any of them again makes the linker warn about a duplicate archive.
@@ -218,6 +219,10 @@ target_compile_options(rift_sweep PRIVATE ${RIFT_CXX_FLAGS})
 add_executable(rift_diff cmd/diff_main.cc)
 target_link_libraries(rift_diff PRIVATE rift_rig)
 target_compile_options(rift_diff PRIVATE ${RIFT_CXX_FLAGS})
+
+add_executable(rift_bench cmd/bench_main.cc)
+target_link_libraries(rift_bench PRIVATE rift_engine)
+target_compile_options(rift_bench PRIVATE ${RIFT_CXX_FLAGS})
 
 add_executable(rift_amp cmd/amp_main.cc)
 target_link_libraries(rift_amp PRIVATE rift_rig)
