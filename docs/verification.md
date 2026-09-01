@@ -8,12 +8,20 @@ are not per-toolchain.
 
 | Lane | Binary | Asserts | Tests |
 |---|---|---|---|
-| `cpp-test` | `basalt_test` | The unit suite with no sanitizer. Asserts at compile time that no sanitizer is present. Also builds `basalt_tsan_harness` without running it. | 373 |
-| `cpp-asan` | `basalt_test` | The unit suite under AddressSanitizer. Asserts at compile time that `__has_feature(address_sanitizer)` holds. | 373 |
-| `cpp-ubsan` | `basalt_test` | The unit suite under UndefinedBehaviorSanitizer, `-fno-sanitize-recover=all`. Asserts at compile time that `__has_feature(undefined_behavior_sanitizer)` holds. | 373 |
+| `cpp-test` | `basalt_test` | The unit suite with no sanitizer. Asserts at compile time that no sanitizer is present. Also builds `basalt_tsan_harness` without running it. | 377 |
+| `cpp-asan` | `basalt_test` | The unit suite under AddressSanitizer. Asserts at compile time that `__has_feature(address_sanitizer)` holds. | 377 |
+| `cpp-ubsan` | `basalt_test` | The unit suite under UndefinedBehaviorSanitizer, `-fno-sanitize-recover=all`. Asserts at compile time that `__has_feature(undefined_behavior_sanitizer)` holds. | 377 |
 | `cpp-tsan` | `basalt_tsan_harness` | Concurrent writer and syncer across a flush, under ThreadSanitizer. Asserts at compile time that `__has_feature(thread_sanitizer)` holds. | 3 |
 | `format` | none | `git clang-format --diff` against the merge base, restricted to the line ranges the change touches, over `src include rig cmd test`. | n/a |
 | `library-only` | `libbasalt.a` | Configures with `BASALT_BUILD_TESTS=OFF` and builds the archive alone. Asserts the library builds without GoogleTest and without `test/` or `rig/`. | n/a |
+
+Inside the 377, four tests (`DiffFixtures`) read the static corpus at
+`test/fixtures/differential/` — 21 artifact images built field by field from the
+format document by a generator with its own crc32c implementation. They are the
+only assertions in `test/differential_artifact_test.cc` whose expected bytes
+were not produced by the code under test: the other 25 (`DiffArtifact`) assemble
+their images with the engine's own `wal::Crc32c`. A missing corpus fails the
+tests rather than skipping them.
 
 The compile-time sanitizer assertions are in `test/sanitizer_lane_test.cc`.
 Exactly one of `BASALT_EXPECT_ASAN`, `BASALT_EXPECT_UBSAN`, `BASALT_EXPECT_TSAN`
@@ -76,9 +84,12 @@ Bug class it caught: a divergence between this engine's recovered state and the
 reference model's — visible only by comparison against an independent
 implementation, not by any assertion this engine can make about itself.
 
-Removed with it: `cmd/diff_main.cc`, `rig/differential_driver.*`,
-`test/differential_driver_test.cc` (7 tests), and the fixture corpus with its
-`DiffFixtures` tests (4 tests).
+Removed with it: `cmd/diff_main.cc`, `rig/differential_driver.*`, and
+`test/differential_driver_test.cc` (7 tests).
+
+The fixture corpus was NOT removed with it and is listed under the CI lanes
+above. It needs neither the driver nor the judge: it is a directory of bytes and
+an expected reading of them.
 
 ## What partial coverage remains
 
@@ -89,9 +100,24 @@ Removed with it: `cmd/diff_main.cc`, `rig/differential_driver.*`,
 An added call site is caught: the count changes.
 A bypassing call site is not caught: the count does not change.
 
-`rig/differential_artifact.cc`'s format classifier keeps 25 tests
-(`DiffArtifact`). Every image they parse is built by `Assemble`, a helper inside
+`rig/differential_artifact.cc`'s format classifier has 29 tests. 25
+(`DiffArtifact`) build their image with `Assemble`, a helper inside
 `test/differential_artifact_test.cc` that computes its trailer with the engine's
-own `wal::Crc32c`. The corpus that was built from the format document by an
-independent generator, and read by a second decoder, was removed with the
-differential lane.
+own `wal::Crc32c`; those agree with the engine by construction. 4
+(`DiffFixtures`) read the corpus and do not.
+
+THE CORPUS IS FROZEN. The generator that produced it stayed in the parent
+project, as did the second decoder that read the same files. A fixture cannot be
+regenerated if it is corrupted or deleted, and no fixture can be added for a
+refusal rule introduced after the split. A format rule added from here on is
+covered only by the 25 circular tests. Writing its fixture with `Assemble` would
+not change that: an image built by the code under test asserts nothing about the
+document.
+
+## Known gaps
+
+There is no benchmark in this repository. The one that existed measured a native
+column whose only purpose was to be differenced against a cross-language column
+that stayed in the parent project; it was removed with that column, along with
+the pinned key stream that existed to make the two comparable. No throughput or
+latency figure is produced or checked by anything here.
