@@ -184,7 +184,6 @@ add_library(basalt_rig STATIC
   rig/sweep.cc
   rig/amplification.cc
   rig/differential_artifact.cc
-  rig/differential_driver.cc
 )
 target_include_directories(basalt_rig PUBLIC rig PRIVATE ${BASALT_INTERNAL_INCLUDES})
 target_link_libraries(basalt_rig PUBLIC basalt_testenv)
@@ -224,17 +223,14 @@ add_executable(basalt_test
   test/amplification_test.cc
   test/differential_artifact_test.cc
   test/rng_test.cc
-  test/differential_driver_test.cc
   test/poller_test.cc
-  test/bench_keys_test.cc
 )
 # basalt_rig carries basalt_testenv which carries basalt, both PUBLIC-ly;
 # naming any of them again makes the linker warn about a duplicate archive.
 target_link_libraries(basalt_test PRIVATE basalt_rig gtest_main)
 target_include_directories(basalt_test PRIVATE ${BASALT_INTERNAL_INCLUDES})
 target_compile_options(basalt_test PRIVATE ${BASALT_CXX_FLAGS})
-target_compile_definitions(basalt_test PRIVATE ${BASALT_SANITIZER_DEFINE}
-  BASALT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
+target_compile_definitions(basalt_test PRIVATE ${BASALT_SANITIZER_DEFINE})
 add_test(NAME basalt_test COMMAND basalt_test)
 
 # The thread lane runs THIS and not the unit suite: the unit suite is
@@ -253,15 +249,7 @@ target_link_libraries(basalt_sweep PRIVATE basalt_rig)
 target_include_directories(basalt_sweep PRIVATE ${BASALT_INTERNAL_INCLUDES})
 target_compile_options(basalt_sweep PRIVATE ${BASALT_CXX_FLAGS})
 
-add_executable(basalt_diff cmd/diff_main.cc)
-target_link_libraries(basalt_diff PRIVATE basalt_rig)
-target_include_directories(basalt_diff PRIVATE ${BASALT_INTERNAL_INCLUDES})
-target_compile_options(basalt_diff PRIVATE ${BASALT_CXX_FLAGS})
 
-add_executable(basalt_bench cmd/bench_main.cc)
-target_link_libraries(basalt_bench PRIVATE basalt)
-target_include_directories(basalt_bench PRIVATE ${BASALT_INTERNAL_INCLUDES})
-target_compile_options(basalt_bench PRIVATE ${BASALT_CXX_FLAGS})
 
 add_executable(basalt_amp cmd/amp_main.cc)
 target_link_libraries(basalt_amp PRIVATE basalt_rig)

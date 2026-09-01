@@ -12,10 +12,15 @@
 //   BYTES MEAN. BYTE-FOR-BYTE AGREEMENT IS THE THING UNDER TEST, SO IT CANNOT
 //   BE THE THING ASSUMED.
 //
-// It costs a second implementation, maintained. What makes it affordable is
+// It costs a second implementation, maintained. What made it affordable was
 // that THE FIXTURES ARE THE SHARED ARTIFACT RATHER THAN THE CODE: both decoders
-// are checked against the same committed bytes in `seeds/differential/format/`,
-// hand-built from the document and never produced by either encoder.
+// were checked against one committed corpus, hand-built from the document and
+// never produced by either encoder.
+//
+// NEITHER THE SECOND DECODER NOR THAT CORPUS SURVIVED THE EXTRACTION. What is
+// left here is one decoder, exercised by tests that assemble their own bytes.
+// See test/differential_artifact_test.cc for what that does and does not
+// check.
 //
 // ---------------------------------------------------------------------------
 // THE CORPUS PROMISE, IN ITS STRICT FORM (B4-Q3):
@@ -214,10 +219,12 @@ std::string EncodeDiffArtifact(const DiffArtifact& a);
 // Accepts an UNJUDGED artifact; see `DiffOutcome`.
 DiffCheck ParseDiffArtifact(Slice image, DiffArtifact* out);
 
-// THE CORPUS GATE. A file under `seeds/differential/` must have been judged, or
+// THE CORPUS GATE. An artifact kept as a corpus entry must have been judged, or
 // it cannot reproduce a finding -- B4-Q3's strict form. Separate from the
-// parser because it is a rule about what the CORPUS holds, not about what the
-// format admits.
+// parser because it is a rule about what a CORPUS holds, not about what the
+// format admits. There is no corpus in this repository for it to gate; the
+// rule and its tests are kept because the format still admits the unjudged
+// state they are about.
 DiffCheck RequireJudged(const DiffArtifact& a);
 
 }  // namespace rig
