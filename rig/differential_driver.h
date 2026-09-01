@@ -1,6 +1,7 @@
 // THE C++ HALF OF THE DIFFERENTIAL: run a seeded workload, kill, reopen, and
-// emit an artifact. It reaches NO VERDICT -- the judge is Go, and this side
-// cannot compute what the model would have held.
+// emit an artifact. It reaches NO VERDICT -- the judge is a separate process
+// holding the reference model, and this side cannot compute what that model
+// would have held.
 //
 // ---------------------------------------------------------------------------
 // RULING 4 IN A WORLD WITH TWO ENGINES, AND THIS IS THE ENTRY POINT SO IT IS

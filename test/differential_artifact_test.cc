@@ -12,10 +12,10 @@
 // deliberately used `BlockBuilder` so that a second encoder could not be the
 // thing under test. The difference is what is being checked: there, ONE decoder
 // against a format; here, TWO decoders against EACH OTHER through a format. A
-// shared encoder would be a shared blind spot across the language boundary.
+// shared encoder would be a shared blind spot across the process boundary.
 //
-// The same bytes are committed to `seeds/differential/format/` for the Go
-// decoder, so the two sides share FIXTURES rather than CODE.
+// The same bytes are committed as fixtures for the other decoder, so the two
+// sides share FIXTURES rather than CODE.
 #include "differential_artifact.h"
 
 #include <fstream>
@@ -310,7 +310,7 @@ TEST(DiffArtifact, RefusesAnArtifactThatNamesNoRegime) {
 }
 
 // AN UNJUDGED ARTIFACT PARSES -- the driver cannot reach a verdict, because
-// reaching one requires the model, which is Go. The corpus gate is separate.
+// reaching one requires the reference model. The corpus gate is separate.
 TEST(DiffArtifact, AnUnjudgedArtifactParsesAndFailsTheCorpusGate) {
   std::vector<Section> s = Good();
   s[4].payload = Verdict(0);
@@ -475,7 +475,7 @@ TEST(DiffArtifact, TheSameContentEncodesToTheSameBytes) {
 
 // ------------------------------------------- THE SHARED FIXTURE CORPUS
 //
-// THE SAME BYTES THE GO DECODER READS, produced by NEITHER decoder. This is
+// THE SAME BYTES THE OTHER DECODER READS, produced by NEITHER decoder. This is
 // what makes the two implementations independent in fact rather than in
 // intention: they are kept in step by a directory of files, not by shared code.
 //

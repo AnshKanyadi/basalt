@@ -42,8 +42,8 @@
 // WHAT THIS FILE DELIBERATELY DOES NOT HAVE (section 3.4). LevelDB's Env
 // carries NowMicros, SleepForMicroseconds, Schedule and NewLogger. Ours carries
 // none, and each omission is a ruling rather than a simplification:
-//   * No clock. A wall-clock read is unobtainable by construction, so the C++
-//     analogue of clock/real.go's one hatched time.Now() is ZERO hatched calls.
+//   * No clock. A wall-clock read is unobtainable by construction, so the
+//     number of hatched wall-clock reads in this engine is ZERO.
 //   * No sleep. A timing dependency in a rig whose value is that timing is
 //     authored.
 //   * No thread pool. Background work scheduled by Env would make kill points

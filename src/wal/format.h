@@ -4,7 +4,7 @@
 // -- not in a header, not in a record, not in a filename (ruling 2: no
 // serialized byte this engine ever sees carries a Mono instant).
 //
-// Little-endian rather than the Go wire codec's big-endian because the WAL is
+// Little-endian rather than a big-endian wire convention because the WAL is
 // never compared byte-for-byte across implementations -- only engine STATE is
 // -- and LE is a memcpy on both targets. A pinned byte-vector test freezes the
 // encoding regardless, so the choice cannot drift silently.

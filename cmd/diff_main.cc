@@ -1,10 +1,11 @@
 // usage: rift_diff <regime> <seed> [kill_ordinal] > artifact.diff
 //
 // Runs one differential schedule and writes an UNJUDGED artifact to stdout.
-// It reaches no verdict: reaching one requires engine/model, which is Go.
+// It reaches no verdict: reaching one requires the reference model, which is
+// judged in a separate process.
 //
-// THE COMMITS COME FROM THE ENVIRONMENT, NOT FROM THIS PROGRAM. `RIFT_ENGINE_COMMIT`
-// and `RIFT_MODEL_COMMIT` are set by the lane that runs it, because a binary
+// THE COMMITS COME FROM THE ENVIRONMENT, NOT FROM THIS PROGRAM. `BASALT_ENGINE_COMMIT`
+// and `BASALT_MODEL_COMMIT` are set by the lane that runs it, because a binary
 // cannot know the commit it was built from without being rebuilt on every
 // commit -- and a stale constant compiled in would be worse than an absent one.
 // The format refuses an artifact naming no commit, so a lane that forgets to
@@ -36,8 +37,8 @@ int main(int argc, char** argv) {
   o.seed = std::strtoull(argv[2], nullptr, 10);
   if (argc > 3) o.kill_ordinal = std::strtoull(argv[3], nullptr, 10);
 
-  const char* engine = std::getenv("RIFT_ENGINE_COMMIT");
-  const char* model = std::getenv("RIFT_MODEL_COMMIT");
+  const char* engine = std::getenv("BASALT_ENGINE_COMMIT");
+  const char* model = std::getenv("BASALT_MODEL_COMMIT");
   if (engine != nullptr) o.engine_commit = engine;
   if (model != nullptr) o.model_commit = model;
 

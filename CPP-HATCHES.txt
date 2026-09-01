@@ -1,8 +1,6 @@
 # The scope-scan exemption registry.
 #
-# HATCHES.txt's structure, one language over, with one thing added that the Go
-# side does not have yet and that this file has from its first line: EVERY ENTRY
-# CARRIES A SPLIT LABEL.
+# Every entry carries a SPLIT LABEL, from this file's first line.
 #
 #   covered-by: <instrument>
 #       The class this rule catches is caught here instead, by something that

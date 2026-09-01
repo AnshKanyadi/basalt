@@ -1,10 +1,10 @@
 // The benchmark's key stream, pinned on the C++ side.
 //
-// The same three values are pinned in Go (riftcgo's
-// TestTheKeyStreamMatchesTheNativeHarness). Neither assertion alone is worth
-// much: what makes the table's columns comparable is that BOTH sides refuse to
-// build a workload the other would not have built, and a pinned vector asserted
-// in only one language is a promise the other never made.
+// An embedder that wants a comparable column pins the same three values on its
+// own side. Neither assertion alone is worth much: what makes a table's columns
+// comparable is that BOTH sides refuse to build a workload the other would not
+// have built, and a pinned vector asserted on only one side is a promise the
+// other never made.
 #include "bench_keys.h"
 
 #include <cstdint>

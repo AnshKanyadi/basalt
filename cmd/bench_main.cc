@@ -1,8 +1,8 @@
 // usage: rift_bench <fillrandom|readrandom|mixed|scan> <n> <batch> <block> <seed>
 //
-// THE NATIVE COLUMN. It exists so the cgo column has something to be a
+// THE NATIVE COLUMN. It exists so an embedded column has something to be a
 // difference from: the same workload, the same loop shape, the same key stream,
-// with the C++ DB called directly instead of through the boundary.
+// with the DB called directly instead of through an embedder's boundary.
 //
 // IT TIMES THE LOOP AND NOT THE PROCESS. Open, fill and close are outside the
 // measured region wherever they are not the thing being measured, because
@@ -85,10 +85,10 @@ int main(int argc, char** argv) {
       rift::wal::SeqNum s = 0;
       (void)db->Write(b, &s);
     }
-    // NO SYNC HERE, matching the Go columns. engine.Engine has no Sync -- this
-    // project DRIVES durability -- so a native pre-fill that synced would be
-    // doing work outside its timed region that another column cannot do, and
-    // the difference between columns would stop being the boundary.
+    // NO SYNC HERE, matching every other column. The embedder DRIVES
+    // durability, so a native pre-fill that synced would be doing work outside
+    // its timed region that another column cannot do, and the difference
+    // between columns would stop being the boundary.
   }
 
   const int64_t start = NowNanos();

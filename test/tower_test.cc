@@ -3,8 +3,7 @@
 // The memtable's shape is a pure function of the key set, which makes the
 // mapping from hash bits to tower height ON-DISK-ADJACENT BEHAVIOUR: change it
 // and every skiplist this engine has ever built has a different structure. So
-// any change to it must FAIL A VECTOR to happen, exactly the way NextTick is
-// pinned on the Go side.
+// any change to it must FAIL A VECTOR to happen.
 //
 // Per A0's rule about signed packages, THESE VECTORS NEVER CHANGE IN THE SAME
 // COMMIT AS THE CODE THEY PIN. A diff that touches both is a diff that has

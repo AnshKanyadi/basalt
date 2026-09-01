@@ -1,8 +1,8 @@
 // Assertions and the unreachable marker.
 //
 // The engine is built -fno-exceptions (DESIGN-B1 section 9.1), so there is no
-// throw to reach for and none is wanted: no exception may cross into Go, ever,
-// and the flag makes that structural rather than a review habit.
+// throw to reach for and none is wanted: no exception may leave this library,
+// ever, and the flag makes that structural rather than a review habit.
 #ifndef RIFT_CHECK_H_
 #define RIFT_CHECK_H_
 

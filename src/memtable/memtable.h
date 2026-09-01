@@ -70,8 +70,8 @@ namespace rift {
 // puts MVCC timestamps inside keys. Ruling 2 says the engine never interprets
 // time; a fixed bytewise comparison makes that uncompilable rather than
 // remembered. The cost is named: B3 cannot implement a timestamp-aware
-// compaction filter, and does not need to, because version GC is A5's job on
-// the Go side.
+// compaction filter, and does not need to, because version GC belongs to the
+// layer above this engine.
 // One range deletion, as a memtable holds it: owning its bounds, because the
 // batch that submitted them is gone by the time anyone reads them.
 struct MemRange {

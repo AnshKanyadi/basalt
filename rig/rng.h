@@ -1,11 +1,10 @@
 // PCG64, PROJECT-OWNED, WITH PINNED VECTORS -- the C++ half of `[A1]`.
 //
-// The amendment binds the Go side to `internal/rng` and says why: Go's
-// compatibility promise for `math/rand/v2`'s convenience mappings is too weak
-// to hang a permanent seed corpus on, and A SILENT CHANGE WOULD LEAVE EVERY
-// CORPUS ENTRY SELF-CONSISTENT BUT DIFFERENT.
+// The amendment's reason: a standard library's compatibility promise for its
+// convenience mappings is too weak to hang a permanent seed corpus on, and A
+// SILENT CHANGE WOULD LEAVE EVERY CORPUS ENTRY SELF-CONSISTENT BUT DIFFERENT.
 //
-// C++ has the same problem with a different name. `std::mt19937` is
+// C++ has that problem with a different name. `std::mt19937` is
 // standardised, but the DISTRIBUTIONS are not -- `std::uniform_int_distribution`
 // may produce different values on two conforming libraries from one engine and
 // one seed. A corpus keyed to a seed cannot rest on that.

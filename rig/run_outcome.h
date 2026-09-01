@@ -1,9 +1,9 @@
 // RunOutcome: what a rig run may and may not be counted as.
 //
-// This is harness code, not engine code. It lives outside engine-cpp/src on
-// purpose: src is what the A5 scope scan (DESIGN-B1 section 9.4) polices and
-// what eventually links into Go, and the oracle must never be reachable from
-// the thing it judges.
+// This is harness code, not engine code. It lives outside src/ on purpose: src
+// is what the A5 scope scan (DESIGN-B1 section 9.4) polices and what ships as
+// the library archive, and the oracle must never be reachable from the thing it
+// judges.
 #ifndef RIFT_RIG_RUN_OUTCOME_H_
 #define RIFT_RIG_RUN_OUTCOME_H_
 

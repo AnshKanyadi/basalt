@@ -5,18 +5,17 @@
 // keys in the same order -- not merely the same distribution, which would leave
 // any gap attributable to one run having had a luckier access pattern.
 //
-// So this is splitmix64: eight lines, no state beyond a counter, and identical
-// in C++ and in Go by inspection rather than by trust. Both sides assert the
-// same pinned outputs, so a divergence is a test failure and not a number that
-// is quietly wrong.
+// So this is splitmix64: eight lines, no state beyond a counter, and
+// reimplementable by inspection rather than by trust. The pinned outputs below
+// are asserted, so a divergence is a test failure and not a number that is
+// quietly wrong.
 //
 //   PINNED, seed 1: 0x910A2DEC89025CC1 0xBEEB8DA1658EEC67 0xF893A2EEFB32555E
 //
-// It is NOT internal/rng and NOT rig/rng.h. Both of those are real PCG64s with
-// their own pinned vectors, and using either would mean asserting that two
-// independent implementations agree stream-for-stream across two languages --
-// a claim worth making for the corpus and not worth making for a benchmark's
-// key order.
+// It is NOT rig/rng.h. That is a real PCG64 with its own pinned vectors, and
+// using it would mean asserting that two independent implementations agree
+// stream-for-stream -- a claim worth making for the corpus and not worth
+// making for a benchmark's key order.
 #ifndef RIFT_BENCH_KEYS_H_
 #define RIFT_BENCH_KEYS_H_
 

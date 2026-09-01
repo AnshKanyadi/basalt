@@ -133,13 +133,6 @@ target_compile_options(rift_engine PRIVATE ${RIFT_CXX_FLAGS})
 # TestEnv lives under src/ so the A5 scope scan covers it -- it executes during
 # a run and its fault schedules must be as deterministic as the engine's -- but
 # it is a SEPARATE archive and never links into rift_engine or into Go.
-# THE C BOUNDARY, as a static archive cgo links. Section 7's build rule: CMake
-# produces a static archive and cgo links it, and the C++ lanes run the engine's
-# own tests DIRECTLY rather than through cgo.
-add_library(rift_capi STATIC capi/rift.cc)
-target_include_directories(rift_capi PUBLIC capi src src/env src/env/posix src/wal src/sst src/memtable)
-target_link_libraries(rift_capi PUBLIC rift_engine)
-target_compile_options(rift_capi PRIVATE ${RIFT_CXX_FLAGS})
 
 add_library(rift_testenv STATIC
   src/env/test/test_env.cc
@@ -202,13 +195,12 @@ add_executable(rift_engine_test
   test/differential_artifact_test.cc
   test/rng_test.cc
   test/differential_driver_test.cc
-  test/capi_test.cc
   test/poller_test.cc
   test/bench_keys_test.cc
 )
 # rift_rig carries rift_testenv which carries rift_engine, both PUBLIC-ly;
 # naming any of them again makes the linker warn about a duplicate archive.
-target_link_libraries(rift_engine_test PRIVATE rift_rig rift_capi gtest_main)
+target_link_libraries(rift_engine_test PRIVATE rift_rig gtest_main)
 target_compile_options(rift_engine_test PRIVATE ${RIFT_CXX_FLAGS})
 target_compile_definitions(rift_engine_test PRIVATE ${RIFT_SANITIZER_DEFINE})
 

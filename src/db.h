@@ -10,12 +10,12 @@
 // than adapted quietly. Two are already ruled; two are consequences of the
 // language and are being recorded for the first time.
 //
-// 1. OnDurable(func(SeqNum)) IS ABSENT. Ruled (DR-11, section 7.1): no C-to-Go
-//    callbacks cross the cgo boundary, ever. The Go wrapper's per-engine poller
-//    owns the blocking Sync() below and posts a DurabilityAdvanced event to the
-//    node's mailbox, so the callback still runs on the node loop in both modes.
-//    What the C++ exposes instead is Sync(), which is strictly more primitive:
-//    a callback can be built from a poller and a poller cannot be built from a
+// 1. OnDurable(func(SeqNum)) IS ABSENT. Ruled (DR-11, section 7.1): the engine
+//    does not call out. An embedder's per-engine poller owns the blocking
+//    Sync() below and delivers the durability event wherever that embedder
+//    wants it delivered, on whatever thread it wants it delivered on. What the
+//    engine exposes instead is Sync(), which is strictly more primitive: a
+//    callback can be built from a poller and a poller cannot be built from a
 //    callback.
 //
 // 2. Apply's `sync bool` IS ABSENT. Ruled (section 7.1): the flag's POLICY --
@@ -24,7 +24,7 @@
 //    wanted, so a flag that promised otherwise would be a flag the engine
 //    cannot honour.
 //
-// 3. Go's nil-versus-empty HAS NO Slice EQUIVALENT, and the frozen interface
+// 3. A NIL BOUND HAS NO Slice EQUIVALENT, and the frozen interface
 //    depends on the distinction: InRange treats a nil bound as unbounded, and
 //    an EMPTY KEY IS A VALID KEY in this engine. `Slice()` cannot mean both
 //    "the empty key" and "no bound". So bounds are a `Bound`, which is
@@ -109,7 +109,7 @@ struct IterOptions {
 
 // Walks keys in byte order. Key() and Value() are valid only until the next
 // positioning call, which is what lets the engine hand back pointers into the
-// arena rather than copying every pair across cgo.
+// arena rather than copying every pair out to the caller.
 class Iterator {
  public:
   virtual ~Iterator() = default;

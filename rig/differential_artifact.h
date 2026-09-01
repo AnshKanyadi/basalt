@@ -3,8 +3,9 @@
 // existed.
 //
 // ---------------------------------------------------------------------------
-// THIS FILE IS ONE OF TWO INDEPENDENT DECODERS. The other is Go, in
-// `engine/differential`, and it is NOT a binding over this one.
+// THIS FILE IS ONE OF TWO INDEPENDENT DECODERS. The other lives with the
+// reference model, in a separate process, and it is NOT a binding over this
+// one.
 //
 //   A SHARED DECODER MAKES WRITER AND READER AGREE BY CONSTRUCTION, AND THE
 //   SINGLE BUG A FROZEN FORMAT EXISTS TO CATCH IS A DISAGREEMENT ABOUT WHAT THE
@@ -74,8 +75,8 @@ enum class DiffOpKind : uint8_t {
 //
 // The original refused it, reasoning that "an artifact without a verdict cannot
 // reproduce a finding." That is true of a CORPUS ENTRY and false of a FILE: the
-// C++ driver cannot reach a verdict, because reaching one requires the model,
-// which is Go. So the artifact necessarily exists unjudged for the length of
+// driver cannot reach a verdict, because reaching one requires the reference
+// model. So the artifact necessarily exists unjudged for the length of
 // its journey between the two processes, and a format that refused that state
 // would have refused every file the driver can write.
 //

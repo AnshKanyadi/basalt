@@ -230,7 +230,7 @@ TEST(DB, DeleteRangeIsHalfOpen) {
   EXPECT_EQ(Scan(*f.db, IterOptions()), (std::vector<std::string>{"a=a", "d=d"}));
 }
 
-// UNBOUNDED IS NOT THE EMPTY KEY. Go's nil bound and an empty key are different
+// UNBOUNDED IS NOT THE EMPTY KEY. An absent bound and an empty key are different
 // things and an empty key is a valid key here, so Bound carries the distinction
 // explicitly -- divergence 3 in db.h.
 TEST(DB, AnUnboundedRangeIsNotAnEmptyOne) {

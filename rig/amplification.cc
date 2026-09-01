@@ -22,7 +22,7 @@ const std::string kDir = "amp";
 // produce a table disjoint from the last, so no compaction would ever rewrite
 // anything and the number measured would be a fact about the workload.
 //
-// It is `internal/rng`'s job on the Go side; here it is a fixed multiplicative
+// That is a seeded RNG's job elsewhere; here it is a fixed multiplicative
 // step over a prime modulus -- deterministic, dependency-free, and reproducible
 // from the seed printed with the result.
 uint64_t Scramble(uint64_t i) { return (i * 2654435761u) % 1000000007u; }
