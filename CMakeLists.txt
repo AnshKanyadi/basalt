@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ansh Kanyadi
+#
 # basalt -- an LSM storage engine.
 #
 # NO NETWORK. There is no FetchContent, no ExternalProject, and no download
