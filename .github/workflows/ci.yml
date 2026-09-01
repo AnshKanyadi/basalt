@@ -1,4 +1,6 @@
-# Four lanes across three toolchains: twelve jobs.
+# Four sanitizer lanes across three toolchains: twelve jobs. The kill-point
+# sweep adds three more on the same toolchains; format and library-only are one
+# each.
 #
 # The lanes are not variations on a theme. cpp-test is the UNINSTRUMENTED
 # CONTROL that makes the other three mean something: without it, a red under
@@ -99,6 +101,75 @@ jobs:
 
       - name: run
         run: env ${{ matrix.lane.opts }} ./build/${{ matrix.lane.run }}
+
+  # THE KILL-POINT SWEEP, WHICH IS THE CHECK BEHIND THE DURABILITY CLAIM AND
+  # WHICH NOTHING RAN.
+  #
+  # `basalt_sweep` was reachable from no job. Each lane above builds only the
+  # target it runs, and `library-only` configures with BASALT_BUILD_TESTS=OFF,
+  # which does not define the tool at all -- so the program that enumerates every
+  # point a write can be interrupted at was compiled by nobody and executed by
+  # nobody, while the claim it exists to support was the headline one.
+  #
+  # ALL THREE REGIMES, NAMED SEPARATELY, BECAUSE THEY REACH DIFFERENT CALL
+  # SITES. `default` sweeps the six-key WAL workload (305 points). `flush`
+  # crosses the flush threshold so every Env call a flush issues becomes a kill
+  # point (990). `compact` crosses the L0 trigger with a SNAPSHOT HELD ACROSS IT,
+  # so both halves of file lifetime are on the swept path (3545). A green
+  # `default` says nothing whatever about the compaction path, which is the one
+  # that deletes data.
+  #
+  # IT IS DETERMINISTIC AND TAKES NEITHER A SEED NOR AN ITERATION COUNT. The
+  # workload keys are authored, the torn-write prefixes are a fixed list, and the
+  # number of points is a function of the workload rather than of a budget --
+  # rig/sweep.cc: "a deterministic sweep with authored prefixes replays, and a
+  # randomized one does not." Three runs of each regime are byte-identical, so a
+  # red here is a change in the engine and never a reroll.
+  #
+  # ABOUT 17 SECONDS FOR ALL THREE, UNINSTRUMENTED. That is the whole reason this
+  # is an on-push lane and not a nightly schedule: a durability check that runs
+  # once a night is a durability check that tells you which of the day's twenty
+  # merges broke it, and the answer is "one of them".
+  sweep:
+    name: kill-point sweep (${{ matrix.platform.os }}, ${{ matrix.platform.cc }})
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - { os: ubuntu-latest, cc: clang, cxx: clang++ }
+          - { os: ubuntu-latest, cc: gcc,   cxx: g++ }
+          - { os: macos-latest,  cc: clang, cxx: clang++ }
+    env:
+      CC: ${{ matrix.platform.cc }}
+      CXX: ${{ matrix.platform.cxx }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: compiler version
+        run: $CXX --version
+
+      - name: configure
+        run: cmake -S . -B build
+
+      - name: build
+        run: |
+          cmake --build build --target basalt_sweep \
+                -j "$(getconf _NPROCESSORS_ONLN)"
+
+      # ONE REGIME PER INVOCATION -- the tool refuses to aggregate two, and each
+      # gets its own step so the log names the regime that failed rather than
+      # making a reader find it in the output. `basalt_sweep` exits non-zero on a
+      # violation, on a recovery set that has degenerated to one element, and on
+      # a census that disagrees with the visit count.
+      - name: sweep, default regime
+        run: ./build/basalt_sweep default
+
+      - name: sweep, flush regime
+        run: ./build/basalt_sweep flush
+
+      - name: sweep, compact regime
+        run: ./build/basalt_sweep compact
 
   # FORMAT IS CHECKED ON THE LINES A CHANGE TOUCHES, NEVER ON THE FILE.
   #

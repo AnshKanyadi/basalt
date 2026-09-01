@@ -3,8 +3,8 @@
 ## Lanes that run in CI
 
 Every lane runs on three toolchains: ubuntu-latest with clang, ubuntu-latest
-with gcc, and macos-latest with clang. Twelve sanitizer jobs, plus two jobs that
-are not per-toolchain.
+with gcc, and macos-latest with clang. Twelve sanitizer jobs and three sweep
+jobs, plus two jobs that are not per-toolchain.
 
 | Lane | Binary | Asserts | Tests |
 |---|---|---|---|
@@ -12,6 +12,7 @@ are not per-toolchain.
 | `cpp-asan` | `basalt_test` | The unit suite under AddressSanitizer. Asserts at compile time that `__has_feature(address_sanitizer)` holds. | 377 |
 | `cpp-ubsan` | `basalt_test` | The unit suite under UndefinedBehaviorSanitizer, `-fno-sanitize-recover=all`. Asserts at compile time that `__has_feature(undefined_behavior_sanitizer)` holds. | 377 |
 | `cpp-tsan` | `basalt_tsan_harness` | Concurrent writer and syncer across a flush, under ThreadSanitizer. Asserts at compile time that `__has_feature(thread_sanitizer)` holds. | 3 |
+| `sweep` | `basalt_sweep` | The kill-point sweep, one step per regime. Asserts every kill point recovered to a promised watermark, that both elements of the recovery set were observed, and that the per-call-kind census totals the visit count. Exits non-zero on any of the three. | 305 / 990 / 3545 kill points |
 | `format` | none | `git clang-format --diff` against the merge base, restricted to the line ranges the change touches, over `src include rig cmd test`. | n/a |
 | `library-only` | `libbasalt.a` | Configures with `BASALT_BUILD_TESTS=OFF` and builds the archive alone. Asserts the library builds without GoogleTest and without `test/` or `rig/`. | n/a |
 
@@ -52,10 +53,28 @@ apart; gcc 13 cannot run that cross-check.
 under a planted defect often enough that running it here would make `cpp-test`
 red for the same reason `cpp-tsan` is, removing the control.
 
-Two targets are defined and no CI job builds or runs them: `basalt_sweep` (the
-Env kill-point sweep) and `basalt_amp` (compaction amplification). Each lane
-builds only the targets it runs, and `library-only` configures with
-`BASALT_BUILD_TESTS=OFF`, which does not define them.
+`basalt_sweep` now has its own job, above. It had none: each lane builds only
+the targets it runs and `library-only` configures with `BASALT_BUILD_TESTS=OFF`,
+which does not define the tool at all, so the program behind the durability
+claim was built by nothing and run by nothing. All three regimes take about 17
+seconds together, uninstrumented, which is why it is on push rather than on a
+schedule.
+
+The sweep needs no seed and no iteration count. Its workload keys are authored,
+its torn-write prefixes are a fixed list, and the number of points follows from
+the workload rather than from a budget, so the three regimes' point counts are
+fixed at 305, 990 and 3545 and three runs of each are byte-identical.
+
+`basalt_amp` remains defined and unrun, and that is deliberate rather than an
+oversight of the same kind. It is an INSTRUMENT, not a lane: it measures write,
+read and space amplification at three sizes spanning the predicted crossing
+point and prints the conclusion DESIGN-B3 section 8.2b fixed in advance for each
+outcome. It returns 0 on every path, including the one where amplification is
+above the threshold and "(c) is reopened" -- there is no exit code to gate a
+merge on, and adding one would be inventing a pass/fail line that section 8.1
+deliberately did not draw. Its own logic is asserted in
+`test/amplification_test.cc`, inside the 377. It takes 34 seconds and is run by
+hand when the question is asked.
 
 ## Verification that did not survive extraction
 
