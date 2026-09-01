@@ -9,6 +9,7 @@
 // the one that runs in production first.
 #include "basalt/db.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <memory>
 #include <map>

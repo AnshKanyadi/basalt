@@ -190,7 +190,14 @@ TEST(Recovery, CloseThenReopenIsIndistinguishableFromKillThenReopen) {
       SeqNum mark = 0;
       EXPECT_TRUE(w->Sync(&mark).ok());
       EXPECT_TRUE(w->Apply(2, OneSet("b", "2")).ok());
-      if (close_cleanly) EXPECT_TRUE(w->Close().ok());
+      // BRACED, and gcc is right to ask. EXPECT_TRUE expands to an
+      // if/else pair, so an unbraced `if (cond) EXPECT_TRUE(...)` puts
+      // an else inside an if that has none of its own -- the shape
+      // -Wdangling-else exists for. There is no ambiguity to fix here
+      // today; the braces keep it that way when a line is added below.
+      if (close_cleanly) {
+        EXPECT_TRUE(w->Close().ok());
+      }
     }
     t.Kill();
     std::unique_ptr<TestEnvironment> re =

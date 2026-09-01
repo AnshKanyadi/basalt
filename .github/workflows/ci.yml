@@ -1,4 +1,4 @@
-# Four lanes, four build directories, four separate reasons to go red.
+# Four lanes across three toolchains: twelve jobs.
 #
 # The lanes are not variations on a theme. cpp-test is the UNINSTRUMENTED
 # CONTROL that makes the other three mean something: without it, a red under
@@ -14,10 +14,16 @@
 # NO NETWORK IS NEEDED TO BUILD. GoogleTest is vendored at
 # third_party/googletest. The checkout is the only fetch in this file.
 #
-# gcc is deliberately absent. -fno-exceptions -fno-rtti under -Werror is where
-# two toolchains are most likely to disagree, and a lane that has never been
-# seen to pass is not evidence. Add it as a lane under test, not as a lane
-# reporting.
+# GCC WAS ADDED AND IT FOUND TWO THINGS IMMEDIATELY, which is the argument for
+# it. libstdc++ does not pull <algorithm> in behind another header the way
+# libc++ does, so a missing include compiled under clang for as long as clang
+# was the only compiler; and -Wdangling-else, which clang does not raise here,
+# named an unbraced `if (cond) EXPECT_TRUE(...)` -- a shape whose macro expands
+# to an if/else. Both are fixed. Neither was reachable from a green clang run.
+#
+# The gcc TSan lane runs on Linux only because that is the only place it is in
+# the matrix. Homebrew's macOS gcc ships libasan and libubsan but no libtsan,
+# so a macOS gcc job could not have run it.
 name: ci
 
 on:
@@ -30,57 +36,69 @@ permissions:
 
 jobs:
   lanes:
-    name: ${{ matrix.lane }}
-    runs-on: ubuntu-latest
+    name: ${{ matrix.lane.name }} (${{ matrix.platform.os }}, ${{ matrix.platform.cc }})
+    runs-on: ${{ matrix.platform.os }}
     strategy:
       fail-fast: false
       matrix:
-        include:
+        # THREE TOOLCHAINS, BECAUSE THE STANDARD LIBRARY IS THE VARIABLE.
+        # libstdc++ and libc++ do not agree about which headers include which
+        # others, so a missing <algorithm> compiles on one and not the other.
+        # That is not hypothetical here: it is what the first gcc build found.
+        platform:
+          - { os: ubuntu-latest, cc: clang, cxx: clang++ }
+          - { os: ubuntu-latest, cc: gcc,   cxx: g++ }
+          - { os: macos-latest,  cc: clang, cxx: clang++ }
+        lane:
           # The control. It BUILDS the TSan harness and deliberately does not
           # run it: building it here is what makes this lane a real control for
           # cpp-tsan, so a red there is the race and not a broken build.
           # Running it here would defeat that -- the harness races on purpose
           # under an unlocked mutant, and cpp-test would go red too.
-          - lane: cpp-test
+          - name: cpp-test
             sanitizer: none
             targets: basalt_test basalt_tsan_harness
-            run: ./build/basalt_test
-            env: ''
-          - lane: cpp-asan
+            run: basalt_test
+            opts: ''
+          - name: cpp-asan
             sanitizer: address
             targets: basalt_test
-            run: ./build/basalt_test
-            env: 'ASAN_OPTIONS=abort_on_error=0:detect_leaks=0'
-          - lane: cpp-ubsan
+            run: basalt_test
+            opts: 'ASAN_OPTIONS=abort_on_error=0:detect_leaks=0'
+          - name: cpp-ubsan
             sanitizer: undefined
             targets: basalt_test
-            run: ./build/basalt_test
-            env: 'UBSAN_OPTIONS=print_stacktrace=1'
+            run: basalt_test
+            opts: 'UBSAN_OPTIONS=print_stacktrace=1'
           # THE THREAD LANE RUNS THE HARNESS AND NOT THE UNIT SUITE. The unit
           # suite is single-threaded, so a green TSan run over it would report
           # the absence of threads as the absence of races.
-          - lane: cpp-tsan
+          - name: cpp-tsan
             sanitizer: thread
             targets: basalt_tsan_harness
-            run: ./build/basalt_tsan_harness
-            env: 'TSAN_OPTIONS=halt_on_error=1'
+            run: basalt_tsan_harness
+            opts: 'TSAN_OPTIONS=halt_on_error=1'
+    env:
+      CC: ${{ matrix.platform.cc }}
+      CXX: ${{ matrix.platform.cxx }}
     steps:
       - uses: actions/checkout@v4
 
       - name: compiler version
-        run: clang++ --version
+        run: $CXX --version
 
       - name: configure
-        env:
-          CC: clang
-          CXX: clang++
-        run: cmake -S . -B build -DBASALT_SANITIZER=${{ matrix.sanitizer }}
+        run: cmake -S . -B build -DBASALT_SANITIZER=${{ matrix.lane.sanitizer }}
 
+      # getconf rather than nproc: nproc is coreutils and is not on the macOS
+      # runner.
       - name: build
-        run: cmake --build build --target ${{ matrix.targets }} -j "$(nproc)"
+        run: |
+          cmake --build build --target ${{ matrix.lane.targets }} \
+                -j "$(getconf _NPROCESSORS_ONLN)"
 
       - name: run
-        run: env ${{ matrix.env }} ${{ matrix.run }}
+        run: env ${{ matrix.lane.opts }} ./build/${{ matrix.lane.run }}
 
   # FORMAT IS CHECKED ON THE LINES A CHANGE TOUCHES, NEVER ON THE FILE.
   #
