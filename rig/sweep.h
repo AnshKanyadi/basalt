@@ -3,9 +3,18 @@
 //
 // ONE WORKLOAD, EVERY KILL POINT. The identity of a point is a GLOBAL Env-CALL
 // ORDINAL: complete by construction, nothing to annotate and therefore nothing
-// to forget. Each point is visited twice, once with a kill BEFORE the effect and
-// once AFTER it, because those are the two elements of the recovery set and a
-// sweep that only ever kills before the effect can never observe the second one.
+// to forget.
+//
+// FIVE MODES AT EVERY ORDINAL, in three families. A kill BEFORE the effect and
+// a kill AFTER it are the two elements of the recovery set, and a sweep that
+// only ever kills before the effect can never observe the second one. Those two
+// alone cannot leave a batch on disk without its GROUP_END -- a kill before the
+// effect promotes nothing and a kill after it promotes the whole group -- so
+// they cannot detect an engine that commits uncommitted batches, which is the
+// one thing the group marker exists to prevent. The third family is a torn Sync
+// at each of three fixed prefixes, which can. It was added because measuring
+// the sweep's power put the detection count for that class at zero; see the
+// mode table in RunSweep for the prefixes and the argument.
 //
 // EVERY OUTCOME IS ADJUDICATED HARNESS-SIDE. engine/model never errors, so every
 // error the C++ engine can return is a place the two can legally differ, and

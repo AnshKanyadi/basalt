@@ -32,11 +32,17 @@
 //    section 8.2's clear-everything case; DeleteRange(At(""), At("")) is empty
 //    and deletes nothing, and those must not be the same call.
 //
-// 4. ApproximateDiskBytes SCANS in B1. The frozen comment says "Approximate is
-//    in the name because the C++ engine answers from table metadata rather than
-//    by scanning" -- and B1 has no tables and therefore no metadata. The answer
-//    is exact and O(n) until B2 gives it something to approximate from. Stated
-//    because it is a performance property that will change, not a semantic one.
+// 4. ApproximateDiskBytes SCANS. The frozen comment says "Approximate is in the
+//    name because the C++ engine answers from table metadata rather than by
+//    scanning" -- and it does not. There are tables now and there is metadata
+//    now (TableMeta carries file_bytes), and this call consults neither: it
+//    walks the merged view over the current version and sums the key and value
+//    bytes visible at the current sequence. So the answer is exact, O(n) in the
+//    live entries in range, and is LIVE LOGICAL BYTES rather than bytes on
+//    disk -- it counts no block framing, no filter, no footer, and nothing an
+//    overwritten or deleted version still occupies in a file it has not been
+//    compacted out of. Stated because it is what a caller gets today rather
+//    than what the name promises.
 #ifndef BASALT_DB_H_
 #define BASALT_DB_H_
 
@@ -127,9 +133,17 @@ class Iterator {
 
 // A pinned view. Reads through it see the state as of the moment it was taken.
 //
-// In B1 that is a sequence number and nothing else: with no flush and no
-// compaction there is no version to hold, so "it holds its version against
-// compaction until it is Closed" is trivially true here and becomes real at B3.
+// "IT HOLDS ITS VERSION AGAINST COMPACTION UNTIL IT IS Closed" IS REAL NOW, and
+// it is held by two mechanisms rather than one. The snapshot keeps shared
+// pointers to the memtable and the tables it was taken over, so it goes on
+// reading through them after a flush or a compaction drops the DB's own
+// references; and its sequence is registered in the live set the drop rule
+// consults, so a compaction may not drop a version this snapshot can still
+// read. The second is not redundant with the first: pinning alone would rest on
+// a whole SSTable staying resident after its file is unlinked, which is an
+// argument with a moving premise.
+//
+// Close() and destruction both release it, and exactly one of them counts.
 class Snapshot {
  public:
   virtual ~Snapshot() = default;
