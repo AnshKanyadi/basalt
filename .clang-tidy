@@ -1,0 +1,43 @@
+# The checks that would have caught something here, and nothing that fights the
+# style the tree already has.
+#
+# NOT A CI LANE. It is a tool to run over a diff, because a tidy pass over a
+# tree that predates it produces a wall of findings nobody reads, and a wall
+# nobody reads is indistinguishable from a clean run.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  cert-*,
+  -cert-err58-cpp,
+  clang-analyzer-*,
+  misc-*,
+  -misc-non-private-member-variables-in-classes,
+  -misc-no-recursion,
+  modernize-use-nullptr,
+  modernize-use-override,
+  modernize-use-emplace,
+  performance-*,
+  readability-*,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-function-cognitive-complexity,
+  -readability-braces-around-statements,
+  -readability-else-after-return
+
+WarningsAsErrors: ''
+HeaderFilterRegex: '^(src|include/basalt|rig)/'
+FormatStyle: file
+
+CheckOptions:
+  - key:   readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key:   readability-identifier-naming.StructCase
+    value: CamelCase
+  - key:   readability-identifier-naming.FunctionCase
+    value: CamelCase
+  - key:   readability-identifier-naming.PrivateMemberSuffix
+    value: _
+  - key:   readability-identifier-naming.NamespaceCase
+    value: lower_case

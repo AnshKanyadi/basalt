@@ -1,0 +1,95 @@
+# Four lanes, four build directories, four separate reasons to go red.
+#
+# The lanes are not variations on a theme. cpp-test is the UNINSTRUMENTED
+# CONTROL that makes the other three mean something: without it, a red under
+# ASan is not attributable, because "the code is broken" and "the code has a
+# memory error" look identical in an exit code.
+#
+# Each lane asserts AT COMPILE TIME that it has the sanitizer it claims -- and
+# cpp-test asserts it has none. See test/sanitizer_lane_test.cc. A lane that
+# lost its -fsanitize flag to a CMake edit fails to BUILD rather than passing
+# quietly, which is the failure mode a sanitizer lane is most exposed to: it
+# keeps building, keeps running, keeps passing, and checks nothing at all.
+#
+# NO NETWORK IS NEEDED TO BUILD. GoogleTest is vendored at
+# third_party/googletest. The checkout is the only fetch in this file.
+#
+# gcc is deliberately absent. -fno-exceptions -fno-rtti under -Werror is where
+# two toolchains are most likely to disagree, and a lane that has never been
+# seen to pass is not evidence. Add it as a lane under test, not as a lane
+# reporting.
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lanes:
+    name: ${{ matrix.lane }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The control. It BUILDS the TSan harness and deliberately does not
+          # run it: building it here is what makes this lane a real control for
+          # cpp-tsan, so a red there is the race and not a broken build.
+          # Running it here would defeat that -- the harness races on purpose
+          # under an unlocked mutant, and cpp-test would go red too.
+          - lane: cpp-test
+            sanitizer: none
+            targets: basalt_test basalt_tsan_harness
+            run: ./build/basalt_test
+            env: ''
+          - lane: cpp-asan
+            sanitizer: address
+            targets: basalt_test
+            run: ./build/basalt_test
+            env: 'ASAN_OPTIONS=abort_on_error=0:detect_leaks=0'
+          - lane: cpp-ubsan
+            sanitizer: undefined
+            targets: basalt_test
+            run: ./build/basalt_test
+            env: 'UBSAN_OPTIONS=print_stacktrace=1'
+          # THE THREAD LANE RUNS THE HARNESS AND NOT THE UNIT SUITE. The unit
+          # suite is single-threaded, so a green TSan run over it would report
+          # the absence of threads as the absence of races.
+          - lane: cpp-tsan
+            sanitizer: thread
+            targets: basalt_tsan_harness
+            run: ./build/basalt_tsan_harness
+            env: 'TSAN_OPTIONS=halt_on_error=1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: compiler version
+        run: clang++ --version
+
+      - name: configure
+        env:
+          CC: clang
+          CXX: clang++
+        run: cmake -S . -B build -DBASALT_SANITIZER=${{ matrix.sanitizer }}
+
+      - name: build
+        run: cmake --build build --target ${{ matrix.targets }} -j "$(nproc)"
+
+      - name: run
+        run: env ${{ matrix.env }} ${{ matrix.run }}
+
+  # The library alone, with BASALT_BUILD_TESTS off: the configuration an
+  # embedder gets from add_subdirectory. It must not need GoogleTest, and it
+  # must not need anything under test/ or rig/.
+  library-only:
+    name: library only
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build-lib -DBASALT_BUILD_TESTS=OFF
+      - run: cmake --build build-lib -j "$(nproc)"
+      - run: test -f build-lib/libbasalt.a

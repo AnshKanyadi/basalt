@@ -1,0 +1,16 @@
+# Google style at 80 columns, which is what this tree was written to.
+#
+# IT IS NOT APPLIED RETROACTIVELY, and that is deliberate. Several headers carry
+# marker regions read under a strict line grammar, and several carry hand-laid
+# tables whose alignment is the content. Reformatting the tree would rewrite
+# 26,000 lines to fix roughly 750, and would destroy layout that is load-bearing.
+# Use it on new code and on code you are already rewriting.
+BasedOnStyle: Google
+Language: Cpp
+Standard: c++17
+ColumnLimit: 80
+IndentWidth: 2
+AccessModifierOffset: -1
+DerivePointerAlignment: false
+PointerAlignment: Left
+IncludeBlocks: Preserve
