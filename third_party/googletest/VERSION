@@ -1,0 +1,25 @@
+# Vendored dependency provenance -- GoogleTest.
+
+# FetchContent was declined. A build step that reaches the network fails in
+# exactly the situation where "the tests build and run from a clean clone"
+# matters most, which is a stranger checking our work. So the tree is vendored,
+# whole and unmodified.
+
+upstream:   https://github.com/google/googletest
+tag:        v1.17.0
+commit:     52eb8108c5bdec04579160ae17225d66034bd723
+tree:       ad23b2ceac4a6eef2278c48545b62ffc1f0c134a
+authored:   2025-04-30 (upstream commit date; "Prepare for v1.17.0 (#4757)")
+
+# THE ONE FILE THAT IS NOT UPSTREAM'S
+#
+# This file, and only this file. To confirm the rest is upstream's, recompute
+# the tree hash with this file excluded and compare against `tree:` above:
+#
+#   git ls-tree HEAD third_party/googletest
+#
+# and against upstream, fetch the pinned commit and compare its tree hash to
+# the same value. The equality is the whole check; excluding one hard-coded
+# name costs nothing because the equality itself guards the exclusion.
+
+exclude-from-hash: VERSION
