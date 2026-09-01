@@ -82,6 +82,59 @@ jobs:
       - name: run
         run: env ${{ matrix.env }} ${{ matrix.run }}
 
+  # FORMAT IS CHECKED ON THE LINES A CHANGE TOUCHES, NEVER ON THE FILE.
+  #
+  # The tree predates .clang-format and has not been reformatted; see that file
+  # for why it must not be. A whole-file check here would therefore be red on
+  # every push forever, which is the same as having no check: a lane that is
+  # always red is one people learn to merge past.
+  #
+  # `git clang-format --diff <base>` restricts formatting to the changed line
+  # ranges and prints what it would change. Empty output is the pass.
+  format:
+    name: clang-format (changed lines)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - run: sudo apt-get update && sudo apt-get install -y clang-format
+
+      # The merge base, not the base tip: comparing against the tip would
+      # attribute every line the base moved on since the branch started to
+      # this change.
+      - name: resolve the merge base
+        id: base
+        run: |
+          if [ -n "${{ github.base_ref }}" ]; then
+            git fetch --no-tags origin "${{ github.base_ref }}"
+            base=$(git merge-base HEAD FETCH_HEAD)
+          elif git rev-parse HEAD~1 >/dev/null 2>&1; then
+            base=$(git rev-parse HEAD~1)
+          else
+            base=$(git rev-parse HEAD)
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+          echo "comparing against $base"
+
+      - name: changed lines satisfy .clang-format
+        run: |
+          out=$(git clang-format --diff --extensions cc,h \
+                  "${{ steps.base.outputs.sha }}" \
+                  -- src include rig cmd test)
+          if [ -z "$out" ] || \
+             [ "$out" = "clang-format did not modify any files" ] || \
+             [ "$out" = "no modified files to format" ]; then
+            echo "changed lines are clean"
+            exit 0
+          fi
+          echo "$out"
+          echo
+          echo "The lines this change touches do not match .clang-format."
+          echo "Run: git clang-format ${{ steps.base.outputs.sha }}"
+          exit 1
+
   # The library alone, with BASALT_BUILD_TESTS off: the configuration an
   # embedder gets from add_subdirectory. It must not need GoogleTest, and it
   # must not need anything under test/ or rig/.

@@ -1,10 +1,29 @@
-# Google style at 80 columns, which is what this tree was written to.
+# THE TREE PREDATES THIS FILE, AND THIS FILE IS NOT RETROACTIVE.
 #
-# IT IS NOT APPLIED RETROACTIVELY, and that is deliberate. Several headers carry
-# marker regions read under a strict line grammar, and several carry hand-laid
-# tables whose alignment is the content. Reformatting the tree would rewrite
-# 26,000 lines to fix roughly 750, and would destroy layout that is load-bearing.
-# Use it on new code and on code you are already rewriting.
+# The source here was written before there was a config, to Google style at 80
+# columns, and roughly 750 of its 26,000 lines do not satisfy that. It has NOT
+# been reformatted and must not be. Two reasons, and the second is the load
+# bearing one:
+#
+#   1. A whole-tree reformat rewrites 26,000 lines to fix 750, and the diff
+#      that results is one nobody can audit against the history it replaces.
+#
+#   2. SOME OF THIS LAYOUT IS READ BY SOMETHING. include/basalt/env.h carries a
+#      marked region parsed under a strict line grammar; several headers carry
+#      hand-laid tables where the alignment is the content, not decoration.
+#      Reflowing those does not merely look different -- it changes what they
+#      say.
+#
+# So: THIS CONFIG APPLIES TO NEW AND MODIFIED LINES ONLY. CI checks the lines a
+# change actually touches, against the merge base, and never the whole file.
+# See .github/workflows/ci.yml.
+#
+# ReflowComments is off for reason 2, and it is not a style preference. With it
+# on, editing one line inside a comment block rewraps the block around it: a
+# one-line change arrives as a twelve-line diff through paragraphs the author
+# never looked at, and inside a marked region it would rewrite the grammar's
+# input. This was not theoretical -- it was observed on the first run of the
+# changed-lines check, on a paragraph no commit had touched.
 BasedOnStyle: Google
 Language: Cpp
 Standard: c++17
@@ -14,3 +33,4 @@ AccessModifierOffset: -1
 DerivePointerAlignment: false
 PointerAlignment: Left
 IncludeBlocks: Preserve
+ReflowComments: false
