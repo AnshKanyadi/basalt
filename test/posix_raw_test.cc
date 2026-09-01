@@ -12,7 +12,7 @@
 // that fails to terminate therefore fails a test instead of hanging a lane --
 // which matters because "must not spin" is a liveness property, and a lane that
 // hangs while checking a liveness property reports nothing at all.
-#include "posix_raw.h"
+#include "basalt/posix_raw.h"
 
 #include <cerrno>
 #include <cstddef>
@@ -22,9 +22,9 @@
 
 #include <gtest/gtest.h>
 
-#include "status.h"
+#include "basalt/status.h"
 
-namespace rift {
+namespace basalt {
 namespace posix {
 namespace {
 
@@ -239,4 +239,4 @@ TEST_F(ReadDirTest, APartialListingIsClearedOnError) {
 
 }  // namespace
 }  // namespace posix
-}  // namespace rift
+}  // namespace basalt

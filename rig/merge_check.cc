@@ -1,4 +1,4 @@
-// RIFT_ORACLE -- see merge_check.h and ORACLES.txt.
+// BASALT_ORACLE -- see merge_check.h and ORACLES.txt.
 #include "merge_check.h"
 
 #include <algorithm>
@@ -6,7 +6,7 @@
 #include "internal_key.h"
 #include "table_format.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 namespace {
 
@@ -148,4 +148,4 @@ MergeVerdict AdjudicateMerge(const VersionModel& model,
 }
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

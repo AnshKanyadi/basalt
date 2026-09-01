@@ -2,10 +2,10 @@
 
 #include <cstring>
 
-#include "check.h"
+#include "basalt/check.h"
 #include "crc32c.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 namespace {
 
@@ -57,9 +57,9 @@ void EncodeFooter(const Footer& f, std::string* out) {
   // bought, and it worked only because zero was a usable sentinel.
   PutU64(out, f.range_offset);
   out->append(kMagic, sizeof(kMagic));
-  RIFT_CHECK(out->size() - before == kFooterCrcCovers);
+  BASALT_CHECK(out->size() - before == kFooterCrcCovers);
   PutU32(out, wal::Crc32c(out->data() + before, kFooterCrcCovers));
-  RIFT_CHECK(out->size() - before == kFooterBytes);
+  BASALT_CHECK(out->size() - before == kFooterBytes);
 }
 
 bool DecodeFooter(Slice image, Footer* out, std::string* why) {
@@ -107,7 +107,7 @@ std::string BlockBuilder::Finish() {
   for (uint32_t r : restarts_) PutU32(&buf_, r);
   PutU32(&buf_, static_cast<uint32_t>(restarts_.size()));
   PutU32(&buf_, wal::Crc32c(buf_.data(), buf_.size()));
-  RIFT_CHECK(buf_.size() ==
+  BASALT_CHECK(buf_.size() ==
              entries_end + restarts_.size() * 4 + 4 + kBlockTrailerBytes);
   return buf_;
 }
@@ -173,4 +173,4 @@ bool ParseBlock(Slice block, std::vector<BlockEntry>* entries,
 }
 
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt

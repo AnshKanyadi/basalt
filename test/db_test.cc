@@ -4,7 +4,7 @@
 // means byte-identical to engine/model. The suite here exists to make B4's
 // failures debuggable -- to say WHICH rule broke rather than that the two
 // engines disagree -- and not to substitute for it.
-#include "db.h"
+#include "basalt/db.h"
 
 #include <cstdio>
 #include <memory>
@@ -13,13 +13,13 @@
 
 #include <gtest/gtest.h>
 
-#include "call_site.h"
+#include "basalt/call_site.h"
 #include "env_guard.h"
 #include "regime.h"
 #include "reader.h"
 #include "test_env.h"
 
-namespace rift {
+namespace basalt {
 namespace {
 
 using testenv::TestEnvironment;
@@ -593,4 +593,4 @@ TEST(DBDeleteRange, ATornBatchSpanningBlocksIsDiscardedWholeAndTheGroupStands) {
 }
 
 }  // namespace
-}  // namespace rift
+}  // namespace basalt

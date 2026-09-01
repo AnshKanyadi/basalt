@@ -37,22 +37,21 @@
 //    by scanning" -- and B1 has no tables and therefore no metadata. The answer
 //    is exact and O(n) until B2 gives it something to approximate from. Stated
 //    because it is a performance property that will change, not a semantic one.
-#ifndef RIFT_DB_H_
-#define RIFT_DB_H_
+#ifndef BASALT_DB_H_
+#define BASALT_DB_H_
 
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "caps.h"
-#include "env.h"
-#include "format.h"
-#include "memtable.h"
-#include "slice.h"
-#include "status.h"
+#include "basalt/caps.h"
+#include "basalt/env.h"
+#include "basalt/format.h"
+#include "basalt/slice.h"
+#include "basalt/status.h"
 
-namespace rift {
+namespace basalt {
 
 // A bound that is either a key or UNBOUNDED. See divergence 3 above.
 class Bound {
@@ -177,6 +176,6 @@ class DB {
   virtual Status Close() = 0;
 };
 
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_DB_H_
+#endif  // BASALT_DB_H_

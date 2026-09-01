@@ -1,11 +1,11 @@
 #include "image_fixture.h"
 
-#include "check.h"
+#include "basalt/check.h"
 #include "manifest.h"
 #include "table.h"
 #include "table_builder.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 namespace {
 
@@ -19,19 +19,19 @@ void AddOne(testenv::TestEnvironment* t, const std::string& dir,
   const std::string path = sst::TablePath(dir, number);
   {
     WritableFilePtr f;
-    RIFT_CHECK(t->env()->NewWritableFile(path, &f).ok());
-    RIFT_CHECK(f->Append(bytes).ok());
-    RIFT_CHECK(f->Sync().ok());
-    RIFT_CHECK(f->Close().ok());
+    BASALT_CHECK(t->env()->NewWritableFile(path, &f).ok());
+    BASALT_CHECK(f->Append(bytes).ok());
+    BASALT_CHECK(f->Sync().ok());
+    BASALT_CHECK(f->Close().ok());
   }
   {
     DirectoryPtr d;
-    RIFT_CHECK(t->env()->NewDirectory(dir, &d).ok());
-    RIFT_CHECK(d->Sync().ok());
-    RIFT_CHECK(d->Close().ok());
+    BASALT_CHECK(t->env()->NewDirectory(dir, &d).ok());
+    BASALT_CHECK(d->Sync().ok());
+    BASALT_CHECK(d->Close().ok());
   }
   std::shared_ptr<sst::Table> opened;
-  RIFT_CHECK(sst::Table::Open(t->env(), path, number, &opened).ok());
+  BASALT_CHECK(sst::Table::Open(t->env(), path, number, &opened).ok());
   sst::TableMeta meta;
   meta.number = number;
   meta.file_bytes = opened->file_bytes();
@@ -44,7 +44,7 @@ void AddOne(testenv::TestEnvironment* t, const std::string& dir,
   sst::ManifestEdit bump;
   bump.kind = sst::EditKind::kNextFileNumber;
   bump.number = number + 1;
-  RIFT_CHECK(m->AppendGroup({add, bump}).ok());
+  BASALT_CHECK(m->AppendGroup({add, bump}).ok());
   state->next_file_number = number + 1;
 }
 
@@ -53,15 +53,15 @@ void AddOne(testenv::TestEnvironment* t, const std::string& dir,
 testenv::DurableImage ImageHoldingTables(const std::string& dir,
                                          const std::vector<std::string>& table_bytes) {
   testenv::TestEnvironment t;
-  RIFT_CHECK(t.env()->CreateDir(dir).ok());
+  BASALT_CHECK(t.env()->CreateDir(dir).ok());
   sst::ManifestState state;
   std::unique_ptr<sst::Manifest> m;
   std::vector<std::shared_ptr<sst::Table>> tables;
-  RIFT_CHECK(sst::Manifest::Open(t.env(), dir, &state, &tables, &m).ok());
+  BASALT_CHECK(sst::Manifest::Open(t.env(), dir, &state, &tables, &m).ok());
   for (const std::string& bytes : table_bytes) {
     AddOne(&t, dir, m.get(), &state, Slice(bytes));
   }
-  RIFT_CHECK(m->Close().ok());
+  BASALT_CHECK(m->Close().ok());
   return t.Image();
 }
 
@@ -72,11 +72,11 @@ testenv::DurableImage BuildImage(const std::string& dir,
   std::vector<std::string> images;
   for (const std::vector<FixtureCell>& cells : tables) {
     testenv::TestEnvironment scratch;
-    RIFT_CHECK(scratch.env()->CreateDir(dir).ok());
+    BASALT_CHECK(scratch.env()->CreateDir(dir).ok());
     const std::string path = dir + "/scratch.sst";
     {
       WritableFilePtr f;
-      RIFT_CHECK(scratch.env()->NewWritableFile(path, &f).ok());
+      BASALT_CHECK(scratch.env()->NewWritableFile(path, &f).ok());
       sst::TableBuilder b(f.get());
       for (const FixtureCell& c : cells) {
         std::string k;
@@ -85,9 +85,9 @@ testenv::DurableImage BuildImage(const std::string& dir,
                                                     : ValueType::kValue));
         b.Add(Slice(k), Slice(c.value));
       }
-      RIFT_CHECK(b.Finish().ok());
-      RIFT_CHECK(f->Sync().ok());
-      RIFT_CHECK(f->Close().ok());
+      BASALT_CHECK(b.Finish().ok());
+      BASALT_CHECK(f->Sync().ok());
+      BASALT_CHECK(f->Close().ok());
     }
     images.push_back(scratch.ContentNow(path));
   }
@@ -95,4 +95,4 @@ testenv::DurableImage BuildImage(const std::string& dir,
 }
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

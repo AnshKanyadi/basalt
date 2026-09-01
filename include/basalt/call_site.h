@@ -2,8 +2,11 @@
 //
 // This enum is one of the three artifacts the 1:1:1 assertion binds together
 // (DESIGN-B1 section 3.2): one public non-virtual wrapper, one private Do*
-// pure virtual, one CallSite enumerator. Any of the three drifting is a lane
-// failure with all three printed -- see scripts/cpp-scan.sh.
+// pure virtual, one CallSite enumerator. Any of the three drifting is a
+// defect. NOTE: the source scanner that mechanised this rule stayed with the
+// parent project; here the rule is stated and the BEHAVIOUR it exists to
+// guarantee is asserted in test/env_surface_test.cc, but the SHAPE is no
+// longer checked automatically.
 //
 // What the enumerator IS, concretely: the identity of a fault injection point
 // and of a kill point. "Every failure the B1 and B4 rigs need must be
@@ -11,13 +14,13 @@
 // kill point" (section 3.1). A CallSite that exists and is never reached is an
 // injector nobody can fire, which is why section 3.2's census asserts every
 // enumerator is observed at least once -- that half lands at B1.3.
-#ifndef RIFT_ENV_CALL_SITE_H_
-#define RIFT_ENV_CALL_SITE_H_
+#ifndef BASALT_CALL_SITE_H_
+#define BASALT_CALL_SITE_H_
 
 #include <cstdint>
 #include <vector>
 
-namespace rift {
+namespace basalt {
 
 // CLOSED. -Werror=switch, no `default:` arm over it, anywhere.
 enum class CallSite : uint8_t {
@@ -61,10 +64,10 @@ const char* CallSiteName(CallSite site);
 // The census must iterate the call sites, and an array that had drifted from
 // the enum would make the census report on a different set than exists -- which
 // is the failure the census is FOR, arriving inside the census itself. So the
-// list in call_site.cc is a fourth artifact bound by scripts/cpp-scan.sh's set
-// equality, alongside the wrapper, the Do* and the enumerator.
+// list in call_site.cc is a fourth artifact bound by that set equality,
+// alongside the wrapper, the Do* and the enumerator.
 const std::vector<CallSite>& AllCallSites();
 
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_ENV_CALL_SITE_H_
+#endif  // BASALT_CALL_SITE_H_

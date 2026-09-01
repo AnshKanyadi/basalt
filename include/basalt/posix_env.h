@@ -48,18 +48,18 @@
 // a defect to fix here. Under B1-Q12's ruling the first real evidence now
 // arrives at B1.8 rather than at B5, still fault-free and still not evidence
 // for the recovery contract; the first ADVERSARIAL evidence is I2's chaos lane.
-#ifndef RIFT_ENV_POSIX_POSIX_ENV_H_
-#define RIFT_ENV_POSIX_POSIX_ENV_H_
+#ifndef BASALT_POSIX_ENV_H_
+#define BASALT_POSIX_ENV_H_
 
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "env.h"
-#include "fault_controller.h"
-#include "posix_raw.h"
+#include "basalt/env.h"
+#include "basalt/fault_controller.h"
+#include "basalt/posix_raw.h"
 
-namespace rift {
+namespace basalt {
 
 // The production Env. `faults` is NoFaultController() in production; the
 // parameter exists because the kill mechanism is a property of the Env seam
@@ -68,6 +68,6 @@ std::unique_ptr<Env> NewPosixEnv(FaultController* faults = NoFaultController(),
                                  posix::RawWriteFn raw_write = posix::RawWrite,
                                  posix::RawReadDirFn raw_readdir = posix::RawReadDir);
 
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_ENV_POSIX_POSIX_ENV_H_
+#endif  // BASALT_POSIX_ENV_H_

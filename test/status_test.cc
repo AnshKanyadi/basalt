@@ -1,4 +1,4 @@
-#include "status.h"
+#include "basalt/status.h"
 
 #include <cstddef>
 #include <iterator>
@@ -7,7 +7,7 @@
 
 #include <gtest/gtest.h>
 
-namespace rift {
+namespace basalt {
 namespace {
 
 // Every enumerator, written out. The REAL gate against an unclassified
@@ -66,4 +66,4 @@ TEST(Status, NotFoundIsNotOkButIsAnOrdinaryResult) {
 }
 
 }  // namespace
-}  // namespace rift
+}  // namespace basalt

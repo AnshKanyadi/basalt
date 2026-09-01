@@ -1,8 +1,8 @@
 #include "run_outcome.h"
 
-#include "check.h"
+#include "basalt/check.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 bool CountsAsRecoveryEvidence(RunOutcome outcome) {
@@ -16,7 +16,7 @@ bool CountsAsRecoveryEvidence(RunOutcome outcome) {
     case RunOutcome::kVoid:                   // adjudicated legitimate, never banked
       return false;
   }
-  RIFT_UNREACHABLE("RunOutcome holds a value no enumerator names");
+  BASALT_UNREACHABLE("RunOutcome holds a value no enumerator names");
 }
 
 RunOutcome OutcomeFloor(bool exactness_suspended) {
@@ -32,7 +32,7 @@ const char* RunOutcomeName(RunOutcome outcome) {
     case RunOutcome::kInconclusive:         return "kInconclusive";
     case RunOutcome::kVoid:                 return "kVoid";
   }
-  RIFT_UNREACHABLE("RunOutcome holds a value no enumerator names");
+  BASALT_UNREACHABLE("RunOutcome holds a value no enumerator names");
 }
 
 const char* RunOutcomeLedgerColumn(RunOutcome outcome) {
@@ -43,8 +43,8 @@ const char* RunOutcomeLedgerColumn(RunOutcome outcome) {
     case RunOutcome::kInconclusive:         return "inconclusive (not evidence)";
     case RunOutcome::kVoid:                 return "void (not evidence)";
   }
-  RIFT_UNREACHABLE("RunOutcome holds a value no enumerator names");
+  BASALT_UNREACHABLE("RunOutcome holds a value no enumerator names");
 }
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

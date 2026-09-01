@@ -62,17 +62,17 @@
 //   every other transition is ILLEGAL:
 //     OUTSIDE --MIDDLE-->  |  OUTSIDE --LAST-->
 //     INSIDE  --FULL-->    |  INSIDE  --FIRST-->
-#ifndef RIFT_WAL_READER_H_
-#define RIFT_WAL_READER_H_
+#ifndef BASALT_WAL_READER_H_
+#define BASALT_WAL_READER_H_
 
 #include <cstdint>
 #include <string>
 #include <vector>
 
-#include "format.h"
-#include "slice.h"
+#include "basalt/format.h"
+#include "basalt/slice.h"
 
-namespace rift {
+namespace basalt {
 namespace wal {
 
 enum class ScanOutcome : uint8_t {
@@ -124,6 +124,6 @@ struct ScanResult {
 ScanResult ScanLog(Slice image);
 
 }  // namespace wal
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_WAL_READER_H_
+#endif  // BASALT_WAL_READER_H_

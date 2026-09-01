@@ -17,7 +17,7 @@
 
 #include <gtest/gtest.h>
 
-namespace rift {
+namespace basalt {
 namespace rig {
 namespace {
 
@@ -87,4 +87,4 @@ TEST(Rng, DifferentLabelsGiveDifferentSubStreams) {
 
 }  // namespace
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

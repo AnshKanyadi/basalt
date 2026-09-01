@@ -6,9 +6,9 @@
 
 #include <utility>
 
-#include "check.h"
+#include "basalt/check.h"
 
-namespace rift {
+namespace basalt {
 namespace testenv {
 
 const char* InjectionName(Injection injection) {
@@ -23,7 +23,7 @@ const char* InjectionName(Injection injection) {
     case Injection::kKill:      return "kill";
     case Injection::kKillAfterEffect: return "kill-after-effect";
   }
-  RIFT_UNREACHABLE("Injection holds a value no enumerator names");
+  BASALT_UNREACHABLE("Injection holds a value no enumerator names");
 }
 
 bool SuspendsExactness(Injection injection) {
@@ -56,11 +56,11 @@ bool SuspendsExactness(Injection injection) {
     case Injection::kKillAfterEffect:
       return false;
   }
-  RIFT_UNREACHABLE("Injection holds a value no enumerator names");
+  BASALT_UNREACHABLE("Injection holds a value no enumerator names");
 }
 
 void FaultPlan::At(uint64_t ordinal, Injection injection, uint64_t prefix_bytes) {
-  RIFT_CHECK(ordinal > 0);
+  BASALT_CHECK(ordinal > 0);
   PlannedFault f;
   f.injection = injection;
   f.prefix_bytes = prefix_bytes;
@@ -113,7 +113,7 @@ class TestEnvironment::Impl {
       // Not an engine bug: it means the workload never checked a Status. A
       // runaway loop inside a dead Env would destroy the run that would have
       // explained it, which is the worst possible failure signal.
-      RIFT_CHECK(post_kill_calls_ <= kMaxPostKillCalls);
+      BASALT_CHECK(post_kill_calls_ <= kMaxPostKillCalls);
       d.status = Status::Killed("env is dead");
       d.injection = Injection::kKill;
       return d;
@@ -130,7 +130,7 @@ class TestEnvironment::Impl {
       suspending_ = (f.injection == Injection::kSyncLoss)
                         ? ExactnessSuspendingInjector::kLyingSync
                         : ExactnessSuspendingInjector::kSectorSubsetTornSync;
-      RIFT_CHECK(f.injection == Injection::kSyncLoss ||
+      BASALT_CHECK(f.injection == Injection::kSyncLoss ||
                  f.injection == Injection::kSectorSubsetTornSync);
     }
 
@@ -214,7 +214,7 @@ class TestEnvironment::Impl {
 
   // Records the size of an Append, on the entry the call just made.
   void RecordAppendBytes(uint64_t bytes) {
-    RIFT_CHECK(!ledger_.empty());
+    BASALT_CHECK(!ledger_.empty());
     ledger_.back().append_bytes = bytes;
   }
 
@@ -223,10 +223,10 @@ class TestEnvironment::Impl {
   // is the harness's own record of what was promised rather than a prediction.
   void RecordPromotion(const std::string& path, uint64_t durable_bytes,
                        bool promoted) {
-    RIFT_CHECK(!ledger_.empty());
+    BASALT_CHECK(!ledger_.empty());
     ledger_.back().promoted = promoted;
     ledger_.back().durable_bytes_after = durable_bytes;
-    RIFT_CHECK(ledger_.back().path == path);
+    BASALT_CHECK(ledger_.back().path == path);
   }
 
   // The second half of an Env call. Consumes no ordinal.
@@ -405,7 +405,7 @@ class TestEnvironment::Impl {
   int post_kill_calls() const { return post_kill_calls_; }
   bool exactness_suspended() const { return exactness_suspended_; }
   ExactnessSuspendingInjector suspending() const {
-    RIFT_CHECK(exactness_suspended_);
+    BASALT_CHECK(exactness_suspended_);
     return suspending_;
   }
   uint64_t observed(CallSite s) const {
@@ -716,4 +716,4 @@ std::unique_ptr<TestEnvironment> TestEnvironment::FromImage(const DurableImage& 
 }
 
 }  // namespace testenv
-}  // namespace rift
+}  // namespace basalt

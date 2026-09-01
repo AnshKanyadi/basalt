@@ -5,10 +5,10 @@
 #include <algorithm>
 #include <utility>
 
-#include "check.h"
+#include "basalt/check.h"
 #include "reader.h"
 
-namespace rift {
+namespace basalt {
 namespace wal {
 namespace {
 
@@ -365,4 +365,4 @@ Status Recover(Env* env, const std::string& dir, const Caps& caps,
 }
 
 }  // namespace wal
-}  // namespace rift
+}  // namespace basalt

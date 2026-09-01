@@ -41,8 +41,8 @@
 // an ordered `pending` list and reverts on Crash(); TestEnv keeps `durable` plus
 // the unsynced tail and reverts on kill. Two implementations of one idea, which
 // is what makes disagreement between them mean something.
-#ifndef RIFT_ENV_TEST_TEST_ENV_H_
-#define RIFT_ENV_TEST_TEST_ENV_H_
+#ifndef BASALT_ENV_TEST_TEST_ENV_H_
+#define BASALT_ENV_TEST_TEST_ENV_H_
 
 #include <cstdint>
 #include <map>
@@ -50,12 +50,12 @@
 #include <string>
 #include <vector>
 
-#include "call_site.h"
-#include "env.h"
-#include "fault_controller.h"
-#include "status.h"
+#include "basalt/call_site.h"
+#include "basalt/env.h"
+#include "basalt/fault_controller.h"
+#include "basalt/status.h"
 
-namespace rift {
+namespace basalt {
 namespace testenv {
 
 // What TestEnv can do to an Env call. Closed; -Werror=switch, no default: arm.
@@ -114,7 +114,7 @@ enum class ExactnessSuspendingInjector : uint8_t {
 // run's outcome at the POINT OF ENABLING, not at the point of reporting, so a
 // run cannot be enabled into characterization mode and then summarized as
 // something else.
-bool SuspendsExactness(Injection injection);  // RIFT_EVIDENCE_DECIDER
+bool SuspendsExactness(Injection injection);  // BASALT_EVIDENCE_DECIDER
 
 // How a kill point kills (B1-D12, ruled: (c) -- (b) for the sweep, (a) for a
 // stated sample, so the blind spot is measured rather than assumed).
@@ -273,6 +273,6 @@ class TestEnvironment {
 };
 
 }  // namespace testenv
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_ENV_TEST_TEST_ENV_H_
+#endif  // BASALT_ENV_TEST_TEST_ENV_H_

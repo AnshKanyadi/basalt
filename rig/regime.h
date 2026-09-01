@@ -15,16 +15,16 @@
 //   A tripwire observed firing at a lowered cap is evidence THAT THE TRIPWIRE
 //   WORKS. It is NOT evidence about the 64 MiB or 256 MiB regime, and its run
 //   may not be banked with runs that are.
-#ifndef RIFT_RIG_REGIME_H_
-#define RIFT_RIG_REGIME_H_
+#ifndef BASALT_RIG_REGIME_H_
+#define BASALT_RIG_REGIME_H_
 
 #include <cstdint>
 #include <vector>
 
-#include "caps.h"
+#include "basalt/caps.h"
 #include "run_outcome.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 enum class Regime : uint8_t {
@@ -67,9 +67,9 @@ struct Tally {
 // AGGREGATION IS KEYED ON REGIME. Returns false -- and fills nothing -- if the
 // rows span more than one regime. A summarizer that combined them would be
 // producing a number about no regime at all.
-bool AggregateRuns(const std::vector<RunRecord>& rows, Tally* out);  // RIFT_EVIDENCE_DECIDER
+bool AggregateRuns(const std::vector<RunRecord>& rows, Tally* out);  // BASALT_EVIDENCE_DECIDER
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_RIG_REGIME_H_
+#endif  // BASALT_RIG_REGIME_H_

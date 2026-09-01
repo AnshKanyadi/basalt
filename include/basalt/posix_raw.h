@@ -19,8 +19,8 @@
 // into the engine -- would put the fault inside the sweep, and is rejected
 // because it duplicates the loop at every call site and moves a syscall detail
 // across the exact abstraction line Env exists to draw.
-#ifndef RIFT_ENV_POSIX_POSIX_RAW_H_
-#define RIFT_ENV_POSIX_POSIX_RAW_H_
+#ifndef BASALT_POSIX_RAW_H_
+#define BASALT_POSIX_RAW_H_
 
 #include <sys/types.h>
 
@@ -28,9 +28,9 @@
 #include <string>
 #include <vector>
 
-#include "status.h"
+#include "basalt/status.h"
 
-namespace rift {
+namespace basalt {
 namespace posix {
 
 // Same contract as write(2): returns bytes written, or -1 with errno set.
@@ -80,6 +80,6 @@ const char* RawReadDir(void* dir);
 Status ReadAllNames(void* dir, std::vector<std::string>* out, RawReadDirFn raw);
 
 }  // namespace posix
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_ENV_POSIX_POSIX_RAW_H_
+#endif  // BASALT_POSIX_RAW_H_

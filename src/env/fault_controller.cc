@@ -1,6 +1,6 @@
-#include "fault_controller.h"
+#include "basalt/fault_controller.h"
 
-namespace rift {
+namespace basalt {
 
 FaultController::~FaultController() = default;
 
@@ -17,4 +17,4 @@ FaultController* NoFaultController() {
   return instance;
 }
 
-}  // namespace rift
+}  // namespace basalt

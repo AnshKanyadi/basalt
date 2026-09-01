@@ -15,10 +15,10 @@
 #include <gtest/gtest.h>
 
 #include "crc32c.h"
-#include "format.h"
-#include "slice.h"
+#include "basalt/format.h"
+#include "basalt/slice.h"
 
-namespace rift {
+namespace basalt {
 namespace wal {
 namespace {
 
@@ -409,4 +409,4 @@ TEST(WalReader, FewerThanEightBytesLeftInABlockIsPadding) {
 
 }  // namespace
 }  // namespace wal
-}  // namespace rift
+}  // namespace basalt

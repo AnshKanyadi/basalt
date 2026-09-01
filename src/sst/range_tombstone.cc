@@ -1,9 +1,9 @@
 #include "range_tombstone.h"
 
-#include "check.h"
+#include "basalt/check.h"
 #include "table_format.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 
 const char* RangeFaultName(RangeFault fault) {
@@ -17,7 +17,7 @@ const char* RangeFaultName(RangeFault fault) {
     case RangeFault::kUnboundedEndWithBytes:
       return "an unbounded end that carries end bytes";
   }
-  RIFT_UNREACHABLE("RangeFault holds a value no enumerator names");
+  BASALT_UNREACHABLE("RangeFault holds a value no enumerator names");
 }
 
 namespace {
@@ -51,7 +51,7 @@ RangeCheck Fail(RangeFault f, uint64_t offset, const std::string& why) {
 }  // namespace
 
 void EncodeRangeTombstone(Slice start, Slice end, uint64_t tag, std::string* out) {
-  RIFT_CHECK(end.size() != kUnboundedEndLen);  // unreachable, and stated anyway
+  BASALT_CHECK(end.size() != kUnboundedEndLen);  // unreachable, and stated anyway
   PutU32(out, static_cast<uint32_t>(start.size()));
   out->append(start.data(), start.size());
   PutU32(out, static_cast<uint32_t>(end.size()));
@@ -166,4 +166,4 @@ RangeCheck ParseRangeBlock(Slice block, std::vector<RangeTombstone>* out) {
 }
 
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt

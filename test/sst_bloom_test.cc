@@ -19,9 +19,9 @@
 
 #include "crc32c.h"
 #include "sha256.h"
-#include "slice.h"
+#include "basalt/slice.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 namespace {
 
@@ -322,4 +322,4 @@ TEST(Bloom, RejectsAProbeCountNoWriterCouldHaveProduced) {
 
 }  // namespace
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt

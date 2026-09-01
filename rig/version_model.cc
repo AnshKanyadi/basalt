@@ -2,9 +2,9 @@
 
 #include <algorithm>
 
-#include "check.h"
+#include "basalt/check.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 void VersionModel::NoteWrite(const std::string& user_key, ModelSeq seq,
@@ -12,7 +12,7 @@ void VersionModel::NoteWrite(const std::string& user_key, ModelSeq seq,
   std::vector<ModelVersion>& v = by_key_[user_key];
   // SEQUENCES ARE UNIQUE PER WRITE, so a duplicate is the harness contradicting
   // itself and not something to merge quietly.
-  for (const ModelVersion& e : v) RIFT_CHECK(e.seq != seq);
+  for (const ModelVersion& e : v) BASALT_CHECK(e.seq != seq);
   ModelVersion m;
   m.user_key = user_key;
   m.seq = seq;
@@ -29,7 +29,7 @@ void VersionModel::NoteDeleteRange(const std::string& start, const std::string& 
   // the classifier makes about the bytes, made here about the submission, so a
   // fixture cannot describe something the engine would refuse to write and then
   // hold the engine to it.
-  RIFT_CHECK(start < end);
+  BASALT_CHECK(start < end);
   ModelRange r;
   r.start = start;
   r.end = end;
@@ -51,7 +51,7 @@ std::vector<ModelRange> VersionModel::RangesCovering(const std::string& user_key
 void VersionModel::NoteSnapshotTaken(ModelSeq seq) { live_snapshots_.insert(seq); }
 void VersionModel::NoteSnapshotReleased(ModelSeq seq) { live_snapshots_.erase(seq); }
 void VersionModel::NoteVisibleSeq(ModelSeq seq) {
-  RIFT_CHECK(seq >= visible_);  // the visible sequence never goes backwards
+  BASALT_CHECK(seq >= visible_);  // the visible sequence never goes backwards
   visible_ = seq;
 }
 
@@ -127,4 +127,4 @@ bool VersionModel::IsDeletion(const VersionId& id) const {
 }
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

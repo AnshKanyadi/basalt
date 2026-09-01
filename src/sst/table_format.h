@@ -105,17 +105,17 @@
 // this header. A latent trap that depends on where a file lives is exactly the
 // kind this project exists to remove, so no basename is duplicated on the
 // include path.
-#ifndef RIFT_SST_TABLE_FORMAT_H_
-#define RIFT_SST_TABLE_FORMAT_H_
+#ifndef BASALT_SST_TABLE_FORMAT_H_
+#define BASALT_SST_TABLE_FORMAT_H_
 
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
 
-#include "slice.h"
+#include "basalt/slice.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 
 inline constexpr std::size_t kFooterBytes = 48;
@@ -185,6 +185,6 @@ bool ParseBlock(Slice block, std::vector<BlockEntry>* entries,
                 std::vector<uint32_t>* restarts, std::string* why);
 
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_SST_TABLE_FORMAT_H_
+#endif  // BASALT_SST_TABLE_FORMAT_H_

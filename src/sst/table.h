@@ -29,8 +29,8 @@
 // claim in this engine rests on it. The cost is unchanged -- memory grows with
 // the live data set -- and the measurement that would move it is B5's, against
 // a workload whose working set exceeds it.
-#ifndef RIFT_SST_TABLE_H_
-#define RIFT_SST_TABLE_H_
+#ifndef BASALT_SST_TABLE_H_
+#define BASALT_SST_TABLE_H_
 
 #include <cstdint>
 #include <memory>
@@ -38,16 +38,16 @@
 #include <vector>
 
 #include "bloom.h"
-#include "env.h"
+#include "basalt/env.h"
 #include "internal_key.h"
 #include "range_tombstone.h"
 #include "internal_iter.h"
-#include "slice.h"
-#include "status.h"
+#include "basalt/slice.h"
+#include "basalt/status.h"
 #include "table_check.h"
 #include "table_format.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 
 class Table {
@@ -136,6 +136,6 @@ class Table {
 };
 
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_SST_TABLE_H_
+#endif  // BASALT_SST_TABLE_H_

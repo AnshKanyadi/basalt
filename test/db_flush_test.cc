@@ -7,7 +7,7 @@
 // configurable at all. A flush threshold that only fires after four megabytes
 // of writes is a flush no unit test would ever reach, and an untested flush is
 // the one that runs in production first.
-#include "db.h"
+#include "basalt/db.h"
 
 #include <cstdio>
 #include <memory>
@@ -18,7 +18,7 @@
 
 #include <gtest/gtest.h>
 
-#include "call_site.h"
+#include "basalt/call_site.h"
 #include "env_guard.h"
 #include "manifest.h"
 #include "read_whole_file.h"
@@ -27,7 +27,7 @@
 #include "table_check.h"
 #include "test_env.h"
 
-namespace rift {
+namespace basalt {
 namespace {
 
 using testenv::FaultPlan;
@@ -485,4 +485,4 @@ TEST(Flush, RecoveryFromWalPlusTablesEqualsRecoveryFromWalAlone) {
 }
 
 }  // namespace
-}  // namespace rift
+}  // namespace basalt

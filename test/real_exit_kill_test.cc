@@ -22,10 +22,10 @@
 #include <gtest/gtest.h>
 
 #include "durable_mirror.h"
-#include "env.h"
+#include "basalt/env.h"
 #include "test_env.h"
 
-namespace rift {
+namespace basalt {
 namespace {
 
 using testenv::DurableImage;
@@ -88,7 +88,7 @@ TEST(RealExitKill, MatchesTheInProcessKillOnTheSameWorkloadAndKillPoint) {
          "to be right before the comparison means anything";
 
   const std::string mirror = std::string(::getenv("TMPDIR") ? ::getenv("TMPDIR") : "/tmp") +
-                             "/rift-real-exit-mirror";
+                             "/basalt-real-exit-mirror";
   ::unlink(mirror.c_str());
 
   const pid_t pid = ::fork();
@@ -128,4 +128,4 @@ TEST(RealExitKill, MatchesTheInProcessKillOnTheSameWorkloadAndKillPoint) {
 }
 
 }  // namespace
-}  // namespace rift
+}  // namespace basalt

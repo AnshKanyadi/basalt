@@ -2,9 +2,9 @@
 
 #include <utility>
 
-#include "check.h"
+#include "basalt/check.h"
 
-namespace rift {
+namespace basalt {
 namespace wal {
 namespace {
 
@@ -215,4 +215,4 @@ Status Wal::Close() {
 }
 
 }  // namespace wal
-}  // namespace rift
+}  // namespace basalt

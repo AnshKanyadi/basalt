@@ -36,16 +36,16 @@
 // inconclusive would be A4's own failure mode running in the opposite
 // direction, and "run it bigger" is how a benchmark gets sized until it says
 // something -- which is what fixing the number in advance exists to prevent.
-#ifndef RIFT_RIG_AMPLIFICATION_H_
-#define RIFT_RIG_AMPLIFICATION_H_
+#ifndef BASALT_RIG_AMPLIFICATION_H_
+#define BASALT_RIG_AMPLIFICATION_H_
 
 #include <cstdint>
 #include <string>
 #include <vector>
 
-#include "caps.h"
+#include "basalt/caps.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 // The crossing point of DESIGN-B3 section 8.1, recomputed from the caps rather
@@ -93,6 +93,6 @@ AmpResult MeasureAmplification(const wal::Caps& caps,
                                const std::vector<uint64_t>& live_targets);
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_RIG_AMPLIFICATION_H_
+#endif  // BASALT_RIG_AMPLIFICATION_H_

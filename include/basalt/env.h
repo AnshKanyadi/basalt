@@ -30,10 +30,11 @@
 //
 // NVI makes bypass impossible from an implementation. It does NOT make it
 // impossible from an edit to THIS FILE: adding a public virtual to a base class
-// here would bypass, which is exactly what mutant BM17 does. What stops it is
-// the 1:1:1 assertion in scripts/cpp-scan.sh, and the residual after that is
-// that the assertion could be weakened in the same diff that adds the method --
-// which the scan lane's blind patches cover from B1.4.
+// here would bypass, which is exactly what mutant BM17 does. What stopped it
+// was a 1:1:1 source assertion in the parent project's scan lane, which did not
+// come across with this library. The rule below is therefore stated and not
+// mechanised; test/env_surface_test.cc still asserts the built code's call-site
+// count, which catches an ADDED site but not a bypassing one.
 //
 // The honest claim is therefore "bypassing requires defeating two independent
 // checks in one diff", NOT "bypassing is impossible". The second sentence would
@@ -52,21 +53,21 @@
 //     counter. Forward binding for B3: compaction's thread is the engine's,
 //     declared and joined explicitly, visible to the sweep as its own stream.
 //   * No logger. The engine does not open files to talk about itself.
-#ifndef RIFT_ENV_ENV_H_
-#define RIFT_ENV_ENV_H_
+#ifndef BASALT_ENV_H_
+#define BASALT_ENV_H_
 
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "call_site.h"
-#include "env_handle.h"
-#include "fault_controller.h"
-#include "slice.h"
-#include "status.h"
+#include "basalt/call_site.h"
+#include "basalt/env_handle.h"
+#include "basalt/fault_controller.h"
+#include "basalt/slice.h"
+#include "basalt/status.h"
 
-namespace rift {
+namespace basalt {
 
 class Env;
 class WritableFile;
@@ -87,125 +88,126 @@ using RandomAccessFilePtr = std::unique_ptr<RandomAccessFile>;
 using DirectoryPtr = std::unique_ptr<Directory>;
 using FileLockPtr = std::unique_ptr<FileLock>;
 
-// RIFT-ENV-SURFACE-BEGIN
+// BASALT-ENV-SURFACE-BEGIN
 //
-// Everything between these markers is parsed by scripts/cpp-scan.sh under a
-// STRICT grammar: a line it cannot classify is a lane failure, not a line it
-// skips. That is the point. A parser that silently ignores what it does not
+// Everything between these markers was parsed by the parent project's scan
+// under a STRICT grammar: a line it could not classify was a lane failure, not
+// a line it skipped. That is the point. A parser that silently ignores what it
+// does not
 // understand reports the health of its own grammar and calls it coverage.
 
 class WritableFile {
  public:
   virtual ~WritableFile();
-  Status Append(Slice data);  // RIFT_ENV_CALL kWritableFileAppend
-  Status Flush();  // RIFT_ENV_CALL kWritableFileFlush
-  Status Sync();  // RIFT_ENV_CALL kWritableFileSync
-  Status Close();  // RIFT_ENV_CALL kWritableFileClose
+  Status Append(Slice data);  // BASALT_ENV_CALL kWritableFileAppend
+  Status Flush();  // BASALT_ENV_CALL kWritableFileFlush
+  Status Sync();  // BASALT_ENV_CALL kWritableFileSync
+  Status Close();  // BASALT_ENV_CALL kWritableFileClose
   WritableFile(const WritableFile&) = delete;
   WritableFile& operator=(const WritableFile&) = delete;
  protected:
-  WritableFile(FaultController* faults, HandleId id);  // RIFT_ENV_CTOR
+  WritableFile(FaultController* faults, HandleId id);  // BASALT_ENV_CTOR
  private:
-  virtual Status DoAppend(Slice data) = 0;  // RIFT_ENV_IMPL kWritableFileAppend
-  virtual Status DoFlush() = 0;  // RIFT_ENV_IMPL kWritableFileFlush
-  virtual Status DoSync() = 0;  // RIFT_ENV_IMPL kWritableFileSync
-  virtual Status DoClose() = 0;  // RIFT_ENV_IMPL kWritableFileClose
-  FaultController* faults_;  // RIFT_ENV_STATE
-  HandleId id_;  // RIFT_ENV_STATE
-  bool closed_ = false;  // RIFT_ENV_STATE
+  virtual Status DoAppend(Slice data) = 0;  // BASALT_ENV_IMPL kWritableFileAppend
+  virtual Status DoFlush() = 0;  // BASALT_ENV_IMPL kWritableFileFlush
+  virtual Status DoSync() = 0;  // BASALT_ENV_IMPL kWritableFileSync
+  virtual Status DoClose() = 0;  // BASALT_ENV_IMPL kWritableFileClose
+  FaultController* faults_;  // BASALT_ENV_STATE
+  HandleId id_;  // BASALT_ENV_STATE
+  bool closed_ = false;  // BASALT_ENV_STATE
 };
 
 class SequentialFile {
  public:
   virtual ~SequentialFile();
-  Status Read(std::size_t n, Slice* result, char* scratch);  // RIFT_ENV_CALL kSequentialFileRead
-  Status Close();  // RIFT_ENV_CALL kSequentialFileClose
+  Status Read(std::size_t n, Slice* result, char* scratch);  // BASALT_ENV_CALL kSequentialFileRead
+  Status Close();  // BASALT_ENV_CALL kSequentialFileClose
   SequentialFile(const SequentialFile&) = delete;
   SequentialFile& operator=(const SequentialFile&) = delete;
  protected:
-  SequentialFile(FaultController* faults, HandleId id);  // RIFT_ENV_CTOR
+  SequentialFile(FaultController* faults, HandleId id);  // BASALT_ENV_CTOR
  private:
-  virtual Status DoRead(std::size_t n, Slice* result, char* scratch) = 0;  // RIFT_ENV_IMPL kSequentialFileRead
-  virtual Status DoClose() = 0;  // RIFT_ENV_IMPL kSequentialFileClose
-  FaultController* faults_;  // RIFT_ENV_STATE
-  HandleId id_;  // RIFT_ENV_STATE
-  bool closed_ = false;  // RIFT_ENV_STATE
+  virtual Status DoRead(std::size_t n, Slice* result, char* scratch) = 0;  // BASALT_ENV_IMPL kSequentialFileRead
+  virtual Status DoClose() = 0;  // BASALT_ENV_IMPL kSequentialFileClose
+  FaultController* faults_;  // BASALT_ENV_STATE
+  HandleId id_;  // BASALT_ENV_STATE
+  bool closed_ = false;  // BASALT_ENV_STATE
 };
 
 class RandomAccessFile {
  public:
   virtual ~RandomAccessFile();
-  Status Read(uint64_t offset, std::size_t n, Slice* result, char* scratch);  // RIFT_ENV_CALL kRandomAccessFileRead
-  Status Close();  // RIFT_ENV_CALL kRandomAccessFileClose
+  Status Read(uint64_t offset, std::size_t n, Slice* result, char* scratch);  // BASALT_ENV_CALL kRandomAccessFileRead
+  Status Close();  // BASALT_ENV_CALL kRandomAccessFileClose
   RandomAccessFile(const RandomAccessFile&) = delete;
   RandomAccessFile& operator=(const RandomAccessFile&) = delete;
  protected:
-  RandomAccessFile(FaultController* faults, HandleId id);  // RIFT_ENV_CTOR
+  RandomAccessFile(FaultController* faults, HandleId id);  // BASALT_ENV_CTOR
  private:
-  virtual Status DoRead(uint64_t offset, std::size_t n, Slice* result, char* scratch) = 0;  // RIFT_ENV_IMPL kRandomAccessFileRead
-  virtual Status DoClose() = 0;  // RIFT_ENV_IMPL kRandomAccessFileClose
-  FaultController* faults_;  // RIFT_ENV_STATE
-  HandleId id_;  // RIFT_ENV_STATE
-  bool closed_ = false;  // RIFT_ENV_STATE
+  virtual Status DoRead(uint64_t offset, std::size_t n, Slice* result, char* scratch) = 0;  // BASALT_ENV_IMPL kRandomAccessFileRead
+  virtual Status DoClose() = 0;  // BASALT_ENV_IMPL kRandomAccessFileClose
+  FaultController* faults_;  // BASALT_ENV_STATE
+  HandleId id_;  // BASALT_ENV_STATE
+  bool closed_ = false;  // BASALT_ENV_STATE
 };
 
 class Directory {
  public:
   virtual ~Directory();
-  Status Sync();  // RIFT_ENV_CALL kDirectorySync
-  Status Close();  // RIFT_ENV_CALL kDirectoryClose
+  Status Sync();  // BASALT_ENV_CALL kDirectorySync
+  Status Close();  // BASALT_ENV_CALL kDirectoryClose
   Directory(const Directory&) = delete;
   Directory& operator=(const Directory&) = delete;
  protected:
-  Directory(FaultController* faults, HandleId id);  // RIFT_ENV_CTOR
+  Directory(FaultController* faults, HandleId id);  // BASALT_ENV_CTOR
  private:
-  virtual Status DoSync() = 0;  // RIFT_ENV_IMPL kDirectorySync
-  virtual Status DoClose() = 0;  // RIFT_ENV_IMPL kDirectoryClose
-  FaultController* faults_;  // RIFT_ENV_STATE
-  HandleId id_;  // RIFT_ENV_STATE
-  bool closed_ = false;  // RIFT_ENV_STATE
+  virtual Status DoSync() = 0;  // BASALT_ENV_IMPL kDirectorySync
+  virtual Status DoClose() = 0;  // BASALT_ENV_IMPL kDirectoryClose
+  FaultController* faults_;  // BASALT_ENV_STATE
+  HandleId id_;  // BASALT_ENV_STATE
+  bool closed_ = false;  // BASALT_ENV_STATE
 };
 
 class Env {
  public:
   virtual ~Env();
-  Status NewWritableFile(const std::string& path, WritableFilePtr* out);  // RIFT_ENV_CALL kEnvNewWritableFile
-  Status NewSequentialFile(const std::string& path, SequentialFilePtr* out);  // RIFT_ENV_CALL kEnvNewSequentialFile
-  Status NewRandomAccessFile(const std::string& path, RandomAccessFilePtr* out);  // RIFT_ENV_CALL kEnvNewRandomAccessFile
-  Status NewDirectory(const std::string& path, DirectoryPtr* out);  // RIFT_ENV_CALL kEnvNewDirectory
-  Status GetChildren(const std::string& dir, std::vector<std::string>* out);  // RIFT_ENV_CALL kEnvGetChildren
-  Status GetFileSize(const std::string& path, uint64_t* out);  // RIFT_ENV_CALL kEnvGetFileSize
-  Status FileExists(const std::string& path, bool* out);  // RIFT_ENV_CALL kEnvFileExists
-  Status DeleteFile(const std::string& path);  // RIFT_ENV_CALL kEnvDeleteFile
-  Status RenameFile(const std::string& from, const std::string& to);  // RIFT_ENV_CALL kEnvRenameFile
-  Status CreateDir(const std::string& path);  // RIFT_ENV_CALL kEnvCreateDir
-  Status LockFile(const std::string& path, FileLockPtr* out);  // RIFT_ENV_CALL kEnvLockFile
-  Status UnlockFile(FileLockPtr lock);  // RIFT_ENV_CALL kEnvUnlockFile
+  Status NewWritableFile(const std::string& path, WritableFilePtr* out);  // BASALT_ENV_CALL kEnvNewWritableFile
+  Status NewSequentialFile(const std::string& path, SequentialFilePtr* out);  // BASALT_ENV_CALL kEnvNewSequentialFile
+  Status NewRandomAccessFile(const std::string& path, RandomAccessFilePtr* out);  // BASALT_ENV_CALL kEnvNewRandomAccessFile
+  Status NewDirectory(const std::string& path, DirectoryPtr* out);  // BASALT_ENV_CALL kEnvNewDirectory
+  Status GetChildren(const std::string& dir, std::vector<std::string>* out);  // BASALT_ENV_CALL kEnvGetChildren
+  Status GetFileSize(const std::string& path, uint64_t* out);  // BASALT_ENV_CALL kEnvGetFileSize
+  Status FileExists(const std::string& path, bool* out);  // BASALT_ENV_CALL kEnvFileExists
+  Status DeleteFile(const std::string& path);  // BASALT_ENV_CALL kEnvDeleteFile
+  Status RenameFile(const std::string& from, const std::string& to);  // BASALT_ENV_CALL kEnvRenameFile
+  Status CreateDir(const std::string& path);  // BASALT_ENV_CALL kEnvCreateDir
+  Status LockFile(const std::string& path, FileLockPtr* out);  // BASALT_ENV_CALL kEnvLockFile
+  Status UnlockFile(FileLockPtr lock);  // BASALT_ENV_CALL kEnvUnlockFile
   Env(const Env&) = delete;
   Env& operator=(const Env&) = delete;
  protected:
-  Env(FaultController* faults, HandleId id);  // RIFT_ENV_CTOR
-  HandleId NextHandleId();  // RIFT_ENV_HELPER
+  Env(FaultController* faults, HandleId id);  // BASALT_ENV_CTOR
+  HandleId NextHandleId();  // BASALT_ENV_HELPER
  private:
-  virtual Status DoNewWritableFile(const std::string& path, WritableFilePtr* out) = 0;  // RIFT_ENV_IMPL kEnvNewWritableFile
-  virtual Status DoNewSequentialFile(const std::string& path, SequentialFilePtr* out) = 0;  // RIFT_ENV_IMPL kEnvNewSequentialFile
-  virtual Status DoNewRandomAccessFile(const std::string& path, RandomAccessFilePtr* out) = 0;  // RIFT_ENV_IMPL kEnvNewRandomAccessFile
-  virtual Status DoNewDirectory(const std::string& path, DirectoryPtr* out) = 0;  // RIFT_ENV_IMPL kEnvNewDirectory
-  virtual Status DoGetChildren(const std::string& dir, std::vector<std::string>* out) = 0;  // RIFT_ENV_IMPL kEnvGetChildren
-  virtual Status DoGetFileSize(const std::string& path, uint64_t* out) = 0;  // RIFT_ENV_IMPL kEnvGetFileSize
-  virtual Status DoFileExists(const std::string& path, bool* out) = 0;  // RIFT_ENV_IMPL kEnvFileExists
-  virtual Status DoDeleteFile(const std::string& path) = 0;  // RIFT_ENV_IMPL kEnvDeleteFile
-  virtual Status DoRenameFile(const std::string& from, const std::string& to) = 0;  // RIFT_ENV_IMPL kEnvRenameFile
-  virtual Status DoCreateDir(const std::string& path) = 0;  // RIFT_ENV_IMPL kEnvCreateDir
-  virtual Status DoLockFile(const std::string& path, FileLockPtr* out) = 0;  // RIFT_ENV_IMPL kEnvLockFile
-  virtual Status DoUnlockFile(FileLockPtr lock) = 0;  // RIFT_ENV_IMPL kEnvUnlockFile
-  FaultController* faults_;  // RIFT_ENV_STATE
-  HandleId id_;  // RIFT_ENV_STATE
-  uint64_t next_handle_ = 0;  // RIFT_ENV_STATE
+  virtual Status DoNewWritableFile(const std::string& path, WritableFilePtr* out) = 0;  // BASALT_ENV_IMPL kEnvNewWritableFile
+  virtual Status DoNewSequentialFile(const std::string& path, SequentialFilePtr* out) = 0;  // BASALT_ENV_IMPL kEnvNewSequentialFile
+  virtual Status DoNewRandomAccessFile(const std::string& path, RandomAccessFilePtr* out) = 0;  // BASALT_ENV_IMPL kEnvNewRandomAccessFile
+  virtual Status DoNewDirectory(const std::string& path, DirectoryPtr* out) = 0;  // BASALT_ENV_IMPL kEnvNewDirectory
+  virtual Status DoGetChildren(const std::string& dir, std::vector<std::string>* out) = 0;  // BASALT_ENV_IMPL kEnvGetChildren
+  virtual Status DoGetFileSize(const std::string& path, uint64_t* out) = 0;  // BASALT_ENV_IMPL kEnvGetFileSize
+  virtual Status DoFileExists(const std::string& path, bool* out) = 0;  // BASALT_ENV_IMPL kEnvFileExists
+  virtual Status DoDeleteFile(const std::string& path) = 0;  // BASALT_ENV_IMPL kEnvDeleteFile
+  virtual Status DoRenameFile(const std::string& from, const std::string& to) = 0;  // BASALT_ENV_IMPL kEnvRenameFile
+  virtual Status DoCreateDir(const std::string& path) = 0;  // BASALT_ENV_IMPL kEnvCreateDir
+  virtual Status DoLockFile(const std::string& path, FileLockPtr* out) = 0;  // BASALT_ENV_IMPL kEnvLockFile
+  virtual Status DoUnlockFile(FileLockPtr lock) = 0;  // BASALT_ENV_IMPL kEnvUnlockFile
+  FaultController* faults_;  // BASALT_ENV_STATE
+  HandleId id_;  // BASALT_ENV_STATE
+  uint64_t next_handle_ = 0;  // BASALT_ENV_STATE
 };
 
-// RIFT-ENV-SURFACE-END
+// BASALT-ENV-SURFACE-END
 
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_ENV_ENV_H_
+#endif  // BASALT_ENV_H_

@@ -3,14 +3,14 @@
 #include <algorithm>
 #include <cstdio>
 
-#include "check.h"
+#include "basalt/check.h"
 #include "read_whole_file.h"
 #include "reader.h"
 #include "table_check.h"
-#include "format.h"
+#include "basalt/format.h"
 #include "writer.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 namespace {
 
@@ -86,7 +86,7 @@ const char* EditKindName(EditKind kind) {
     case EditKind::kAddWal:          return "add wal";
     case EditKind::kDeleteWal:       return "delete wal";
   }
-  RIFT_UNREACHABLE("EditKind holds a value no enumerator names");
+  BASALT_UNREACHABLE("EditKind holds a value no enumerator names");
 }
 
 std::string ManifestPath(const std::string& dir, uint64_t number) {
@@ -120,9 +120,9 @@ void EncodeEdit(const ManifestEdit& edit, std::string* out) {
       PutU64(out, edit.number);
       return;
     case EditKind::kInvalid:
-      RIFT_UNREACHABLE("an invalid edit reached the encoder");
+      BASALT_UNREACHABLE("an invalid edit reached the encoder");
   }
-  RIFT_UNREACHABLE("EditKind holds a value no enumerator names");
+  BASALT_UNREACHABLE("EditKind holds a value no enumerator names");
 }
 
 bool DecodeEdit(Slice payload, ManifestEdit* out, std::string* why) {
@@ -183,7 +183,7 @@ bool DecodeEdit(Slice payload, ManifestEdit* out, std::string* why) {
       if (!c.U64(&out->number)) { *why = "truncated delete-wal edit"; return false; }
       break;
     case EditKind::kInvalid:
-      RIFT_UNREACHABLE("the range check above admitted kInvalid");
+      BASALT_UNREACHABLE("the range check above admitted kInvalid");
   }
   if (!c.Done()) {
     *why = "trailing bytes after a complete edit";
@@ -282,12 +282,12 @@ Status Replay(const std::string& path, uint64_t expected_number, Slice image,
             state->wals.erase(edit.number);
             break;
           case EditKind::kInvalid:
-            RIFT_UNREACHABLE("DecodeEdit returned kInvalid and reported success");
+            BASALT_UNREACHABLE("DecodeEdit returned kInvalid and reported success");
         }
         break;
       }
       case wal::RecordKind::kInvalid:
-        RIFT_UNREACHABLE("ScanLog returned a record of the reserved kind");
+        BASALT_UNREACHABLE("ScanLog returned a record of the reserved kind");
     }
   }
   if (!saw_header) return Status::Corruption(path + ": no file header");
@@ -298,7 +298,7 @@ Status Replay(const std::string& path, uint64_t expected_number, Slice image,
 //
 // The same precondition `ConcatIter` asserts, checked HERE because the two
 // arrive from different places and only one of them can be answered with an
-// abort. In-process, an overlapping run is a bug in this build and RIFT_CHECK
+// abort. In-process, an overlapping run is a bug in this build and BASALT_CHECK
 // is the right response. FROM A MANIFEST ON DISK it is untrusted input, and a
 // process that aborts on a damaged file cannot report what is wrong with it.
 //
@@ -419,7 +419,7 @@ Manifest::Manifest(uint64_t number, WritableFilePtr file)
 Manifest::~Manifest() = default;
 
 Status Manifest::AppendGroup(const std::vector<ManifestEdit>& edits) {
-  RIFT_CHECK(!edits.empty());
+  BASALT_CHECK(!edits.empty());
   for (const ManifestEdit& e : edits) {
     std::string payload;
     EncodeEdit(e, &payload);
@@ -588,4 +588,4 @@ Status Manifest::Open(Env* env, const std::string& dir, ManifestState* state,
 }
 
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt

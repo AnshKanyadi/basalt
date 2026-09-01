@@ -7,13 +7,13 @@
 #include <memory>
 #include <utility>
 
-#include "call_site.h"
-#include "check.h"
-#include "db.h"
+#include "basalt/call_site.h"
+#include "basalt/check.h"
+#include "basalt/db.h"
 #include "durable_mirror.h"
 #include "test_env.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 namespace {
 
@@ -239,7 +239,7 @@ const char* SweepRegimeName(SweepRegime r) {
     case SweepRegime::kFlush:   return "flush";
     case SweepRegime::kCompact: return "compact";
   }
-  RIFT_UNREACHABLE("SweepRegime holds a value no enumerator names");
+  BASALT_UNREACHABLE("SweepRegime holds a value no enumerator names");
 }
 
 wal::Caps CapsFor(SweepRegime r) {
@@ -261,7 +261,7 @@ wal::Caps CapsFor(SweepRegime r) {
       c.flush_bytes = 8u * 1024;
       return c;
   }
-  RIFT_UNREACHABLE("SweepRegime holds a value no enumerator names");
+  BASALT_UNREACHABLE("SweepRegime holds a value no enumerator names");
 }
 
 uint64_t WorkloadOrdinalCount(SweepRegime regime) {
@@ -497,4 +497,4 @@ SweepResult RunSweep(SweepRegime regime) {
 }
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

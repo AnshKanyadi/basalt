@@ -1,8 +1,8 @@
 #include "arena.h"
 
-#include "check.h"
+#include "basalt/check.h"
 
-namespace rift {
+namespace basalt {
 
 Arena::~Arena() {
   for (char* b : blocks_) delete[] b;
@@ -16,7 +16,7 @@ char* Arena::AllocateNewBlock(std::size_t bytes) {
 }
 
 char* Arena::Allocate(std::size_t bytes) {
-  RIFT_CHECK(bytes > 0);
+  BASALT_CHECK(bytes > 0);
   const std::size_t padded = (bytes + (kAlign - 1)) & ~(kAlign - 1);
   if (padded <= remaining_) {
     char* out = head_;
@@ -35,4 +35,4 @@ char* Arena::Allocate(std::size_t bytes) {
   return out;
 }
 
-}  // namespace rift
+}  // namespace basalt

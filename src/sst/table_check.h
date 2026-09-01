@@ -37,17 +37,17 @@
 // The filter block is RANGE-CHECKED here and not PARSED: its own classifier is
 // bloom.h's FilterReader::Parse, which lands with the filter at B2.1. A filter
 // whose declared length disagrees with its block is refused there.
-#ifndef RIFT_SST_TABLE_CHECK_H_
-#define RIFT_SST_TABLE_CHECK_H_
+#ifndef BASALT_SST_TABLE_CHECK_H_
+#define BASALT_SST_TABLE_CHECK_H_
 
 #include <cstdint>
 #include <string>
 
 #include "range_tombstone.h"
 #include "table_format.h"
-#include "slice.h"
+#include "basalt/slice.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 
 // CLOSED. -Werror=switch, no default: arm -- a new fault must be named before
@@ -140,6 +140,6 @@ struct TableCheck {
 TableCheck ValidateTable(Slice image);
 
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_SST_TABLE_CHECK_H_
+#endif  // BASALT_SST_TABLE_CHECK_H_

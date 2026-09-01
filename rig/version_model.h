@@ -20,8 +20,8 @@
 // tempted to source the expectation the same way. The marks say what an oracle
 // may TOUCH. This says what it may CONCLUDE FROM. Only the first is mechanical,
 // which is exactly why the second is written here in full.
-#ifndef RIFT_RIG_VERSION_MODEL_H_
-#define RIFT_RIG_VERSION_MODEL_H_
+#ifndef BASALT_RIG_VERSION_MODEL_H_
+#define BASALT_RIG_VERSION_MODEL_H_
 
 #include <cstdint>
 #include <map>
@@ -30,7 +30,7 @@
 #include <utility>
 #include <vector>
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 using ModelSeq = uint64_t;
@@ -176,6 +176,6 @@ class VersionModel {
 };
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_RIG_VERSION_MODEL_H_
+#endif  // BASALT_RIG_VERSION_MODEL_H_

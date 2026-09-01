@@ -1,4 +1,4 @@
-#include "db.h"
+#include "basalt/db.h"
 
 #include <set>
 
@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include "check.h"
+#include "basalt/check.h"
 #include "compaction.h"
 #include "env_guard.h"
 #include "manifest.h"
@@ -22,7 +22,7 @@
 #include "table_builder.h"
 #include "wal.h"
 
-namespace rift {
+namespace basalt {
 
 bool InRange(Slice key, const Bound& start, const Bound& end) {
   if (start.bounded() && key.compare(start.key()) < 0) return false;
@@ -463,7 +463,7 @@ class IterImpl final : public Iterator {
     bool have_previous = false;
     while (it_.Valid()) {
       const std::string k = it_.user_key().ToString();
-      RIFT_CHECK(!have_previous || k > previous_key);
+      BASALT_CHECK(!have_previous || k > previous_key);
       previous_key = k;
       have_previous = true;
       if (o_.upper.bounded() && Slice(k).compare(o_.upper.key()) >= 0) break;
@@ -493,7 +493,7 @@ class IterImpl final : public Iterator {
     bool have_previous = false;
     while (it_.Valid()) {
       const std::string k = it_.user_key().ToString();
-      RIFT_CHECK(!have_previous || k < previous_key);
+      BASALT_CHECK(!have_previous || k < previous_key);
       previous_key = k;
       have_previous = true;
       if (o_.lower.bounded() && Slice(k).compare(o_.lower.key()) < 0) break;
@@ -550,7 +550,7 @@ class SnapshotRegistry {
   void Release(wal::SeqNum s) {
     std::lock_guard<std::mutex> g(mu_);
     const auto it = live_.find(s);
-    RIFT_CHECK(it != live_.end());  // released twice, or never taken
+    BASALT_CHECK(it != live_.end());  // released twice, or never taken
     live_.erase(it);
   }
   // ASCENDING AND DISTINCT, which is RunCompaction's precondition. Two
@@ -980,7 +980,7 @@ class DBImpl final : public DB {
       // THE MESSAGE CARRIES THE CONSEQUENCE, NOT THE RULE. Whoever hits this is
       // holding a wrong answer, not a style violation, and needs to know what
       // it looks like from the outside.
-      RIFT_CHECK_MSG(!l1[i]->check().unbounded_end,
+      BASALT_CHECK_MSG(!l1[i]->check().unbounded_end,
                      "an L1 file that is not the last of the run holds a range "
                      "tombstone with no upper bound: every read that does not "
                      "land on this file will MISS IT, so the range delete "
@@ -1312,8 +1312,8 @@ class DBImpl final : public DB {
     // because tables hold only flushed data while `seq_` runs ahead of them --
     // and it would STOP being true the day a compaction took the immutable
     // memtable as an input, which is a change someone will propose.
-    RIFT_CHECK(!observable.empty());
-    RIFT_CHECK(pin_seq <= observable.back());
+    BASALT_CHECK(!observable.empty());
+    BASALT_CHECK(pin_seq <= observable.back());
 
     // BOTTOM-MOST, COMPUTED RATHER THAN ASSUMED. The inputs hold every version
     // of every key they contain exactly when no L1 file left out of them can
@@ -1802,7 +1802,7 @@ Status DB::Open(Env* env, const std::string& dir, const wal::Caps& caps,
   std::vector<std::shared_ptr<sst::Table>> l1;
   for (const auto& t : tables) {
     const auto it = mstate.tables.find(t->number());
-    RIFT_CHECK(it != mstate.tables.end());  // it was opened BECAUSE it is named
+    BASALT_CHECK(it != mstate.tables.end());  // it was opened BECAUSE it is named
     (it->second.level == 0 ? l0 : l1).push_back(t);
   }
   // L1 ascending by user key. VerifyL1IsARun has already refused an Open where
@@ -1834,4 +1834,4 @@ Status DB::Open(Env* env, const std::string& dir, const wal::Caps& caps,
   return unlock(Status::Ok());
 }
 
-}  // namespace rift
+}  // namespace basalt

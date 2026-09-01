@@ -19,8 +19,8 @@
 //
 // It mirrors `table_format.h` beside `table.h`, for the same reason and with
 // the same boundary.
-#ifndef RIFT_SST_MANIFEST_FORMAT_H_
-#define RIFT_SST_MANIFEST_FORMAT_H_
+#ifndef BASALT_SST_MANIFEST_FORMAT_H_
+#define BASALT_SST_MANIFEST_FORMAT_H_
 
 #include <cstdint>
 #include <map>
@@ -28,9 +28,9 @@
 #include <string>
 
 #include "internal_key.h"
-#include "slice.h"
+#include "basalt/slice.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 
 // CLOSED, -Werror=switch, no default: arm. A new edit must be named before it
@@ -132,6 +132,6 @@ void EncodeEdit(const ManifestEdit& edit, std::string* out);
 bool DecodeEdit(Slice payload, ManifestEdit* out, std::string* why);
 
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_SST_MANIFEST_FORMAT_H_
+#endif  // BASALT_SST_MANIFEST_FORMAT_H_

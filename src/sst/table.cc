@@ -2,10 +2,10 @@
 
 #include <algorithm>
 
-#include "check.h"
+#include "basalt/check.h"
 #include "read_whole_file.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 
 Status Table::Open(Env* env, const std::string& path, uint64_t number,
@@ -27,10 +27,10 @@ Status Table::Open(Env* env, const std::string& path, uint64_t number,
 
   Footer footer;
   std::string why;
-  RIFT_CHECK(DecodeFooter(Slice(t->image_), &footer, &why));
+  BASALT_CHECK(DecodeFooter(Slice(t->image_), &footer, &why));
 
   // THE RANGE TOMBSTONES, PARSED ONCE. The classifier has already accepted this
-  // block, so the parse below cannot fail -- and it is a RIFT_CHECK rather than
+  // block, so the parse below cannot fail -- and it is a BASALT_CHECK rather than
   // a Status for exactly that reason: a failure here means the classifier and
   // this parse disagree about the same bytes, which is a bug in this build and
   // not a damaged file.
@@ -39,16 +39,16 @@ Status Table::Open(Env* env, const std::string& path, uint64_t number,
     const Slice block(t->image_.data() + footer.range_offset,
                       static_cast<std::size_t>(footer_at - footer.range_offset));
     const RangeCheck rc = ParseRangeBlock(block, &t->tombstones_);
-    RIFT_CHECK(rc.ok());
+    BASALT_CHECK(rc.ok());
   }
 
   std::vector<BlockEntry> index_entries;
   std::vector<uint32_t> restarts;
   const Slice index(t->image_.data() + footer.index.offset, footer.index.size);
-  RIFT_CHECK(ParseBlock(index, &index_entries, &restarts, &why));
+  BASALT_CHECK(ParseBlock(index, &index_entries, &restarts, &why));
   for (const BlockEntry& e : index_entries) {
     BlockRef ref;
-    RIFT_CHECK(DecodeHandle(e.value, &ref.handle));
+    BASALT_CHECK(DecodeHandle(e.value, &ref.handle));
     ref.last_key = e.key;
     t->blocks_.push_back(ref);
   }
@@ -98,7 +98,7 @@ void Table::Iter::LoadBlock(std::size_t i) {
   std::string why;
   // ValidateTable already parsed every block successfully at Open, so a failure
   // here is not a damaged file -- it is this process disagreeing with itself.
-  RIFT_CHECK(ParseBlock(block, &entries_, &restarts, &why));
+  BASALT_CHECK(ParseBlock(block, &entries_, &restarts, &why));
   block_ = i;
   entry_ = 0;
   loaded_ = true;
@@ -116,7 +116,7 @@ void Table::Iter::SeekToLast() {
 }
 
 void Table::Iter::Prev() {
-  RIFT_CHECK(Valid());
+  BASALT_CHECK(Valid());
   if (entry_ > 0) { --entry_; return; }
   if (block_ == 0) { block_ = t_->blocks_.size(); loaded_ = false; return; }
   LoadBlock(block_ - 1);
@@ -153,7 +153,7 @@ void Table::Iter::Seek(Slice target) {
 }
 
 void Table::Iter::Next() {
-  RIFT_CHECK(Valid());
+  BASALT_CHECK(Valid());
   ++entry_;
   while (entry_ >= entries_.size()) {
     if (block_ + 1 >= t_->blocks_.size()) {
@@ -166,12 +166,12 @@ void Table::Iter::Next() {
 }
 
 Slice Table::Iter::key() const {
-  RIFT_CHECK(Valid() && loaded_);
+  BASALT_CHECK(Valid() && loaded_);
   return entries_[entry_].key;
 }
 
 Slice Table::Iter::value() const {
-  RIFT_CHECK(Valid() && loaded_);
+  BASALT_CHECK(Valid() && loaded_);
   return entries_[entry_].value;
 }
 
@@ -193,4 +193,4 @@ SeqNum Table::NewestCovering(Slice user_key, SeqNum snapshot) const {
 }
 
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt

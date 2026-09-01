@@ -13,7 +13,7 @@
 #include "sha256.h"
 #include "test_env.h"
 
-namespace rift {
+namespace basalt {
 namespace wal {
 namespace {
 
@@ -378,4 +378,4 @@ TEST(Wal, OpenMakesTheDirectoryEntryDurableBeforeReturning) {
 
 }  // namespace
 }  // namespace wal
-}  // namespace rift
+}  // namespace basalt

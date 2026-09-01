@@ -1,8 +1,8 @@
 #include "table_builder.h"
 
-#include "check.h"
+#include "basalt/check.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 
 Status TableBuilder::Append(Slice bytes) {
@@ -13,10 +13,10 @@ Status TableBuilder::Append(Slice bytes) {
 }
 
 void TableBuilder::Add(Slice internal_key, Slice value) {
-  RIFT_CHECK(!finished_);
-  RIFT_CHECK(internal_key.size() >= kTagBytes);
+  BASALT_CHECK(!finished_);
+  BASALT_CHECK(internal_key.size() >= kTagBytes);
   if (entries_ > 0) {
-    RIFT_CHECK(CompareInternalKey(internal_key, Slice(last_key_)) > 0);
+    BASALT_CHECK(CompareInternalKey(internal_key, Slice(last_key_)) > 0);
   } else {
     smallest_.assign(internal_key.data(), internal_key.size());
   }
@@ -39,7 +39,7 @@ void TableBuilder::Add(Slice internal_key, Slice value) {
 }
 
 void TableBuilder::FlushDataBlock() {
-  RIFT_CHECK(block_entries_ > 0);
+  BASALT_CHECK(block_entries_ > 0);
   const std::string block = data_.Finish();
   BlockHandle h;
   h.offset = offset_;
@@ -66,15 +66,15 @@ void CheckOrder(std::size_t count, Slice start, uint64_t tag,
                 const std::string& last_start, uint64_t last_tag) {
   if (count == 0) return;
   const int c = start.compare(Slice(last_start));
-  RIFT_CHECK(c >= 0);
-  RIFT_CHECK(c != 0 || tag != last_tag);
+  BASALT_CHECK(c >= 0);
+  BASALT_CHECK(c != 0 || tag != last_tag);
 }
 
 }  // namespace
 
 void TableBuilder::AddUnboundedRangeTombstone(Slice start, uint64_t tag) {
-  RIFT_CHECK(!finished_);
-  RIFT_CHECK(TypeOfTag(tag) == ValueType::kDeletion);
+  BASALT_CHECK(!finished_);
+  BASALT_CHECK(TypeOfTag(tag) == ValueType::kDeletion);
   CheckOrder(range_count_, start, tag, last_range_start_, last_range_tag_);
   std::string encoded;
   EncodeUnboundedRangeTombstone(start, tag, &encoded);
@@ -95,12 +95,12 @@ void TableBuilder::AddUnboundedRangeTombstone(Slice start, uint64_t tag) {
 }
 
 void TableBuilder::AddRangeTombstone(Slice start, Slice end, uint64_t tag) {
-  RIFT_CHECK(!finished_);
+  BASALT_CHECK(!finished_);
   // Every rule the classifier refuses on, refused HERE too -- at the writer,
   // where the mistake is. A table that reaches the classifier already broken is
-  // a table nobody can act on; a RIFT_CHECK names the caller.
-  RIFT_CHECK(end.compare(start) > 0);
-  RIFT_CHECK(TypeOfTag(tag) == ValueType::kDeletion);
+  // a table nobody can act on; a BASALT_CHECK names the caller.
+  BASALT_CHECK(end.compare(start) > 0);
+  BASALT_CHECK(TypeOfTag(tag) == ValueType::kDeletion);
   CheckOrder(range_count_, start, tag, last_range_start_, last_range_tag_);
   std::string encoded;
   EncodeRangeTombstone(start, end, tag, &encoded);
@@ -135,8 +135,8 @@ void TableBuilder::AddRangeTombstone(Slice start, Slice end, uint64_t tag) {
 }
 
 Status TableBuilder::Finish() {
-  RIFT_CHECK(!finished_);
-  RIFT_CHECK(entries_ > 0);  // an empty flush SKIPS; it does not write a table
+  BASALT_CHECK(!finished_);
+  BASALT_CHECK(entries_ > 0);  // an empty flush SKIPS; it does not write a table
   finished_ = true;
   if (block_entries_ > 0) FlushDataBlock();
   if (!status_.ok()) return status_;
@@ -175,11 +175,11 @@ Status TableBuilder::Finish() {
   // NOTHING BETWEEN THE RANGE BLOCK AND THE FOOTER. This is the derivation
   // `file_size - kFooterBytes - range_offset` stated as an assertion at the one
   // place that could break it.
-  RIFT_CHECK(range_offset == 0 || offset_ == range_end);
+  BASALT_CHECK(range_offset == 0 || offset_ == range_end);
   std::string tail;
   EncodeFooter(footer, &tail);
   return Append(Slice(tail));
 }
 
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt

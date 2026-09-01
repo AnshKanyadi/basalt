@@ -3,7 +3,7 @@
 #include <array>
 #include <cstring>
 
-namespace rift {
+namespace basalt {
 namespace wal {
 namespace {
 
@@ -85,4 +85,4 @@ std::string Sha256Hex(const char* data, std::size_t n) {
 }
 
 }  // namespace wal
-}  // namespace rift
+}  // namespace basalt

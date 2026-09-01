@@ -2,10 +2,10 @@
 
 #include <cstring>
 
-#include "check.h"
+#include "basalt/check.h"
 #include "crc32c.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 const char* DiffOutcomeName(DiffOutcome o) {
@@ -16,7 +16,7 @@ const char* DiffOutcomeName(DiffOutcome o) {
     case DiffOutcome::kRecoveredMore:    return "recovered more than promised";
     case DiffOutcome::kRecoveredNeither: return "recovered a state at no watermark";
   }
-  RIFT_UNREACHABLE("DiffOutcome holds a value no enumerator names");
+  BASALT_UNREACHABLE("DiffOutcome holds a value no enumerator names");
 }
 
 const char* DiffRegimeName(DiffRegime r) {
@@ -25,7 +25,7 @@ const char* DiffRegimeName(DiffRegime r) {
     case DiffRegime::kFlush:   return "flush";
     case DiffRegime::kCompact: return "compact";
   }
-  RIFT_UNREACHABLE("DiffRegime holds a value no enumerator names");
+  BASALT_UNREACHABLE("DiffRegime holds a value no enumerator names");
 }
 
 const char* DiffFaultName(DiffFault f) {
@@ -52,7 +52,7 @@ const char* DiffFaultName(DiffFault f) {
     case DiffFault::kMissingRegime:         return "provenance names no regime";
     case DiffFault::kUnjudged:              return "artifact has not been judged";
   }
-  RIFT_UNREACHABLE("DiffFault holds a value no enumerator names");
+  BASALT_UNREACHABLE("DiffFault holds a value no enumerator names");
 }
 
 namespace {
@@ -128,11 +128,11 @@ DiffCheck Fail(DiffFault f, uint64_t offset, const std::string& why) {
 
 std::string EncodeDiffArtifact(const DiffArtifact& a) {
   // A WRITER THAT EMITS A FILE ITS OWN CLASSIFIER REFUSES IS A BUG IN THIS
-  // PROCESS, not a damaged file -- so these are RIFT_CHECKs and not a Status.
-  RIFT_CHECK(!a.submission.empty());
-  RIFT_CHECK(!a.provenance.engine_commit.empty());
-  RIFT_CHECK(!a.provenance.model_commit.empty());
-  RIFT_CHECK(!a.provenance.regime.empty());
+  // PROCESS, not a damaged file -- so these are BASALT_CHECKs and not a Status.
+  BASALT_CHECK(!a.submission.empty());
+  BASALT_CHECK(!a.provenance.engine_commit.empty());
+  BASALT_CHECK(!a.provenance.model_commit.empty());
+  BASALT_CHECK(!a.provenance.regime.empty());
 
   std::string body;
   const auto section = [&body](DiffSection kind, const std::string& payload) {
@@ -227,7 +227,7 @@ DiffCheck ParseDiffArtifact(Slice image, DiffArtifact* out) {
   Cursor head(p + sizeof(kDiffMagic), kHeaderBytes - sizeof(kDiffMagic));
   uint32_t version = 0;
   uint32_t count = 0;
-  RIFT_CHECK(head.U32(&version) && head.U32(&count));
+  BASALT_CHECK(head.U32(&version) && head.U32(&count));
   if (version != kDiffFormatVersion) {
     return Fail(DiffFault::kUnknownFormatVersion, 8,
                 "format version " + std::to_string(version));
@@ -402,4 +402,4 @@ DiffCheck RequireJudged(const DiffArtifact& a) {
 }
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

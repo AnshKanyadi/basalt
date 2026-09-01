@@ -11,14 +11,14 @@
 // ever individually freed, so there is no free that can race a reader, no
 // use-after-free reachable from a kill point, and no destructor ordering to
 // reason about when the rig destroys a DB mid-operation.
-#ifndef RIFT_MEMTABLE_ARENA_H_
-#define RIFT_MEMTABLE_ARENA_H_
+#ifndef BASALT_MEMTABLE_ARENA_H_
+#define BASALT_MEMTABLE_ARENA_H_
 
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 
-namespace rift {
+namespace basalt {
 
 class Arena {
  public:
@@ -47,6 +47,6 @@ class Arena {
   std::vector<char*> blocks_;
 };
 
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_MEMTABLE_ARENA_H_
+#endif  // BASALT_MEMTABLE_ARENA_H_

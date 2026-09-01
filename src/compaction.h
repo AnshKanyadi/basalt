@@ -39,8 +39,8 @@
 // inputs would have shadowed it. Over-keeping is permitted by the claim; under-
 // keeping is the violation. The one place the direction reverses is clause 2,
 // which is about OLDER versions, and that is exactly what `bottom_most` guards.
-#ifndef RIFT_COMPACTION_H_
-#define RIFT_COMPACTION_H_
+#ifndef BASALT_COMPACTION_H_
+#define BASALT_COMPACTION_H_
 
 #include <cstdint>
 #include <string>
@@ -48,10 +48,10 @@
 
 #include "internal_key.h"
 #include "merged_iter.h"
-#include "status.h"
+#include "basalt/status.h"
 #include "table_builder.h"
 
-namespace rift {
+namespace basalt {
 
 // WHERE A COMPACTION'S SURVIVORS GO.
 //
@@ -166,6 +166,6 @@ Status RunCompaction(MergedIter* input, const std::vector<SeqNum>& observable,
                      const std::vector<CompactionTombstone>& tombstones,
                      CompactionSink* out, CompactionStats* stats);
 
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_COMPACTION_H_
+#endif  // BASALT_COMPACTION_H_

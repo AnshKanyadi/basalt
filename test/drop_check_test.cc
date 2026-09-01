@@ -29,7 +29,7 @@
 #include "test_env.h"
 #include "version_model.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 namespace {
 
@@ -63,7 +63,7 @@ ImageBytes BuildImage(const std::vector<Entry>& in_table) {
     c.value = e.value;
     cells.push_back(c);
   }
-  return ::rift::rig::BuildImage(kDir, {cells});
+  return ::basalt::rig::BuildImage(kDir, {cells});
 }
 
 // The WAL the fixture's Manifest::Open created holds nothing, so every version
@@ -234,7 +234,7 @@ TEST(DropCheck, AVersionNobodyWroteIsRefused) {
   // the harness disagree about what was ever written, and the checker says so
   // rather than believing the bytes.
   // Table order is user key ascending, tag DESCENDING, so the newer version
-  // comes first. The builder RIFT_CHECKs it, which is how the first draft of
+  // comes first. The builder BASALT_CHECKs it, which is how the first draft of
   // this fixture was caught.
   const ImageBytes image = BuildImage({{"k", 5, false, "b"}, {"k", 1, false, "a"}});
   VersionModel model;
@@ -307,4 +307,4 @@ TEST(DropCheck, AnOrphanTableIsNotCountedAsASurvivor) {
 
 }  // namespace
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

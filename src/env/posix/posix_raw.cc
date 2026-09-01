@@ -1,4 +1,4 @@
-#include "posix_raw.h"
+#include "basalt/posix_raw.h"
 
 #include <dirent.h>
 #include <unistd.h>
@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace rift {
+namespace basalt {
 namespace posix {
 
 ssize_t RawWrite(int fd, const void* buf, std::size_t n) {
@@ -17,7 +17,7 @@ ssize_t RawWrite(int fd, const void* buf, std::size_t n) {
 Status WriteFully(int fd, const char* data, std::size_t n, RawWriteFn raw) {
   std::size_t done = 0;
   int zeros = 0;
-  while (done < n) {  // RIFT_POSIX_RETRY: resumes on a short count, retries on EINTR
+  while (done < n) {  // BASALT_POSIX_RETRY: resumes on a short count, retries on EINTR
     const ssize_t w = raw(fd, data + done, n - done);
     if (w < 0) {
       if (errno == EINTR) continue;  // not a failure; the call was interrupted
@@ -44,7 +44,7 @@ const char* RawReadDir(void* dir) {
 
 Status ReadAllNames(void* dir, std::vector<std::string>* out, RawReadDirFn raw) {
   out->clear();
-  while (true) {  // RIFT_POSIX_RETRY: one iteration per directory entry
+  while (true) {  // BASALT_POSIX_RETRY: one iteration per directory entry
     const char* name = raw(dir);
     if (name == nullptr) {
       if (errno == 0) return Status::Ok();  // end of directory
@@ -58,4 +58,4 @@ Status ReadAllNames(void* dir, std::vector<std::string>* out, RawReadDirFn raw) 
 }
 
 }  // namespace posix
-}  // namespace rift
+}  // namespace basalt

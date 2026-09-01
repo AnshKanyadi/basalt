@@ -1,8 +1,9 @@
 // The choke point, driven.
 //
-// scripts/cpp-scan.sh proves the SHAPE: one public non-virtual wrapper, one
-// private Do*, one CallSite, names matching. That is a statement about the
-// source. This file proves the BEHAVIOUR the shape exists to guarantee, which a
+// A source scan proved the SHAPE in the parent project: one public non-virtual
+// wrapper, one private Do*, one CallSite, names matching. That scan did not come
+// across, so this file is now the only thing standing here. It proves the
+// BEHAVIOUR the shape exists to guarantee, which a
 // source scan cannot see:
 //
 //   1. Every public wrapper calls Intercept with its OWN CallSite, exactly
@@ -26,17 +27,17 @@
 // The stubs below are test doubles, not an Env implementation. B1.2a lands the
 // choke point with zero implementations behind it, which is what makes it
 // separable from B1.2b; a recording double in a test file does not change that.
-#include "env.h"
+#include "basalt/env.h"
 
 #include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
 
-#include "call_site.h"
-#include "fault_controller.h"
+#include "basalt/call_site.h"
+#include "basalt/fault_controller.h"
 
-namespace rift {
+namespace basalt {
 namespace {
 
 // The recorder. It observes; it is never consulted by the thing it observes.
@@ -196,8 +197,8 @@ constexpr CallSite kEveryCallSiteInDrivenOrder[] = {
     CallSite::kDirectorySync,        CallSite::kDirectoryClose,
 };
 
-// Twenty-two, and asserted here as well as by scripts/cpp-scan.sh, because the
-// scan checks the source and this checks the code that was built from it.
+// Twenty-two, asserted against the code that was BUILT rather than against the
+// source -- which is the half of the old pair that survived the split.
 constexpr std::size_t kExpectedCallSites = 22;
 
 TEST(EnvSurface, EveryWrapperInterceptsWithItsOwnCallSiteBeforeImplementing) {
@@ -242,4 +243,4 @@ TEST(EnvSurface, CloseIsIdempotentAndIsNotASecondKillPoint) {
 }
 
 }  // namespace
-}  // namespace rift
+}  // namespace basalt

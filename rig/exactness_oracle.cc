@@ -1,9 +1,9 @@
-// RIFT_ORACLE -- see exactness_oracle.h and ORACLES.txt.
+// BASALT_ORACLE -- see exactness_oracle.h and ORACLES.txt.
 #include "exactness_oracle.h"
 
 #include <utility>
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 const char* MatchedElementName(MatchedElement m) {
@@ -182,4 +182,4 @@ RecoveryVerdict Adjudicate(const SubmissionLog& log, const LedgerFacts& facts,
 }
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

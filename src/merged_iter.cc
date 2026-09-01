@@ -1,9 +1,9 @@
 #include "merged_iter.h"
 
-#include "check.h"
+#include "basalt/check.h"
 #include "internal_key.h"
 
-namespace rift {
+namespace basalt {
 
 bool MergedIter::Source::Valid() const {
   return mem != nullptr ? mem->Valid() : table->Valid();
@@ -111,7 +111,7 @@ void MergedIter::Seek(Slice user_key, uint64_t tag) {
 }
 
 void MergedIter::Next() {
-  RIFT_CHECK(Valid());
+  BASALT_CHECK(Valid());
   if (dir_ != Direction::kForward) {
     // Every source other than the current one is positioned BEFORE the current
     // key, because that is what reverse traversal left them at. Re-seek them
@@ -131,7 +131,7 @@ void MergedIter::Next() {
 }
 
 void MergedIter::Prev() {
-  RIFT_CHECK(Valid());
+  BASALT_CHECK(Valid());
   if (dir_ != Direction::kReverse) {
     const std::string key = user_key().ToString();
     const uint64_t t = tag();
@@ -151,16 +151,16 @@ void MergedIter::Prev() {
 }
 
 Slice MergedIter::user_key() const {
-  RIFT_CHECK(Valid());
+  BASALT_CHECK(Valid());
   return sources_[static_cast<std::size_t>(current_)].user_key();
 }
 uint64_t MergedIter::tag() const {
-  RIFT_CHECK(Valid());
+  BASALT_CHECK(Valid());
   return sources_[static_cast<std::size_t>(current_)].tag();
 }
 Slice MergedIter::value() const {
-  RIFT_CHECK(Valid());
+  BASALT_CHECK(Valid());
   return sources_[static_cast<std::size_t>(current_)].value();
 }
 
-}  // namespace rift
+}  // namespace basalt

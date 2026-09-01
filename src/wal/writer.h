@@ -28,17 +28,17 @@
 // tail/interior boundary directly, and it DOUBLES THE FSYNCS ON THE COMMIT
 // PATH. A 2x write-latency tax to simplify an oracle's arithmetic is the wrong
 // trade in a database.
-#ifndef RIFT_WAL_WRITER_H_
-#define RIFT_WAL_WRITER_H_
+#ifndef BASALT_WAL_WRITER_H_
+#define BASALT_WAL_WRITER_H_
 
 #include <cstdint>
 
-#include "env.h"
-#include "format.h"
-#include "slice.h"
-#include "status.h"
+#include "basalt/env.h"
+#include "basalt/format.h"
+#include "basalt/slice.h"
+#include "basalt/status.h"
 
-namespace rift {
+namespace basalt {
 namespace wal {
 
 class LogWriter {
@@ -60,6 +60,6 @@ class LogWriter {
 };
 
 }  // namespace wal
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_WAL_WRITER_H_
+#endif  // BASALT_WAL_WRITER_H_

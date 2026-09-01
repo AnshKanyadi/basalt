@@ -1,6 +1,6 @@
 #include "read_whole_file.h"
 
-namespace rift {
+namespace basalt {
 
 Status ReadWholeFile(Env* env, const std::string& path, std::string* out) {
   SequentialFilePtr f;
@@ -18,4 +18,4 @@ Status ReadWholeFile(Env* env, const std::string& path, std::string* out) {
   return f->Close();
 }
 
-}  // namespace rift
+}  // namespace basalt

@@ -1,12 +1,12 @@
 // HandleId, in its own header so fault_controller.h can name it without
 // including the whole Env surface -- and so env.h can include fault_controller.h
 // without a cycle.
-#ifndef RIFT_ENV_ENV_HANDLE_H_
-#define RIFT_ENV_ENV_HANDLE_H_
+#ifndef BASALT_ENV_HANDLE_H_
+#define BASALT_ENV_HANDLE_H_
 
 #include <cstdint>
 
-namespace rift {
+namespace basalt {
 
 // The identity of an Env handle, for handle-scoped fault injection and for the
 // ledger.
@@ -27,6 +27,6 @@ struct HandleId {
 inline bool operator==(HandleId a, HandleId b) { return a.value == b.value; }
 inline bool operator<(HandleId a, HandleId b) { return a.value < b.value; }
 
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_ENV_ENV_HANDLE_H_
+#endif  // BASALT_ENV_HANDLE_H_

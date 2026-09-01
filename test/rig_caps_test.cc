@@ -5,12 +5,12 @@
 #include <gtest/gtest.h>
 
 #include "cap_adjudication.h"
-#include "caps.h"
-#include "format.h"
+#include "basalt/caps.h"
+#include "basalt/format.h"
 #include "regime.h"
 #include "run_outcome.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 namespace {
 
@@ -175,4 +175,4 @@ TEST(Regime, RunsOfDifferentRegimesRefuseToAggregate) {
 
 }  // namespace
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

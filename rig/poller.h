@@ -22,14 +22,14 @@
 // THE CONSEQUENCE, so no benchmark number is misread: a production embedder
 // supplies its own poller, and nothing in BENCHMARKS.md is a claim about a
 // poller we ship. The pacing in any measurement is a harness input.
-#ifndef RIFT_RIG_POLLER_H_
-#define RIFT_RIG_POLLER_H_
+#ifndef BASALT_RIG_POLLER_H_
+#define BASALT_RIG_POLLER_H_
 
 #include <cstdint>
 
 #include "run_outcome.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 enum class BusyVerdict : uint8_t {
@@ -48,7 +48,7 @@ const char* BusyVerdictName(BusyVerdict v);
 // policy WORKED, and a run in which the engine correctly applied backpressure
 // is a run whose every other assertion still counts. Voiding it would make the
 // rig unable to bank exactly the runs it exists to produce.
-bool IsBusyDivergence(BusyVerdict v);  // RIFT_EVIDENCE_DECIDER
+bool IsBusyDivergence(BusyVerdict v);  // BASALT_EVIDENCE_DECIDER
 
 // `engine_reported` is whether the engine returned kBusy. It is the ONLY engine
 // input, and it is held to the harness's arithmetic rather than believed.
@@ -61,9 +61,9 @@ BusyVerdict AdjudicateBusy(uint64_t owed_plus_batch, uint64_t busy_bytes,
                            bool engine_reported);
 
 // The outcome a verdict forces.
-RunOutcome OutcomeForBusyVerdict(BusyVerdict v);  // RIFT_EVIDENCE_DECIDER
+RunOutcome OutcomeForBusyVerdict(BusyVerdict v);  // BASALT_EVIDENCE_DECIDER
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_RIG_POLLER_H_
+#endif  // BASALT_RIG_POLLER_H_

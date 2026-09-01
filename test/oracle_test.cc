@@ -1,7 +1,7 @@
 // B1.9a: the exactness oracle and the two-element verdict.
 //
 // Every assertion here is against the harness's own record. The oracle itself
-// includes nothing from engine-cpp/src -- cpp-scan enforces that -- so the
+// includes nothing from src/ -- a rule, not a lane, since the split -- so the
 // closest it comes to the engine is a std::map somebody else extracted.
 #include "exactness_oracle.h"
 
@@ -12,11 +12,11 @@
 
 #include <gtest/gtest.h>
 
-#include "call_site.h"
-#include "db.h"
+#include "basalt/call_site.h"
+#include "basalt/db.h"
 #include "test_env.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 namespace {
 
@@ -405,4 +405,4 @@ TEST(Oracle, AFailedFsyncMustNotAdvanceTheWatermark) {
 
 }  // namespace
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

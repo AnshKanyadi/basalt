@@ -27,15 +27,15 @@
 // B1's reason: it is A PROMISE, and the whole comparison is "did you keep the
 // promise you made?" An engine that lies about `w` fails against the model,
 // because the model is held to the lie.
-#ifndef RIFT_RIG_DIFFERENTIAL_DRIVER_H_
-#define RIFT_RIG_DIFFERENTIAL_DRIVER_H_
+#ifndef BASALT_RIG_DIFFERENTIAL_DRIVER_H_
+#define BASALT_RIG_DIFFERENTIAL_DRIVER_H_
 
 #include <cstdint>
 #include <string>
 
 #include "differential_artifact.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 struct DiffRunOptions {
@@ -59,6 +59,6 @@ DiffArtifact RunDifferential(const DiffRunOptions& o);
 uint64_t DifferentialOrdinalCount(const DiffRunOptions& o);
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_RIG_DIFFERENTIAL_DRIVER_H_
+#endif  // BASALT_RIG_DIFFERENTIAL_DRIVER_H_

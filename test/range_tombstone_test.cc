@@ -16,7 +16,7 @@
 #include "internal_key.h"
 #include "table_format.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 namespace {
 
@@ -273,4 +273,4 @@ TEST(RangeTombstone, TheFiniteRuleStillBindsBesideAnUnboundedOne) {
 
 }  // namespace
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt

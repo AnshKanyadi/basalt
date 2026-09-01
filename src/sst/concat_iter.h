@@ -22,18 +22,18 @@
 //                DIRECTION; THE INTERVAL SHRINKS WHICHEVER DIRECTION IS TAKEN.
 //                Correctness depends on the comparator here; TERMINATION does
 //                not, and that distinction is the whole point of the rule.
-#ifndef RIFT_SST_CONCAT_ITER_H_
-#define RIFT_SST_CONCAT_ITER_H_
+#ifndef BASALT_SST_CONCAT_ITER_H_
+#define BASALT_SST_CONCAT_ITER_H_
 
 #include <cstddef>
 #include <memory>
 #include <vector>
 
 #include "internal_iter.h"
-#include "slice.h"
+#include "basalt/slice.h"
 #include "table.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 
 class ConcatIter final : public InternalIter {
@@ -65,6 +65,6 @@ class ConcatIter final : public InternalIter {
 };
 
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_SST_CONCAT_ITER_H_
+#endif  // BASALT_SST_CONCAT_ITER_H_

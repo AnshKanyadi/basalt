@@ -3,7 +3,7 @@
 #include "crc32c.h"
 #include "tower.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 namespace {
 
@@ -113,4 +113,4 @@ bool FilterReader::MayContain(Slice user_key) const {
 }
 
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt

@@ -1,8 +1,8 @@
 #include "cap_adjudication.h"
 
-#include "check.h"
+#include "basalt/check.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 uint64_t HarnessRecordBytes(const std::vector<SubmittedOp>& ops) {
@@ -28,7 +28,7 @@ const char* CapVerdictName(CapVerdict v) {
     case CapVerdict::kSpuriousTripwire: return "divergence: tripped on legal input";
     case CapVerdict::kMissingTripwire:  return "divergence: accepted an over-cap record";
   }
-  RIFT_UNREACHABLE("CapVerdict holds a value no enumerator names");
+  BASALT_UNREACHABLE("CapVerdict holds a value no enumerator names");
 }
 
 bool IsDivergence(CapVerdict v) {
@@ -40,7 +40,7 @@ bool IsDivergence(CapVerdict v) {
     case CapVerdict::kVoid:
       return false;
   }
-  RIFT_UNREACHABLE("CapVerdict holds a value no enumerator names");
+  BASALT_UNREACHABLE("CapVerdict holds a value no enumerator names");
 }
 
 CapVerdict AdjudicateCap(uint64_t harness_bytes, uint64_t cap, bool engine_reported) {
@@ -57,8 +57,8 @@ RunOutcome OutcomeForCapVerdict(CapVerdict v) {
     case CapVerdict::kMissingTripwire:
       return RunOutcome::kContractViolation;
   }
-  RIFT_UNREACHABLE("CapVerdict holds a value no enumerator names");
+  BASALT_UNREACHABLE("CapVerdict holds a value no enumerator names");
 }
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

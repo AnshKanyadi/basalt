@@ -7,27 +7,27 @@
 // leaves cpp-asan building, running and passing while checking nothing at all.
 //
 // So the flag is not trusted; it is asserted. Each sanitizer lane defines its
-// own RIFT_EXPECT_* macro, and the corresponding __has_feature must agree or
+// own BASALT_EXPECT_* macro, and the corresponding __has_feature must agree or
 // the lane fails to BUILD. That is a stronger guarantee than any canary,
 // because it cannot be reached by a test that was skipped.
 #include <gtest/gtest.h>
 
 #if defined(__has_feature)
-#define RIFT_HAS_FEATURE(f) __has_feature(f)
+#define BASALT_HAS_FEATURE(f) __has_feature(f)
 #else
-#define RIFT_HAS_FEATURE(f) 0
+#define BASALT_HAS_FEATURE(f) 0
 #endif
 
-#if defined(RIFT_EXPECT_ASAN)
-static_assert(RIFT_HAS_FEATURE(address_sanitizer),
+#if defined(BASALT_EXPECT_ASAN)
+static_assert(BASALT_HAS_FEATURE(address_sanitizer),
               "cpp-asan lane was built WITHOUT AddressSanitizer");
 #endif
-#if defined(RIFT_EXPECT_UBSAN)
-static_assert(RIFT_HAS_FEATURE(undefined_behavior_sanitizer),
+#if defined(BASALT_EXPECT_UBSAN)
+static_assert(BASALT_HAS_FEATURE(undefined_behavior_sanitizer),
               "cpp-ubsan lane was built WITHOUT UndefinedBehaviorSanitizer");
 #endif
-#if defined(RIFT_EXPECT_TSAN)
-static_assert(RIFT_HAS_FEATURE(thread_sanitizer),
+#if defined(BASALT_EXPECT_TSAN)
+static_assert(BASALT_HAS_FEATURE(thread_sanitizer),
               "cpp-tsan lane was built WITHOUT ThreadSanitizer");
 #endif
 
@@ -35,10 +35,10 @@ static_assert(RIFT_HAS_FEATURE(thread_sanitizer),
 // Without this, a build that silently sanitized everything would make cpp-test
 // and cpp-asan the same lane, and the four reds B1.1 requires would be one red
 // counted four times.
-#if defined(RIFT_EXPECT_NO_SANITIZER)
-static_assert(!RIFT_HAS_FEATURE(address_sanitizer) &&
-                  !RIFT_HAS_FEATURE(thread_sanitizer) &&
-                  !RIFT_HAS_FEATURE(undefined_behavior_sanitizer),
+#if defined(BASALT_EXPECT_NO_SANITIZER)
+static_assert(!BASALT_HAS_FEATURE(address_sanitizer) &&
+                  !BASALT_HAS_FEATURE(thread_sanitizer) &&
+                  !BASALT_HAS_FEATURE(undefined_behavior_sanitizer),
               "cpp-test lane was built WITH a sanitizer; it is meant to be the "
               "uninstrumented control for the other three");
 #endif
@@ -47,21 +47,21 @@ static_assert(!RIFT_HAS_FEATURE(address_sanitizer) &&
 // declared identity at all.
 namespace {
 constexpr int kExpectationsDefined = 0
-#if defined(RIFT_EXPECT_ASAN)
+#if defined(BASALT_EXPECT_ASAN)
                                      + 1
 #endif
-#if defined(RIFT_EXPECT_UBSAN)
+#if defined(BASALT_EXPECT_UBSAN)
                                      + 1
 #endif
-#if defined(RIFT_EXPECT_TSAN)
+#if defined(BASALT_EXPECT_TSAN)
                                      + 1
 #endif
-#if defined(RIFT_EXPECT_NO_SANITIZER)
+#if defined(BASALT_EXPECT_NO_SANITIZER)
                                      + 1
 #endif
     ;
 static_assert(kExpectationsDefined == 1,
-              "exactly one RIFT_EXPECT_* macro must be defined by the lane");
+              "exactly one BASALT_EXPECT_* macro must be defined by the lane");
 }  // namespace
 
 TEST(SanitizerLane, DeclaresExactlyOneExpectation) {

@@ -1,14 +1,14 @@
 // Status: the engine's only error channel.
-#ifndef RIFT_STATUS_H_
-#define RIFT_STATUS_H_
+#ifndef BASALT_STATUS_H_
+#define BASALT_STATUS_H_
 
 #include <cstdint>
 #include <string>
 #include <utility>
 
-#include "check.h"
+#include "basalt/check.h"
 
-namespace rift {
+namespace basalt {
 
 // [[nodiscard]] IS THE ANSWER TO A COST WE TOOK ON DELIBERATELY.
 //
@@ -78,7 +78,7 @@ class [[nodiscard]] Status {
   // Make refuses kOk: an "error" carrying kOk is a caller who has not decided
   // what happened, and it would read as success at every call site.
   static Status Make(Code code, std::string message) {
-    RIFT_CHECK(code != Code::kOk);
+    BASALT_CHECK(code != Code::kOk);
     return Status(code, std::move(message));
   }
 
@@ -110,6 +110,6 @@ class [[nodiscard]] Status {
 // arm, so a new enumerator is a build failure here before it is anything else.
 const char* CodeName(Status::Code code);
 
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_STATUS_H_
+#endif  // BASALT_STATUS_H_

@@ -21,9 +21,9 @@
 #include "table_format.h"
 #include "internal_key.h"
 #include "memtable.h"
-#include "slice.h"
+#include "basalt/slice.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 namespace {
 
@@ -449,7 +449,7 @@ TEST(SstClassifier, RejectsAnIndexOrderedByBytesRatherThanByVersion) {
 
 TEST(SstClassifier, RejectsAKeyTooShortToCarryATag) {
   // A CORRUPT FILE MUST PRODUCE A VERDICT, NOT AN ABORT. ExtractUserKey
-  // RIFT_CHECKs its length because in-process keys are well formed by
+  // BASALT_CHECKs its length because in-process keys are well formed by
   // construction; anything reading a FILE checks first and reports.
   Table t;
   BlockBuilder b;
@@ -746,4 +746,4 @@ TEST(SstClassifier, ATombstoneInsideTheDataDoesNotWidenAnything) {
 
 }  // namespace
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt

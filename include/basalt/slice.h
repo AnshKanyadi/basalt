@@ -1,12 +1,12 @@
 // Slice: a pointer and a length, owned by somebody else.
-#ifndef RIFT_SLICE_H_
-#define RIFT_SLICE_H_
+#ifndef BASALT_SLICE_H_
+#define BASALT_SLICE_H_
 
 #include <cstddef>
 #include <cstring>
 #include <string>
 
-namespace rift {
+namespace basalt {
 
 class Slice {
  public:
@@ -55,6 +55,6 @@ inline bool operator==(const Slice& a, const Slice& b) {
 }
 inline bool operator!=(const Slice& a, const Slice& b) { return !(a == b); }
 
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_SLICE_H_
+#endif  // BASALT_SLICE_H_

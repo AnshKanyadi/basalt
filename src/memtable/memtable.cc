@@ -2,9 +2,9 @@
 
 #include <cstring>
 
-#include "check.h"
+#include "basalt/check.h"
 
-namespace rift {
+namespace basalt {
 namespace {
 
 void PutFixed32(char* dst, uint32_t v) {
@@ -35,7 +35,7 @@ uint64_t GetFixed64(const char* p) {
 // entry layout: [u32 internal_key_len][user_key][u64 tag][u32 value_len][value]
 Slice MemTable::EntryUserKey(const char* entry) {
   const uint32_t ikey_len = GetFixed32(entry);
-  RIFT_CHECK(ikey_len >= 8);
+  BASALT_CHECK(ikey_len >= 8);
   return Slice(entry + 4, ikey_len - 8);
 }
 uint64_t MemTable::EntryTag(const char* entry) {
@@ -181,7 +181,7 @@ void MemTable::Add(SeqNum seq, ValueType type, Slice user_key, Slice value) {
   // is what keeps this engine's sequence space aligned with engine/model's, and
   // a rig that needed a translation table between them would be a rig with a
   // place to be wrong.
-  RIFT_CHECK(found == nullptr || CompareEntry(found->entry, user_key, tag) != 0);
+  BASALT_CHECK(found == nullptr || CompareEntry(found->entry, user_key, tag) != 0);
 
   const int height = TowerHeight(user_key);
   if (height > height_) {
@@ -304,4 +304,4 @@ uint64_t MemTable::StructuralDigest() const {
   return h;
 }
 
-}  // namespace rift
+}  // namespace basalt

@@ -19,9 +19,9 @@
 
 #include <gtest/gtest.h>
 
-#include "slice.h"
+#include "basalt/slice.h"
 
-namespace rift {
+namespace basalt {
 namespace {
 
 struct Vector {
@@ -114,4 +114,4 @@ TEST(TestHeightVectors, HeightIsAlwaysInRange) {
 }
 
 }  // namespace
-}  // namespace rift
+}  // namespace basalt

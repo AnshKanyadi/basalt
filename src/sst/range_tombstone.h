@@ -72,17 +72,17 @@
 // entry rule -- which refuses a key too short to carry a tag -- and it is stated
 // here because a reader who has internalised that rule will assume it carries
 // over. The tag is a separate field precisely so the bounds do not have to.
-#ifndef RIFT_SST_RANGE_TOMBSTONE_H_
-#define RIFT_SST_RANGE_TOMBSTONE_H_
+#ifndef BASALT_SST_RANGE_TOMBSTONE_H_
+#define BASALT_SST_RANGE_TOMBSTONE_H_
 
 #include <cstdint>
 #include <string>
 #include <vector>
 
 #include "internal_key.h"
-#include "slice.h"
+#include "basalt/slice.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 
 // The one encoding of "no upper bound". A length no real key can have: a key
@@ -141,6 +141,6 @@ void EncodeUnboundedRangeTombstone(Slice start, uint64_t tag, std::string* out);
 RangeCheck ParseRangeBlock(Slice block, std::vector<RangeTombstone>* out);
 
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_SST_RANGE_TOMBSTONE_H_
+#endif  // BASALT_SST_RANGE_TOMBSTONE_H_

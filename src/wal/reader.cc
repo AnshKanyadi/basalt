@@ -2,9 +2,9 @@
 
 #include <cstring>
 
-#include "check.h"
+#include "basalt/check.h"
 
-namespace rift {
+namespace basalt {
 namespace wal {
 
 const char* ScanOutcomeName(ScanOutcome outcome) {
@@ -13,7 +13,7 @@ const char* ScanOutcomeName(ScanOutcome outcome) {
     case ScanOutcome::kTornTail:           return "torn-tail";
     case ScanOutcome::kInteriorCorruption: return "interior-corruption";
   }
-  RIFT_UNREACHABLE("ScanOutcome holds a value no enumerator names");
+  BASALT_UNREACHABLE("ScanOutcome holds a value no enumerator names");
 }
 
 namespace {
@@ -111,7 +111,7 @@ bool LegalTransition(bool inside, FragmentType t) {
     case FragmentType::kMiddle:  return inside;
     case FragmentType::kLast:    return inside;
   }
-  RIFT_UNREACHABLE("FragmentType holds a value no enumerator names");
+  BASALT_UNREACHABLE("FragmentType holds a value no enumerator names");
 }
 
 }  // namespace
@@ -195,7 +195,7 @@ ScanResult ScanLog(Slice image) {
 
     switch (f.type) {  // NO default: arm
       case FragmentType::kInvalid:
-        RIFT_UNREACHABLE("ReadFragment already rejected type 0");
+        BASALT_UNREACHABLE("ReadFragment already rejected type 0");
       case FragmentType::kFull: {
         RecordKind kind;
         SeqNum seq;
@@ -242,4 +242,4 @@ ScanResult ScanLog(Slice image) {
 }
 
 }  // namespace wal
-}  // namespace rift
+}  // namespace basalt

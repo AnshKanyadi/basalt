@@ -1,11 +1,11 @@
 #include "internal_key.h"
 
-#include "check.h"
+#include "basalt/check.h"
 
-namespace rift {
+namespace basalt {
 
 uint64_t MakeTag(SeqNum seq, ValueType type) {
-  RIFT_CHECK(seq <= kMaxSeqNum);
+  BASALT_CHECK(seq <= kMaxSeqNum);
   return (seq << 8) | static_cast<uint64_t>(type);
 }
 
@@ -17,12 +17,12 @@ void AppendInternalKey(std::string* out, Slice user_key, uint64_t tag) {
 }
 
 Slice ExtractUserKey(Slice internal_key) {
-  RIFT_CHECK(internal_key.size() >= kTagBytes);
+  BASALT_CHECK(internal_key.size() >= kTagBytes);
   return Slice(internal_key.data(), internal_key.size() - kTagBytes);
 }
 
 uint64_t ExtractTag(Slice internal_key) {
-  RIFT_CHECK(internal_key.size() >= kTagBytes);
+  BASALT_CHECK(internal_key.size() >= kTagBytes);
   const char* p = internal_key.data() + internal_key.size() - kTagBytes;
   uint64_t v = 0;
   for (int i = 0; i < 8; ++i) {
@@ -43,4 +43,4 @@ int CompareInternalKey(Slice a, Slice b) {
   return 0;
 }
 
-}  // namespace rift
+}  // namespace basalt

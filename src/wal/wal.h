@@ -22,8 +22,8 @@
 // Because all three coincide, THE SET OF REACHABLE RECOVERY POINTS EQUALS THE
 // SET OF PROMISED WATERMARKS. That is the answer to ruling 3, and it is
 // exactness BY CONSTRUCTION rather than by care.
-#ifndef RIFT_WAL_WAL_H_
-#define RIFT_WAL_WAL_H_
+#ifndef BASALT_WAL_WAL_H_
+#define BASALT_WAL_WAL_H_
 
 #include <cstdint>
 #include <memory>
@@ -31,14 +31,14 @@
 #include <string>
 #include <vector>
 
-#include "caps.h"
-#include "env.h"
+#include "basalt/caps.h"
+#include "basalt/env.h"
 #include "env_guard.h"
-#include "format.h"
-#include "status.h"
+#include "basalt/format.h"
+#include "basalt/status.h"
 #include "writer.h"
 
-namespace rift {
+namespace basalt {
 namespace wal {
 
 // Every acquisition of the DB mutex goes through this, so that widening the
@@ -111,6 +111,6 @@ class Wal {
 };
 
 }  // namespace wal
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_WAL_WAL_H_
+#endif  // BASALT_WAL_WAL_H_

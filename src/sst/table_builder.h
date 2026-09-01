@@ -5,21 +5,21 @@
 // what stops a format from being defined by its writer -- a decoder written to
 // agree with an encoder validates nothing, and the two agree most confidently
 // exactly where they are both wrong.
-#ifndef RIFT_SST_TABLE_BUILDER_H_
-#define RIFT_SST_TABLE_BUILDER_H_
+#ifndef BASALT_SST_TABLE_BUILDER_H_
+#define BASALT_SST_TABLE_BUILDER_H_
 
 #include <cstdint>
 #include <string>
 
 #include "bloom.h"
-#include "env.h"
+#include "basalt/env.h"
 #include "table_format.h"
 #include "internal_key.h"
 #include "range_tombstone.h"
-#include "slice.h"
-#include "status.h"
+#include "basalt/slice.h"
+#include "basalt/status.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 
 // THE BLOCK SIZE, AND ITS DERIVATION, AT THE DEFINITION SITE -- section 8.4's
@@ -51,7 +51,7 @@ class TableBuilder {
 
   // Keys must arrive STRICTLY ASCENDING in the internal order. A caller that
   // breaks that is a bug in THIS PROCESS, not a damaged file, so it is a
-  // RIFT_CHECK and not a Status: the memtable iterator is asserted to emit
+  // BASALT_CHECK and not a Status: the memtable iterator is asserted to emit
   // exactly this order (sst_format_test.cc), and if it ever does not, the
   // useful place to stop is here rather than in a table nobody can read.
   void Add(Slice internal_key, Slice value);
@@ -85,7 +85,7 @@ class TableBuilder {
   // every reader. Asserted here, not merely stated (`BM85`).
   //
   // Writes the last data block, the filter, the index and the footer. The
-  // caller Syncs. RIFT_CHECKs that at least one entry was added: an SSTable
+  // caller Syncs. BASALT_CHECKs that at least one entry was added: an SSTable
   // with no data is a file the classifier refuses, and a flush with nothing to
   // write must SKIP rather than produce one.
   Status Finish();
@@ -127,6 +127,6 @@ class TableBuilder {
 };
 
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_SST_TABLE_BUILDER_H_
+#endif  // BASALT_SST_TABLE_BUILDER_H_

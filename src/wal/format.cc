@@ -1,13 +1,13 @@
-#include "format.h"
+#include "basalt/format.h"
 
 #include <algorithm>
 #include <cstring>
 #include <string>
 
-#include "check.h"
+#include "basalt/check.h"
 #include "crc32c.h"
 
-namespace rift {
+namespace basalt {
 namespace wal {
 namespace {
 
@@ -70,7 +70,7 @@ void EncodeBatch(SeqNum seq, const std::vector<Op>& ops, std::string* out) {
   // place to find out that they do not: the cap is adjudicated against the
   // formula, so an encoder that wrote more bytes than the formula counts would
   // let an over-cap record through with the harness computing it as legal.
-  RIFT_CHECK(out->size() - before == BatchRecordBytes(ops));
+  BASALT_CHECK(out->size() - before == BatchRecordBytes(ops));
 }
 
 void EncodeGroupEnd(SeqNum high_seq, uint32_t batch_count, std::string* out) {
@@ -231,4 +231,4 @@ bool PeekKindAndSeq(Slice payload, RecordKind* kind, SeqNum* seq) {
 }
 
 }  // namespace wal
-}  // namespace rift
+}  // namespace basalt

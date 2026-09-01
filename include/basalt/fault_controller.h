@@ -1,18 +1,18 @@
 // FaultController: the thing every Env call passes through.
 //
 // It lives in its own header, OUTSIDE env.h's marked surface region, and that
-// placement is deliberate: the region is scanned by a rule that rejects any
-// public virtual (scripts/cpp-scan.sh), and Intercept is exactly that. Keeping
+// placement is deliberate: the region is governed by a rule that rejects any
+// public virtual, and Intercept is exactly that. Keeping
 // it here means the rule can stay absolute rather than acquiring an exception,
 // and an exception in an enforcement rule is where enforcement goes to die.
-#ifndef RIFT_ENV_FAULT_CONTROLLER_H_
-#define RIFT_ENV_FAULT_CONTROLLER_H_
+#ifndef BASALT_FAULT_CONTROLLER_H_
+#define BASALT_FAULT_CONTROLLER_H_
 
-#include "call_site.h"
-#include "env_handle.h"
-#include "status.h"
+#include "basalt/call_site.h"
+#include "basalt/env_handle.h"
+#include "basalt/status.h"
 
-namespace rift {
+namespace basalt {
 
 class FaultController {
  public:
@@ -65,6 +65,6 @@ class FaultController {
 // can write to.
 FaultController* NoFaultController();
 
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_ENV_FAULT_CONTROLLER_H_
+#endif  // BASALT_FAULT_CONTROLLER_H_

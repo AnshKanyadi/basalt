@@ -7,7 +7,7 @@
 
 #include <gtest/gtest.h>
 
-namespace rift {
+namespace basalt {
 namespace rig {
 namespace {
 
@@ -91,4 +91,4 @@ TEST(RunOutcome, TheFloorSuspendsOnlyWhenSomethingSuspendedIt) {
 
 }  // namespace
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

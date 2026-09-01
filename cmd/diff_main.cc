@@ -1,4 +1,4 @@
-// usage: rift_diff <regime> <seed> [kill_ordinal] > artifact.diff
+// usage: basalt_diff <regime> <seed> [kill_ordinal] > artifact.diff
 //
 // Runs one differential schedule and writes an UNJUDGED artifact to stdout.
 // It reaches no verdict: reaching one requires the reference model, which is
@@ -20,16 +20,16 @@
 
 int main(int argc, char** argv) {
   if (argc < 3) {
-    std::fprintf(stderr, "usage: rift_diff <default|flush|compact> <seed> [kill_ordinal]\n");
+    std::fprintf(stderr, "usage: basalt_diff <default|flush|compact> <seed> [kill_ordinal]\n");
     return 2;
   }
-  rift::rig::DiffRunOptions o;
+  basalt::rig::DiffRunOptions o;
   if (std::strcmp(argv[1], "default") == 0) {
-    o.regime = rift::rig::DiffRegime::kDefault;
+    o.regime = basalt::rig::DiffRegime::kDefault;
   } else if (std::strcmp(argv[1], "flush") == 0) {
-    o.regime = rift::rig::DiffRegime::kFlush;
+    o.regime = basalt::rig::DiffRegime::kFlush;
   } else if (std::strcmp(argv[1], "compact") == 0) {
-    o.regime = rift::rig::DiffRegime::kCompact;
+    o.regime = basalt::rig::DiffRegime::kCompact;
   } else {
     std::fprintf(stderr, "unknown regime \"%s\"\n", argv[1]);
     return 2;
@@ -42,7 +42,7 @@ int main(int argc, char** argv) {
   if (engine != nullptr) o.engine_commit = engine;
   if (model != nullptr) o.model_commit = model;
 
-  const rift::rig::DiffArtifact a = rift::rig::RunDifferential(o);
+  const basalt::rig::DiffArtifact a = basalt::rig::RunDifferential(o);
   if (!a.reopen_error.empty()) {
     // THE REOPEN FAILED, so there is no recovered state to judge. Reporting it
     // here rather than emitting an artifact claiming an empty recovery is the
@@ -52,7 +52,7 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "REOPEN FAILED: %s\n", a.reopen_error.c_str());
     return 3;
   }
-  const std::string bytes = rift::rig::EncodeDiffArtifact(a);
+  const std::string bytes = basalt::rig::EncodeDiffArtifact(a);
   std::fwrite(bytes.data(), 1, bytes.size(), stdout);
   return 0;
 }

@@ -63,23 +63,23 @@
 // Cost, stated: the manifest is rewritten whole at each open, O(live tables).
 // At B2 that is bounded by the flush threshold and the number of files; the
 // measurement that would reopen it is B5's open latency against table count.
-#ifndef RIFT_SST_MANIFEST_H_
-#define RIFT_SST_MANIFEST_H_
+#ifndef BASALT_SST_MANIFEST_H_
+#define BASALT_SST_MANIFEST_H_
 
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "env.h"
+#include "basalt/env.h"
 #include "internal_key.h"
 #include "manifest_format.h"
-#include "slice.h"
-#include "status.h"
+#include "basalt/slice.h"
+#include "basalt/status.h"
 #include "table.h"
 #include "writer.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 
 class Manifest {
@@ -118,6 +118,6 @@ class Manifest {
 };
 
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_SST_MANIFEST_H_
+#endif  // BASALT_SST_MANIFEST_H_

@@ -1,10 +1,10 @@
-#include "env.h"
+#include "basalt/env.h"
 
 #include <utility>
 
 #include "env_guard.h"
 
-namespace rift {
+namespace basalt {
 
 // EVERY DEFINITION IN THIS FILE HAS THE SAME TWO LINES, AND THAT IS THE DESIGN.
 //
@@ -223,4 +223,4 @@ Status Env::UnlockFile(FileLockPtr lock) {
   return Leave(faults_, CallSite::kEnvUnlockFile, id_, DoUnlockFile(std::move(lock)));
 }
 
-}  // namespace rift
+}  // namespace basalt

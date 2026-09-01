@@ -9,20 +9,20 @@
 // It is the C++ analogue of Track A's trace hash: not a security primitive, a
 // change detector, but a wide one -- a 64-bit hash would be adequate and
 // SHA-256 removes the argument entirely.
-#ifndef RIFT_WAL_SHA256_H_
-#define RIFT_WAL_SHA256_H_
+#ifndef BASALT_WAL_SHA256_H_
+#define BASALT_WAL_SHA256_H_
 
 #include <cstddef>
 #include <cstdint>
 #include <string>
 
-namespace rift {
+namespace basalt {
 namespace wal {
 
 // Lowercase hex, 64 characters.
 std::string Sha256Hex(const char* data, std::size_t n);
 
 }  // namespace wal
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_WAL_SHA256_H_
+#endif  // BASALT_WAL_SHA256_H_

@@ -39,15 +39,15 @@
 // shape is now on-disk-adjacent behaviour, so any change to it must FAIL A
 // VECTOR to happen. Per A0's rule about signed packages, the vectors never
 // change in the same commit as the code they pin.
-#ifndef RIFT_MEMTABLE_TOWER_H_
-#define RIFT_MEMTABLE_TOWER_H_
+#ifndef BASALT_MEMTABLE_TOWER_H_
+#define BASALT_MEMTABLE_TOWER_H_
 
 #include <cstddef>
 #include <cstdint>
 
-#include "slice.h"
+#include "basalt/slice.h"
 
-namespace rift {
+namespace basalt {
 
 inline constexpr int kMaxHeight = 12;
 
@@ -61,6 +61,6 @@ uint64_t Fnv1a64(Slice key);
 // makes it reproducible.
 int TowerHeight(Slice key);
 
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_MEMTABLE_TOWER_H_
+#endif  // BASALT_MEMTABLE_TOWER_H_

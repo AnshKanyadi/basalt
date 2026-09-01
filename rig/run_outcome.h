@@ -4,12 +4,12 @@
 // is what the A5 scope scan (DESIGN-B1 section 9.4) polices and what ships as
 // the library archive, and the oracle must never be reachable from the thing it
 // judges.
-#ifndef RIFT_RIG_RUN_OUTCOME_H_
-#define RIFT_RIG_RUN_OUTCOME_H_
+#ifndef BASALT_RIG_RUN_OUTCOME_H_
+#define BASALT_RIG_RUN_OUTCOME_H_
 
 #include <cstdint>
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 // CLOSED. No `default:` arm anywhere, enforced by -Werror=switch, which is the
@@ -31,7 +31,7 @@ enum class RunOutcome : uint8_t {
 // and the recovery contract was therefore NOT under test. Counting such a run
 // as evidence is not a rounding error; it is citing a run that did not check
 // the thing being claimed.
-bool CountsAsRecoveryEvidence(RunOutcome outcome);  // RIFT_EVIDENCE_DECIDER
+bool CountsAsRecoveryEvidence(RunOutcome outcome);  // BASALT_EVIDENCE_DECIDER
 
 // THE MECHANICAL LINK between an enabled exactness-suspending injector and the
 // outcome it forces (DESIGN-B1 section 7.5).
@@ -43,7 +43,7 @@ bool CountsAsRecoveryEvidence(RunOutcome outcome);  // RIFT_EVIDENCE_DECIDER
 // function the suppression would be a thing somebody remembers to do, and the
 // run it would be forgotten on is the one where assertion (ii) was suspended
 // and the recovery contract was therefore not under test at all.
-RunOutcome OutcomeFloor(bool exactness_suspended);  // RIFT_EVIDENCE_DECIDER
+RunOutcome OutcomeFloor(bool exactness_suspended);  // BASALT_EVIDENCE_DECIDER
 
 // Total over RunOutcome. Same closed-switch discipline as CodeName.
 const char* RunOutcomeName(RunOutcome outcome);
@@ -54,6 +54,6 @@ const char* RunOutcomeName(RunOutcome outcome);
 const char* RunOutcomeLedgerColumn(RunOutcome outcome);
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_RIG_RUN_OUTCOME_H_
+#endif  // BASALT_RIG_RUN_OUTCOME_H_

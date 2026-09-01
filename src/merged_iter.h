@@ -28,8 +28,8 @@
 // memtables at most plus the live tables, so k is small and does not vary
 // within a run. B3's compaction is where the number of tables stops being
 // small, and where this is revisited.
-#ifndef RIFT_MERGED_ITER_H_
-#define RIFT_MERGED_ITER_H_
+#ifndef BASALT_MERGED_ITER_H_
+#define BASALT_MERGED_ITER_H_
 
 #include <cstdint>
 #include <memory>
@@ -37,11 +37,11 @@
 #include <vector>
 
 #include "memtable.h"
-#include "slice.h"
+#include "basalt/slice.h"
 #include "concat_iter.h"
 #include "table.h"
 
-namespace rift {
+namespace basalt {
 
 class MergedIter {
  public:
@@ -97,6 +97,6 @@ class MergedIter {
   std::string seek_key_;
 };
 
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_MERGED_ITER_H_
+#endif  // BASALT_MERGED_ITER_H_

@@ -22,7 +22,7 @@
 #include "table_builder.h"
 #include "test_env.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 namespace {
 
@@ -133,7 +133,7 @@ TEST(MergeCheck, RefusesAnOutputWhoseValuesAreShiftedByOne) {
 }
 
 TEST(MergeCheck, RefusesAnOutputWhoseEntriesAreOutOfOrder) {
-  // Built by hand, because TableBuilder RIFT_CHECKs ascending order -- which is
+  // Built by hand, because TableBuilder BASALT_CHECKs ascending order -- which is
   // the writer refusing to produce the bytes a wrong MERGE would. So the
   // fixture assembles the block directly.
   const std::vector<Cell> all = {{"a", 1, "1"}, {"b", 1, "2"}};
@@ -208,4 +208,4 @@ TEST(MergeCheck, APermittedDropIsNotAViolation) {
 
 }  // namespace
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

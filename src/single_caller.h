@@ -11,14 +11,14 @@
 // useful place to stop is at the call rather than at the next Open, which would
 // be reading a manifest with two groups interleaved into one another and would
 // report only that the bytes make no sense.
-#ifndef RIFT_SINGLE_CALLER_H_
-#define RIFT_SINGLE_CALLER_H_
+#ifndef BASALT_SINGLE_CALLER_H_
+#define BASALT_SINGLE_CALLER_H_
 
 #include <atomic>
 
-#include "check.h"
+#include "basalt/check.h"
 
-namespace rift {
+namespace basalt {
 
 // The flag lives with the object being protected; this is the scoped claim on
 // it. Re-entrancy on ONE thread trips it too, and that is wanted: a re-entrant
@@ -26,7 +26,7 @@ namespace rift {
 class SingleCaller {
  public:
   explicit SingleCaller(std::atomic<bool>* held) : held_(held) {
-    RIFT_CHECK(!held_->exchange(true));
+    BASALT_CHECK(!held_->exchange(true));
   }
   ~SingleCaller() { held_->store(false); }
 
@@ -37,6 +37,6 @@ class SingleCaller {
   std::atomic<bool>* held_;
 };
 
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_SINGLE_CALLER_H_
+#endif  // BASALT_SINGLE_CALLER_H_

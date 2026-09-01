@@ -28,17 +28,17 @@
 // ---------------------------------------------------------------------------
 // NOT AN ORACLE. It encodes and it classifies; it reaches no verdict about the
 // engine. The VERDICT it carries was reached elsewhere and is data here.
-#ifndef RIFT_RIG_DIFFERENTIAL_ARTIFACT_H_
-#define RIFT_RIG_DIFFERENTIAL_ARTIFACT_H_
+#ifndef BASALT_RIG_DIFFERENTIAL_ARTIFACT_H_
+#define BASALT_RIG_DIFFERENTIAL_ARTIFACT_H_
 
 #include <cstdint>
 #include <map>
 #include <string>
 #include <vector>
 
-#include "slice.h"
+#include "basalt/slice.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 inline constexpr char kDiffMagic[8] = {'R', 'I', 'F', 'T', 'D', 'I', 'F', '\0'};
@@ -204,7 +204,7 @@ struct DiffCheck {
   bool ok() const { return fault == DiffFault::kNone; }
 };
 
-// Encodes an artifact. RIFT_CHECKs the invariants the format requires of a
+// Encodes an artifact. BASALT_CHECKs the invariants the format requires of a
 // WRITER -- a non-empty submission, both commits present and clean, a verdict
 // that is not kUnrun -- because a writer that emits a file its own classifier
 // refuses is a bug in this process, not a damaged file.
@@ -221,6 +221,6 @@ DiffCheck ParseDiffArtifact(Slice image, DiffArtifact* out);
 DiffCheck RequireJudged(const DiffArtifact& a);
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_RIG_DIFFERENTIAL_ARTIFACT_H_
+#endif  // BASALT_RIG_DIFFERENTIAL_ARTIFACT_H_

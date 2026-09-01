@@ -13,14 +13,17 @@
 # THE RULE, and it is a lane and not a habit:
 #
 #   A decider of evidentiary status is a NAMED CATEGORY. Every member is
-#   asserted in BOTH directions. A member that lands without both assertions
-#   fails cpp-scan.
+#   asserted in BOTH directions.
+#
+# In the parent project a scan lane failed on a member that landed without both
+# assertions. That lane did not come across with this library, so the rule is
+# held by review here -- weaker, and said rather than left to be discovered.
 #
 # Six is small enough to enumerate, and enumerating it is what stops the seventh
 # arriving in B2 and this audit being re-run by hand.
 #
 # THE RESIDUAL, stated rather than implied: a new decider that lands WITHOUT the
-# RIFT_EVIDENCE_DECIDER marker on its declaration is invisible to this lane, the
+# BASALT_EVIDENCE_DECIDER marker on its declaration is invisible to this lane, the
 # same way section 3.2.1's bypass is invisible until the count assertion catches
 # it. What covers it is the same thing: the blind patch set, which fails this
 # rule's own mutation test if it stops checking. The claim is "adding an

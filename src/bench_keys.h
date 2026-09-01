@@ -16,14 +16,14 @@
 // using it would mean asserting that two independent implementations agree
 // stream-for-stream -- a claim worth making for the corpus and not worth
 // making for a benchmark's key order.
-#ifndef RIFT_BENCH_KEYS_H_
-#define RIFT_BENCH_KEYS_H_
+#ifndef BASALT_BENCH_KEYS_H_
+#define BASALT_BENCH_KEYS_H_
 
 #include <cstdint>
 #include <cstdio>
 #include <string>
 
-namespace rift {
+namespace basalt {
 
 inline uint64_t Bench64(uint64_t seed, uint64_t i) {
   uint64_t z = seed + (i + 1) * 0x9E3779B97F4A7C15ull;
@@ -41,6 +41,6 @@ inline std::string BenchKey(uint64_t seed, uint64_t i, int width) {
   return std::string(buf, width);
 }
 
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_BENCH_KEYS_H_
+#endif  // BASALT_BENCH_KEYS_H_

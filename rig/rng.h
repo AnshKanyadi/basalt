@@ -12,12 +12,12 @@
 // So: the generator is here, the mapping to a range is here, and both are
 // pinned by known-answer tests. THE SEED CORPUS RESTS ON THIS FILE AND ON
 // NOTHING THE TOOLCHAIN SUPPLIES.
-#ifndef RIFT_RIG_RNG_H_
-#define RIFT_RIG_RNG_H_
+#ifndef BASALT_RIG_RNG_H_
+#define BASALT_RIG_RNG_H_
 
 #include <cstdint>
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 class Pcg64 {
@@ -74,6 +74,6 @@ class Pcg64 {
 };
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_RIG_RNG_H_
+#endif  // BASALT_RIG_RNG_H_

@@ -1,6 +1,6 @@
 # FILES THAT PRODUCE A VERDICT.
 #
-# B3-D2a. Every file here carries a `RIFT_ORACLE` marker in its header comment,
+# B3-D2a. Every file here carries a `BASALT_ORACLE` marker in its header comment,
 # and every file carrying that marker is here -- cross-checked both ways, the
 # same construct DECIDERS.txt uses and for the same reason: a new oracle that
 # lands outside the rule by simply not being named in it is the seventh

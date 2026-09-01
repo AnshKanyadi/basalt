@@ -3,12 +3,12 @@
 // THE DERIVATIONS LIVE HERE, AT THE DEFINITION SITE, and not in prose
 // elsewhere. Section 8.4 requires it for a reason worth repeating: there has to
 // be exactly one place to correct.
-#ifndef RIFT_WAL_CAPS_H_
-#define RIFT_WAL_CAPS_H_
+#ifndef BASALT_CAPS_H_
+#define BASALT_CAPS_H_
 
 #include <cstdint>
 
-namespace rift {
+namespace basalt {
 namespace wal {
 
 // kMaxRecordBytes -- 64 MiB.
@@ -119,6 +119,6 @@ struct Caps {
 };
 
 }  // namespace wal
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_WAL_CAPS_H_
+#endif  // BASALT_CAPS_H_

@@ -1,4 +1,4 @@
-// RIFT_ORACLE -- registered in ORACLES.txt.
+// BASALT_ORACLE -- registered in ORACLES.txt.
 //
 // DOES THE MERGE COME OUT IN THE RIGHT ORDER WITH THE RIGHT VALUES?
 //
@@ -40,8 +40,8 @@
 // engine -- and here the expectation is derived from the INPUT bytes, which is
 // the one place that is sound, because the inputs are not the thing under test.
 // The output is.
-#ifndef RIFT_RIG_MERGE_CHECK_H_
-#define RIFT_RIG_MERGE_CHECK_H_
+#ifndef BASALT_RIG_MERGE_CHECK_H_
+#define BASALT_RIG_MERGE_CHECK_H_
 
 #include <cstdint>
 #include <string>
@@ -50,7 +50,7 @@
 #include "run_outcome.h"
 #include "version_model.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 struct MergeVerdict {
@@ -80,6 +80,6 @@ MergeVerdict AdjudicateMerge(const VersionModel& model,
 std::size_t InputEntryCount(const std::vector<std::string>& inputs);
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_RIG_MERGE_CHECK_H_
+#endif  // BASALT_RIG_MERGE_CHECK_H_

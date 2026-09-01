@@ -1,4 +1,4 @@
-#include "posix_env.h"
+#include "basalt/posix_env.h"
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -10,9 +10,9 @@
 #include <utility>
 #include <vector>
 
-#include "check.h"
+#include "basalt/check.h"
 
-namespace rift {
+namespace basalt {
 namespace {
 
 using posix::RawReadDirFn;
@@ -123,7 +123,7 @@ class PosixSequentialFile final : public SequentialFile {
 
  private:
   Status DoRead(std::size_t n, Slice* result, char* scratch) override {
-    while (true) {  // RIFT_POSIX_RETRY: read(2) is retried on EINTR
+    while (true) {  // BASALT_POSIX_RETRY: read(2) is retried on EINTR
       const ssize_t r = ::read(fd_, scratch, n);
       if (r < 0) {
         if (errno == EINTR) continue;
@@ -156,7 +156,7 @@ class PosixRandomAccessFile final : public RandomAccessFile {
 
  private:
   Status DoRead(uint64_t offset, std::size_t n, Slice* result, char* scratch) override {
-    while (true) {  // RIFT_POSIX_RETRY: pread(2) is retried on EINTR
+    while (true) {  // BASALT_POSIX_RETRY: pread(2) is retried on EINTR
       const ssize_t r = ::pread(fd_, scratch, n, static_cast<off_t>(offset));
       if (r < 0) {
         if (errno == EINTR) continue;
@@ -350,8 +350,8 @@ class PosixEnv final : public Env {
 
 std::unique_ptr<Env> NewPosixEnv(FaultController* faults, posix::RawWriteFn raw_write,
                                  posix::RawReadDirFn raw_readdir) {
-  RIFT_CHECK(faults != nullptr);
+  BASALT_CHECK(faults != nullptr);
   return std::unique_ptr<Env>(new PosixEnv(faults, raw_write, raw_readdir));
 }
 
-}  // namespace rift
+}  // namespace basalt

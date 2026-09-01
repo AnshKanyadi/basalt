@@ -1,6 +1,6 @@
-#include "status.h"
+#include "basalt/status.h"
 
-namespace rift {
+namespace basalt {
 
 const char* CodeName(Status::Code code) {
   // NO `default:` ARM. See status.h. Adding an enumerator must break this
@@ -17,7 +17,7 @@ const char* CodeName(Status::Code code) {
     case Status::Code::kKilled:          return "kKilled";
     case Status::Code::kInvalidArgument: return "kInvalidArgument";
   }
-  RIFT_UNREACHABLE("Status::Code holds a value no enumerator names");
+  BASALT_UNREACHABLE("Status::Code holds a value no enumerator names");
 }
 
 std::string Status::ToString() const {
@@ -29,4 +29,4 @@ std::string Status::ToString() const {
   return out;
 }
 
-}  // namespace rift
+}  // namespace basalt

@@ -1,6 +1,6 @@
 #include "tower.h"
 
-namespace rift {
+namespace basalt {
 
 uint64_t Fnv1a64(Slice key) {
   uint64_t h = 0xcbf29ce484222325ULL;
@@ -27,4 +27,4 @@ int TowerHeight(Slice key) {
   return h < kMaxHeight ? h : kMaxHeight;
 }
 
-}  // namespace rift
+}  // namespace basalt

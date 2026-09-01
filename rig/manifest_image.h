@@ -11,20 +11,20 @@
 // file. The artifact/belief split is usually argued as a rule about what a
 // VERDICT may rest on; this is the same split showing up as a rule about what
 // an OBSERVATION may cost.
-#ifndef RIFT_RIG_MANIFEST_IMAGE_H_
-#define RIFT_RIG_MANIFEST_IMAGE_H_
+#ifndef BASALT_RIG_MANIFEST_IMAGE_H_
+#define BASALT_RIG_MANIFEST_IMAGE_H_
 
 #include <string>
 
 #include "manifest_format.h"
-#include "slice.h"
+#include "basalt/slice.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 bool ReplayManifestImage(Slice image, sst::ManifestState* out, std::string* why);
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_RIG_MANIFEST_IMAGE_H_
+#endif  // BASALT_RIG_MANIFEST_IMAGE_H_

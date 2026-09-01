@@ -33,17 +33,17 @@
 // The full argument is the comment on FragmentCrc below, where section 5.3.3
 // requires it to live -- at the code, not only in a document, because reverting
 // it looks like a cleanup.
-#ifndef RIFT_WAL_FORMAT_H_
-#define RIFT_WAL_FORMAT_H_
+#ifndef BASALT_FORMAT_H_
+#define BASALT_FORMAT_H_
 
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
 
-#include "slice.h"
+#include "basalt/slice.h"
 
-namespace rift {
+namespace basalt {
 namespace wal {
 
 inline constexpr std::size_t kBlockBytes = 32768;
@@ -207,6 +207,6 @@ bool PeekKindAndSeq(Slice payload, RecordKind* kind, SeqNum* seq);
 uint32_t FragmentCrc(uint16_t length, FragmentType type, Slice payload);
 
 }  // namespace wal
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_WAL_FORMAT_H_
+#endif  // BASALT_FORMAT_H_

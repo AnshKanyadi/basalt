@@ -35,21 +35,21 @@
 // implementation. Agreement between two paths is not the same as either path
 // being right (section 13.4b), and two paths that share an assumption agree
 // most confidently exactly where they are both wrong.
-#ifndef RIFT_WAL_RECOVERY_H_
-#define RIFT_WAL_RECOVERY_H_
+#ifndef BASALT_WAL_RECOVERY_H_
+#define BASALT_WAL_RECOVERY_H_
 
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "caps.h"
-#include "env.h"
+#include "basalt/caps.h"
+#include "basalt/env.h"
 #include "memtable.h"
-#include "status.h"
+#include "basalt/status.h"
 #include "wal.h"
 
-namespace rift {
+namespace basalt {
 namespace wal {
 
 // WHAT RECOVERY MUST BE TOLD, once the WAL is no longer the only durable store.
@@ -157,6 +157,6 @@ Status Recover(Env* env, const std::string& dir, const Caps& caps,
 std::string LogPath(const std::string& dir, uint64_t number);
 
 }  // namespace wal
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_WAL_RECOVERY_H_
+#endif  // BASALT_WAL_RECOVERY_H_

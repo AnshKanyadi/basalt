@@ -1,14 +1,14 @@
 #include "env_guard.h"
 
-#include "check.h"
+#include "basalt/check.h"
 
-namespace rift {
+namespace basalt {
 namespace {
 
 thread_local uint64_t g_env_calls = 0;
 thread_local int g_mutex_depth = 0;
 
-void AbortOnViolation(const char* what) { RIFT_UNREACHABLE(what); }
+void AbortOnViolation(const char* what) { BASALT_UNREACHABLE(what); }
 
 GuardViolationFn g_handler = &AbortOnViolation;
 
@@ -26,4 +26,4 @@ void SetGuardViolationHandler(GuardViolationFn fn) {
 }
 void ReportGuardViolation(const char* what) { g_handler(what); }
 
-}  // namespace rift
+}  // namespace basalt

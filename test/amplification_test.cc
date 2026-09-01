@@ -28,9 +28,9 @@
 
 #include <cstdio>
 
-#include "caps.h"
+#include "basalt/caps.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 namespace {
 
@@ -114,4 +114,4 @@ TEST(AmpInstrument, ReadAmplificationIsAtLeastOneAndAtMostTheTableCount) {
 
 }  // namespace
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

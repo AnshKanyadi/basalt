@@ -2,7 +2,7 @@
 
 #include <array>
 
-namespace rift {
+namespace basalt {
 namespace wal {
 namespace {
 
@@ -34,4 +34,4 @@ uint32_t Crc32c(const char* data, std::size_t n) {
 }
 
 }  // namespace wal
-}  // namespace rift
+}  // namespace basalt

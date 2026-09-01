@@ -1,8 +1,8 @@
 #include "regime.h"
 
-#include "check.h"
+#include "basalt/check.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 const char* RegimeName(Regime r) {
@@ -10,7 +10,7 @@ const char* RegimeName(Regime r) {
     case Regime::kDefault:    return "default";
     case Regime::kNonDefault: return "non-default (never banked with default)";
   }
-  RIFT_UNREACHABLE("Regime holds a value no enumerator names");
+  BASALT_UNREACHABLE("Regime holds a value no enumerator names");
 }
 
 Regime RunRecord::regime() const {
@@ -40,4 +40,4 @@ bool AggregateRuns(const std::vector<RunRecord>& rows, Tally* out) {
 }
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

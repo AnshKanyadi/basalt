@@ -1,7 +1,7 @@
 // ONE CONSTRUCTION PATH FOR DURABLE IMAGES, so a fixture cannot omit something
 // the engine's own invariants require.
 //
-// NOT AN ORACLE. It CONSTRUCTS; it never judges, so it carries no RIFT_ORACLE
+// NOT AN ORACLE. It CONSTRUCTS; it never judges, so it carries no BASALT_ORACLE
 // marker and is free to use Env. The rule an oracle lives under -- parse
 // artifacts, never consult beliefs -- is about what a VERDICT may rest on, and
 // this produces no verdict.
@@ -24,8 +24,8 @@
 // by the manifest. So the class is made unreachable by building images THROUGH
 // THE ENGINE'S OWN CONSTRUCTION PATH rather than by hand -- there is one place
 // that knows the whole sequence, and a fixture cannot forget half of it.
-#ifndef RIFT_RIG_IMAGE_FIXTURE_H_
-#define RIFT_RIG_IMAGE_FIXTURE_H_
+#ifndef BASALT_RIG_IMAGE_FIXTURE_H_
+#define BASALT_RIG_IMAGE_FIXTURE_H_
 
 #include <cstdint>
 #include <map>
@@ -36,7 +36,7 @@
 #include "internal_key.h"
 #include "test_env.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 // One version, as a fixture wants to state it.
@@ -52,7 +52,7 @@ struct FixtureCell {
 //
 // Entries within a group must already be in TABLE ORDER -- user key ascending,
 // tag descending. A group that is not is a fixture testing TableBuilder's
-// RIFT_CHECK rather than whatever it meant to test, so the builder's refusal is
+// BASALT_CHECK rather than whatever it meant to test, so the builder's refusal is
 // left in place rather than sorted around.
 testenv::DurableImage BuildImage(const std::string& dir,
                                  const std::vector<std::vector<FixtureCell>>& tables);
@@ -62,6 +62,6 @@ testenv::DurableImage ImageHoldingTables(const std::string& dir,
                                          const std::vector<std::string>& table_bytes);
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_RIG_IMAGE_FIXTURE_H_
+#endif  // BASALT_RIG_IMAGE_FIXTURE_H_

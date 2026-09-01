@@ -1,10 +1,10 @@
-#include "call_site.h"
+#include "basalt/call_site.h"
 
 #include <vector>
 
-#include "check.h"
+#include "basalt/check.h"
 
-namespace rift {
+namespace basalt {
 
 const char* CallSiteName(CallSite site) {
   // NO `default:` ARM. An enumerator added here without a name is a build
@@ -33,12 +33,12 @@ const char* CallSiteName(CallSite site) {
     case CallSite::kDirectorySync:             return "kDirectorySync";
     case CallSite::kDirectoryClose:            return "kDirectoryClose";
   }
-  RIFT_UNREACHABLE("CallSite holds a value no enumerator names");
+  BASALT_UNREACHABLE("CallSite holds a value no enumerator names");
 }
 
 const std::vector<CallSite>& AllCallSites() {
   static const std::vector<CallSite>* const kAll = new std::vector<CallSite>{
-      // RIFT-CALL-SITE-LIST-BEGIN
+      // BASALT-CALL-SITE-LIST-BEGIN
     CallSite::kEnvNewWritableFile,
     CallSite::kEnvNewSequentialFile,
     CallSite::kEnvNewRandomAccessFile,
@@ -61,9 +61,9 @@ const std::vector<CallSite>& AllCallSites() {
     CallSite::kRandomAccessFileClose,
     CallSite::kDirectorySync,
     CallSite::kDirectoryClose,
-      // RIFT-CALL-SITE-LIST-END
+      // BASALT-CALL-SITE-LIST-END
   };
   return *kAll;
 }
 
-}  // namespace rift
+}  // namespace basalt

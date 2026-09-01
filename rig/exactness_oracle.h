@@ -1,4 +1,4 @@
-// RIFT_ORACLE -- registered in ORACLES.txt. It may PARSE artifacts and may not
+// BASALT_ORACLE -- registered in ORACLES.txt. It may PARSE artifacts and may not
 // CONSULT beliefs; its src/ includes are allow-listed in ARTIFACTS.txt.
 // THE EXACTNESS ORACLE. Section 7.3, and it asks the engine nothing.
 //
@@ -18,8 +18,9 @@
 //   * the RECOVERED STATE, already extracted into a plain map by an adapter
 //     that is not this file.
 //
-// scripts/cpp-scan.sh enforces the first sentence: an include of anything from
-// src/ in this file or its .cc fails the lane. Condition 1 of section 7.4 says
+// The first sentence was a lane in the parent project: an include of anything
+// from src/ in this file or its .cc failed it. Here it is a rule held by review
+// rather than by a scanner. Condition 1 of section 7.4 says
 // the oracle must be "compiled against a header that does not include the
 // engine's internal state at all", and that is a statement a lane can check.
 //
@@ -39,8 +40,8 @@
 // the oracle, not a pass of the engine. And both elements are individually
 // induced by tests, because A TWO-ELEMENT SET WHERE ONLY ONE ELEMENT HAS EVER
 // BEEN OBSERVED IS A ONE-ELEMENT CONTRACT WITH A SPARE EXCUSE ATTACHED.
-#ifndef RIFT_RIG_EXACTNESS_ORACLE_H_
-#define RIFT_RIG_EXACTNESS_ORACLE_H_
+#ifndef BASALT_RIG_EXACTNESS_ORACLE_H_
+#define BASALT_RIG_EXACTNESS_ORACLE_H_
 
 #include <cstdint>
 #include <map>
@@ -49,7 +50,7 @@
 
 #include "run_outcome.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 using OracleSeq = uint64_t;
@@ -154,6 +155,6 @@ RecoveryVerdict Adjudicate(const SubmissionLog& log, const LedgerFacts& facts,
                            const std::map<std::string, std::string>& recovered);
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_RIG_EXACTNESS_ORACLE_H_
+#endif  // BASALT_RIG_EXACTNESS_ORACLE_H_

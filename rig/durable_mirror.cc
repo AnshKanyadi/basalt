@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace rift {
+namespace basalt {
 namespace rig {
 namespace {
 
@@ -84,4 +84,4 @@ void MirrorHook(void* ctx, const testenv::DurableImage& image) {
 }
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

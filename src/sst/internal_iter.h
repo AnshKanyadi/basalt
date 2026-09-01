@@ -14,12 +14,12 @@
 // The measurement that would move it is B5's readrandom against source count;
 // until then, the cost of a wrong answer here is not comparable to the cost of
 // an indirect call.
-#ifndef RIFT_SST_INTERNAL_ITER_H_
-#define RIFT_SST_INTERNAL_ITER_H_
+#ifndef BASALT_SST_INTERNAL_ITER_H_
+#define BASALT_SST_INTERNAL_ITER_H_
 
-#include "slice.h"
+#include "basalt/slice.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 
 class InternalIter {
@@ -38,6 +38,6 @@ class InternalIter {
 };
 
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_SST_INTERNAL_ITER_H_
+#endif  // BASALT_SST_INTERNAL_ITER_H_

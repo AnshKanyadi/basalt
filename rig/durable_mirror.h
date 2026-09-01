@@ -11,14 +11,14 @@
 // raw open/write/fsync outside env/posix/. A mirror written from TestEnv would
 // be a syscall in scanned scope. TestEnv therefore offers the image through a
 // hook and the rig owns the file.
-#ifndef RIFT_RIG_DURABLE_MIRROR_H_
-#define RIFT_RIG_DURABLE_MIRROR_H_
+#ifndef BASALT_RIG_DURABLE_MIRROR_H_
+#define BASALT_RIG_DURABLE_MIRROR_H_
 
 #include <string>
 
 #include "test_env.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 // Overwrites `path` with `image`. Best-effort by design: a real _exit is a
@@ -36,6 +36,6 @@ bool ReadDurableMirror(const std::string& path, testenv::DurableImage* out);
 void MirrorHook(void* ctx, const testenv::DurableImage& image);
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_RIG_DURABLE_MIRROR_H_
+#endif  // BASALT_RIG_DURABLE_MIRROR_H_

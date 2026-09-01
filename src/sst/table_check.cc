@@ -2,10 +2,10 @@
 
 #include <vector>
 
-#include "check.h"
+#include "basalt/check.h"
 #include "internal_key.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 
 const char* TableFaultName(TableFault fault) {
@@ -25,7 +25,7 @@ const char* TableFaultName(TableFault fault) {
     case TableFault::kBadRangeBlock:            return "malformed range-tombstone block";
     case TableFault::kEmptyTable:            return "table has no data blocks";
   }
-  RIFT_UNREACHABLE("TableFault holds a value no enumerator names");
+  BASALT_UNREACHABLE("TableFault holds a value no enumerator names");
 }
 
 namespace {
@@ -257,4 +257,4 @@ TableCheck ValidateTable(Slice image) {
 }
 
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt

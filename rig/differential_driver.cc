@@ -5,12 +5,12 @@
 #include <memory>
 #include <vector>
 
-#include "check.h"
-#include "db.h"
+#include "basalt/check.h"
+#include "basalt/db.h"
 #include "rng.h"
 #include "test_env.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 namespace {
 
@@ -29,7 +29,7 @@ wal::Caps CapsFor(DiffRegime r) {
       c.flush_bytes = 8u * 1024;
       return c;
   }
-  RIFT_UNREACHABLE("DiffRegime holds a value no enumerator names");
+  BASALT_UNREACHABLE("DiffRegime holds a value no enumerator names");
 }
 
 std::string KeyOf(uint64_t i) {
@@ -162,7 +162,7 @@ bool Issue(DB* db, std::vector<DiffOp>* ops,
       case DiffOpKind::kSet:
       case DiffOpKind::kDelete:
       case DiffOpKind::kDeleteRange:
-        RIFT_UNREACHABLE("a write reached the single-op switch");
+        BASALT_UNREACHABLE("a write reached the single-op switch");
       case DiffOpKind::kSync: {
         wal::SeqNum mark = 0;
         if (!db->Sync(&mark).ok()) return false;
@@ -251,7 +251,7 @@ DiffArtifact RunDifferential(const DiffRunOptions& o) {
   if (opened.ok()) {
     a.recovered = ExtractState(*reopened);
     (void)reopened->Close();
-    if (std::getenv("RIFT_DIFF_DEBUG") != nullptr) {
+    if (std::getenv("BASALT_DIFF_DEBUG") != nullptr) {
       std::fprintf(stderr, "DEBUG recovered=%zu dead=%d watermark=%llu\n",
                    a.recovered.size(), t.dead() ? 1 : 0,
                    static_cast<unsigned long long>(a.watermark));
@@ -276,4 +276,4 @@ DiffArtifact RunDifferential(const DiffRunOptions& o) {
 }
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

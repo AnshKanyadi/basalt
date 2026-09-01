@@ -4,14 +4,14 @@
 #include <memory>
 #include <string>
 
-#include "check.h"
-#include "db.h"
+#include "basalt/check.h"
+#include "basalt/db.h"
 #include "internal_key.h"
 #include "manifest_image.h"
 #include "table.h"
 #include "test_env.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 namespace {
 
@@ -51,7 +51,7 @@ AmpResult MeasureAmplification(const wal::Caps& caps,
   for (uint64_t target : live_targets) {
     testenv::TestEnvironment t;
     std::unique_ptr<DB> db;
-    RIFT_CHECK(DB::Open(t.env(), kDir, caps, &db).ok());
+    BASALT_CHECK(DB::Open(t.env(), kDir, caps, &db).ok());
 
     const std::string value(256, 'v');
     AmpPoint p;
@@ -74,16 +74,16 @@ AmpResult MeasureAmplification(const wal::Caps& caps,
       WriteBatch b;
       b.Set(Slice(k), Slice(value));
       wal::SeqNum s = 0;
-      RIFT_CHECK(db->Write(b, &s).ok());
+      BASALT_CHECK(db->Write(b, &s).ok());
       p.submitted_bytes += k.size() + value.size();
       p.live_bytes += k.size() + value.size();
       if ((i % 64) == 0) {
         wal::SeqNum mark = 0;
-        RIFT_CHECK(db->Sync(&mark).ok());
+        BASALT_CHECK(db->Sync(&mark).ok());
       }
     }
     wal::SeqNum mark = 0;
-    RIFT_CHECK(db->Sync(&mark).ok());
+    BASALT_CHECK(db->Sync(&mark).ok());
 
     // WRITTEN BYTES COME FROM THE HARNESS'S LEDGER, not from the engine. Every
     // Append the engine made through Env is counted, so the WAL copy, every
@@ -96,7 +96,7 @@ AmpResult MeasureAmplification(const wal::Caps& caps,
     // summed `durable_bytes_after`, which is a FILE SIZE after a Sync and is
     // left at zero for an Append, and reported 0.00. It announced itself only
     // because zero cannot be true.
-    RIFT_CHECK(p.written_bytes > 0);
+    BASALT_CHECK(p.written_bytes > 0);
 
     // AND HOW MUCH OF L0 IS STILL UNPAID FOR. Parsed from the manifest, which
     // is an artifact -- never asked of the engine.
@@ -116,7 +116,7 @@ AmpResult MeasureAmplification(const wal::Caps& caps,
     // DISK BYTES ARE COUNTED FROM THE DIRECTORY, by the harness, for B3-D8's
     // stated reason: asking the engine would be asking the thing under test.
     std::vector<std::string> children;
-    RIFT_CHECK(t.env()->GetChildren(kDir, &children).ok());
+    BASALT_CHECK(t.env()->GetChildren(kDir, &children).ok());
     for (const std::string& c : children) {
       const std::string path = kDir + "/" + c;
       const std::string bytes = t.ContentNow(path);
@@ -177,7 +177,7 @@ AmpResult MeasureAmplification(const wal::Caps& caps,
                   : static_cast<double>(p.written_bytes) /
                         static_cast<double>(p.submitted_bytes);
     r.points.push_back(p);
-    RIFT_CHECK(db->Close().ok());
+    BASALT_CHECK(db->Close().ok());
   }
 
   for (const AmpPoint& p : r.points) {
@@ -187,4 +187,4 @@ AmpResult MeasureAmplification(const wal::Caps& caps,
 }
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

@@ -11,7 +11,7 @@
 
 #include <gtest/gtest.h>
 
-namespace rift {
+namespace basalt {
 namespace {
 
 TEST(BenchKeys, TheStreamIsPinnedInBothLanguages) {
@@ -27,4 +27,4 @@ TEST(BenchKeys, KeysAreFixedWidthSoKeyLengthIsAConstantOfTheWorkload) {
 }
 
 }  // namespace
-}  // namespace rift
+}  // namespace basalt

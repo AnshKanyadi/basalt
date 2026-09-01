@@ -1,4 +1,4 @@
-// RIFT_ORACLE -- see drop_check.h and ORACLES.txt.
+// BASALT_ORACLE -- see drop_check.h and ORACLES.txt.
 #include "drop_check.h"
 
 #include "manifest_image.h"
@@ -6,13 +6,13 @@
 #include <algorithm>
 #include <vector>
 
-#include "format.h"
+#include "basalt/format.h"
 #include "internal_key.h"
 #include "manifest_format.h"
 #include "reader.h"
 #include "table_format.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 namespace {
 
@@ -188,4 +188,4 @@ DropVerdict AdjudicateDrops(const VersionModel& model, const ImageBytes& image,
 }
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

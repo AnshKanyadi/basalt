@@ -1,9 +1,9 @@
 #include "concat_iter.h"
 
-#include "check.h"
+#include "basalt/check.h"
 #include "internal_key.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 
 ConcatIter::ConcatIter(std::vector<const Table*> run) : run_(std::move(run)) {
@@ -11,7 +11,7 @@ ConcatIter::ConcatIter(std::vector<const Table*> run) : run_(std::move(run)) {
   // returns one file's version of a key and hides another's -- a wrong answer
   // with nothing structurally wrong anywhere to report it.
   for (std::size_t i = 1; i < run_.size(); ++i) {
-    RIFT_CHECK(CompareInternalKey(Slice(run_[i]->check().smallest_key),
+    BASALT_CHECK(CompareInternalKey(Slice(run_[i]->check().smallest_key),
                                   Slice(run_[i - 1]->check().largest_key)) > 0);
   }
   file_ = run_.size();
@@ -23,7 +23,7 @@ void ConcatIter::Invalidate() {
 }
 
 void ConcatIter::OpenFile(std::size_t i) {
-  RIFT_CHECK(i < run_.size());
+  BASALT_CHECK(i < run_.size());
   file_ = i;
   it_.reset(new Table::Iter(run_[i]));
 }
@@ -62,7 +62,7 @@ void ConcatIter::Seek(Slice target) {
     } else {
       hi = mid;
     }
-    RIFT_CHECK(hi - lo < before);
+    BASALT_CHECK(hi - lo < before);
   }
   if (lo >= run_.size()) { Invalidate(); return; }
   OpenFile(lo);
@@ -82,7 +82,7 @@ void ConcatIter::Next() {
     if (file_ + 1 >= run_.size()) { Invalidate(); return; }
     const std::size_t before = file_;
     OpenFile(file_ + 1);
-    RIFT_CHECK(file_ > before);
+    BASALT_CHECK(file_ > before);
     it_->SeekToFirst();
   }
 }
@@ -94,20 +94,20 @@ void ConcatIter::Prev() {
     if (file_ == 0 || file_ > run_.size()) { Invalidate(); return; }
     const std::size_t before = file_;
     OpenFile(file_ - 1);
-    RIFT_CHECK(file_ < before);
+    BASALT_CHECK(file_ < before);
     it_->SeekToLast();
   }
 }
 
 Slice ConcatIter::key() const {
-  RIFT_CHECK(Valid());
+  BASALT_CHECK(Valid());
   return it_->key();
 }
 
 Slice ConcatIter::value() const {
-  RIFT_CHECK(Valid());
+  BASALT_CHECK(Valid());
   return it_->value();
 }
 
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt

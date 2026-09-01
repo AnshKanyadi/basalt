@@ -34,16 +34,16 @@
 // and would quietly turn a precondition into a supported mode. So the
 // precondition is ENFORCED instead -- `SingleCaller` in `DB::Sync` -- and the
 // claim below stays exactly as wide as the harness that backs it.
-#ifndef RIFT_CONCURRENCY_CLAIM_H_
-#define RIFT_CONCURRENCY_CLAIM_H_
+#ifndef BASALT_CONCURRENCY_CLAIM_H_
+#define BASALT_CONCURRENCY_CLAIM_H_
 
-namespace rift {
+namespace basalt {
 
 inline constexpr char kConcurrencyClaim[] =
     "TSan observed no data race across two authored interleaving patterns "
     "(concurrent MemTable Add and Get; concurrent DB Write and Sync across "
     "a flush); this is not a proof of race-freedom.";
 
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_CONCURRENCY_CLAIM_H_
+#endif  // BASALT_CONCURRENCY_CLAIM_H_

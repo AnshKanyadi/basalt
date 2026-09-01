@@ -8,7 +8,7 @@
 //
 // EVERY TEST HERE SETS caps.flush_bytes LOW, which puts these runs in a
 // non-default REGIME by construction (section 8.4).
-#include "db.h"
+#include "basalt/db.h"
 
 #include <cstdio>
 #include <memory>
@@ -27,7 +27,7 @@
 #include "single_caller.h"
 #include "test_env.h"
 
-namespace rift {
+namespace basalt {
 namespace {
 
 using testenv::TestEnvironment;
@@ -997,4 +997,4 @@ TEST(SyncPrecondition, SequentialClaimsAreFine) {
 }
 
 }  // namespace
-}  // namespace rift
+}  // namespace basalt

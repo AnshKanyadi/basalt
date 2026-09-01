@@ -13,19 +13,19 @@
 // record -- never from the engine's report. An engine error whose predicate is
 // not satisfied is a divergence and fails the run; a satisfied predicate with no
 // error is also a divergence.
-#ifndef RIFT_RIG_SWEEP_H_
-#define RIFT_RIG_SWEEP_H_
+#ifndef BASALT_RIG_SWEEP_H_
+#define BASALT_RIG_SWEEP_H_
 
 #include <cstdint>
 #include <map>
 #include <string>
 #include <vector>
 
-#include "caps.h"
+#include "basalt/caps.h"
 #include "exactness_oracle.h"
 #include "run_outcome.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 struct SweepPoint {
@@ -100,6 +100,6 @@ SweepResult RunSweep(SweepRegime regime);
 uint64_t WorkloadOrdinalCount(SweepRegime regime);
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_RIG_SWEEP_H_
+#endif  // BASALT_RIG_SWEEP_H_

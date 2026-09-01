@@ -1,4 +1,4 @@
-// RIFT_ORACLE -- registered in ORACLES.txt.
+// BASALT_ORACLE -- registered in ORACLES.txt.
 //
 // THE DROP ADJUDICATOR. B3-D2, and it lands BEFORE any compaction exists, which
 // is the observer-before-the-observed rule at its most important point in this
@@ -48,8 +48,8 @@
 // bytes it just parsed. B3-D2b. Deriving the expectation from the engine's own
 // artifacts would hide a record from BOTH sides of the comparison and make the
 // shared-parser aliasing TOTAL rather than one-sided.
-#ifndef RIFT_RIG_DROP_CHECK_H_
-#define RIFT_RIG_DROP_CHECK_H_
+#ifndef BASALT_RIG_DROP_CHECK_H_
+#define BASALT_RIG_DROP_CHECK_H_
 
 #include <cstdint>
 #include <map>
@@ -59,7 +59,7 @@
 #include "run_outcome.h"
 #include "version_model.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 // path -> bytes, as the harness holds it. Declared here rather than included
@@ -91,6 +91,6 @@ DropVerdict AdjudicateDrops(const VersionModel& model, const ImageBytes& image,
                             const std::string& dir);
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_RIG_DROP_CHECK_H_
+#endif  // BASALT_RIG_DROP_CHECK_H_

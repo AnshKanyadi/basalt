@@ -9,7 +9,7 @@
 
 #include "differential_artifact.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 namespace {
 
@@ -137,4 +137,4 @@ TEST(DiffDriver, AKillProducesADifferentRunFromACleanOne) {
 
 }  // namespace
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

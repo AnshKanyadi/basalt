@@ -16,7 +16,7 @@
 #include <gtest/gtest.h>
 
 #include "bloom.h"
-#include "env.h"
+#include "basalt/env.h"
 #include "internal_key.h"
 #include "memtable.h"
 #include "sha256.h"
@@ -25,7 +25,7 @@
 #include "table_check.h"
 #include "test_env.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 namespace {
 
@@ -44,7 +44,7 @@ std::string IKey(const std::string& user, SeqNum seq,
 }
 
 // Writes one table through the Env and returns its bytes. The caller supplies
-// the entries in table order; the writer RIFT_CHECKs that they are.
+// the entries in table order; the writer BASALT_CHECKs that they are.
 struct Written {
   std::string bytes;
   uint64_t entries = 0;
@@ -507,4 +507,4 @@ TEST(SstWriter, BoundWideningIsAStatementAboutUserKeys) {
 
 }  // namespace
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt

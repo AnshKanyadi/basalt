@@ -28,7 +28,7 @@
 #include "table_builder.h"
 #include "test_env.h"
 
-namespace rift {
+namespace basalt {
 namespace {
 
 using rig::ModelSeq;
@@ -515,4 +515,4 @@ TEST(Compaction, ThePinDoesNotFireWhenTheHighestSequenceSurvivesAnyway) {
 }
 
 }  // namespace
-}  // namespace rift
+}  // namespace basalt

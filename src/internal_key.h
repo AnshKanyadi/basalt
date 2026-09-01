@@ -28,15 +28,15 @@
 // found by building the fixtures the format actually requires -- which is the
 // entire argument for landing the classifier before the writer, arriving one
 // step earlier than expected.
-#ifndef RIFT_INTERNAL_KEY_H_
-#define RIFT_INTERNAL_KEY_H_
+#ifndef BASALT_INTERNAL_KEY_H_
+#define BASALT_INTERNAL_KEY_H_
 
 #include <cstdint>
 #include <string>
 
-#include "slice.h"
+#include "basalt/slice.h"
 
-namespace rift {
+namespace basalt {
 
 // LevelDB's convention, and it is load-bearing for ordering: a deletion and a
 // value at the same sequence must sort deterministically, and the type is the
@@ -64,7 +64,7 @@ inline ValueType TypeOfTag(uint64_t tag) {
 
 void AppendInternalKey(std::string* out, Slice user_key, uint64_t tag);
 
-// Both RIFT_CHECK that the key is at least kTagBytes long. A key that is not is
+// Both BASALT_CHECK that the key is at least kTagBytes long. A key that is not is
 // a bug in this process, not a damaged file: code reading a FILE must check the
 // length itself and report, which is what the table classifier does.
 Slice ExtractUserKey(Slice internal_key);
@@ -99,6 +99,6 @@ inline bool WidensLowerBound(Slice candidate_user_key, Slice current_bound) {
   return candidate_user_key.compare(ExtractUserKey(current_bound)) < 0;
 }
 
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_INTERNAL_KEY_H_
+#endif  // BASALT_INTERNAL_KEY_H_

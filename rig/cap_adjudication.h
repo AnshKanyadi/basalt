@@ -27,17 +27,17 @@
 // about what the cap MEANS -- is closed by the formula being frozen in section
 // 5.3.4 and by both divergence directions being asserted and induced (BM19,
 // BM20). Section 0.1's middle row is exactly this trade.
-#ifndef RIFT_RIG_CAP_ADJUDICATION_H_
-#define RIFT_RIG_CAP_ADJUDICATION_H_
+#ifndef BASALT_RIG_CAP_ADJUDICATION_H_
+#define BASALT_RIG_CAP_ADJUDICATION_H_
 
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 
 #include "run_outcome.h"
-#include "status.h"
+#include "basalt/status.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 // An op AS THE HARNESS RECORDED SUBMITTING IT. A separate type from wal::Op
@@ -64,7 +64,7 @@ const char* CapVerdictName(CapVerdict v);
 // True only for the two divergences. Both directions fail the run; neither
 // voids it, because a void is a legitimate engine error and a divergence is a
 // bug.
-bool IsDivergence(CapVerdict v);  // RIFT_EVIDENCE_DECIDER
+bool IsDivergence(CapVerdict v);  // BASALT_EVIDENCE_DECIDER
 
 // `engine_reported` is whether the engine returned the cap's error code. It is
 // the only engine input, and it is held to the harness's own computation rather
@@ -73,9 +73,9 @@ CapVerdict AdjudicateCap(uint64_t harness_bytes, uint64_t cap, bool engine_repor
 
 // The outcome a verdict forces. A divergence is a contract violation; a void is
 // its own kind and is never banked.
-RunOutcome OutcomeForCapVerdict(CapVerdict v);  // RIFT_EVIDENCE_DECIDER
+RunOutcome OutcomeForCapVerdict(CapVerdict v);  // BASALT_EVIDENCE_DECIDER
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_RIG_CAP_ADJUDICATION_H_
+#endif  // BASALT_RIG_CAP_ADJUDICATION_H_

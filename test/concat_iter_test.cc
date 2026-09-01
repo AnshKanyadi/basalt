@@ -19,7 +19,7 @@
 #include "table_builder.h"
 #include "test_env.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 namespace {
 
@@ -194,4 +194,4 @@ TEST(ConcatIter, AnOverlappingRunIsRefusedAtConstruction) {
 
 }  // namespace
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt

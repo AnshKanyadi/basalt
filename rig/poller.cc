@@ -1,6 +1,6 @@
 #include "poller.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 const char* BusyVerdictName(BusyVerdict v) {
@@ -54,4 +54,4 @@ RunOutcome OutcomeForBusyVerdict(BusyVerdict v) {
 }
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

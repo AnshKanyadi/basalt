@@ -8,29 +8,29 @@
 
 #include "sweep.h"
 
-// usage: rift_sweep [default|flush]
+// usage: basalt_sweep [default|flush]
 //
 // ONE REGIME PER INVOCATION, and the regime is named in the output. Section
 // 8.4: numbers from a non-default cap never aggregate with default-cap numbers,
 // so a caller that could not tell which it was reading would be aggregating by
 // accident.
 int main(int argc, char** argv) {
-  rift::rig::SweepRegime regime = rift::rig::SweepRegime::kDefault;
+  basalt::rig::SweepRegime regime = basalt::rig::SweepRegime::kDefault;
   if (argc > 1) {
     if (std::strcmp(argv[1], "flush") == 0) {
-      regime = rift::rig::SweepRegime::kFlush;
+      regime = basalt::rig::SweepRegime::kFlush;
     } else if (std::strcmp(argv[1], "compact") == 0) {
-      regime = rift::rig::SweepRegime::kCompact;
+      regime = basalt::rig::SweepRegime::kCompact;
     } else if (std::strcmp(argv[1], "default") != 0) {
       std::printf("   FAIL  unknown regime \"%s\"; expected default, flush or compact\n",
                   argv[1]);
       return 2;
     }
   }
-  const rift::rig::SweepResult r = rift::rig::RunSweep(regime);
+  const basalt::rig::SweepResult r = basalt::rig::RunSweep(regime);
 
   std::printf("\n  kill-point sweep (regime: %s)\n",
-              rift::rig::SweepRegimeName(regime));
+              basalt::rig::SweepRegimeName(regime));
   std::printf("  ----------------------------------------------------------\n");
   std::printf("   points visited   : %zu\n", r.points_visited);
   std::printf("   pass             : %zu\n", r.pass);
@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
                 r.matched_previous, r.matched_in_flight);
     rc = 1;
   }
-  for (const rift::rig::SweepPoint& p : r.failures) {
+  for (const basalt::rig::SweepPoint& p : r.failures) {
     std::printf("   VIOLATION at ordinal %llu (%s, %s): %s\n",
                 static_cast<unsigned long long>(p.ordinal),
                 p.call_site.empty() ? "?" : p.call_site.c_str(),
@@ -88,7 +88,7 @@ int main(int argc, char** argv) {
   unsigned long long first = 0;
   if (!r.failures.empty()) first = r.failures.front().ordinal;
   std::printf("SWEEP regime=%s points=%zu violations=%zu first=%llu\n",
-              rift::rig::SweepRegimeName(regime), r.points_visited,
+              basalt::rig::SweepRegimeName(regime), r.points_visited,
               r.violation, first);
 
   if (rc == 0) std::printf("   ok  every kill point recovered to a promised watermark\n\n");

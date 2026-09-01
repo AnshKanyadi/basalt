@@ -14,14 +14,14 @@
 
 #include <gtest/gtest.h>
 
-#include "format.h"
+#include "basalt/format.h"
 #include "read_whole_file.h"
 #include "recovery.h"
 #include "table_builder.h"
 #include "test_env.h"
 #include "writer.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 namespace {
 
@@ -690,4 +690,4 @@ TEST(Manifest, AKillBeforeTheSwapLeavesTheOldManifestLive) {
 
 }  // namespace
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt

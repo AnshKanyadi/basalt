@@ -6,10 +6,10 @@
 #include <gtest/gtest.h>
 
 #include "concurrency_claim.h"
-#include "slice.h"
+#include "basalt/slice.h"
 #include "tower.h"
 
-namespace rift {
+namespace basalt {
 namespace {
 
 std::string Get(const MemTable& m, const std::string& key, SeqNum snap) {
@@ -154,4 +154,4 @@ TEST(ConcurrencyClaim, WordingIsPinnedAndDoesNotClaimRaceFreedom) {
 }
 
 }  // namespace
-}  // namespace rift
+}  // namespace basalt

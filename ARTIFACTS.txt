@@ -23,9 +23,12 @@
 # which is the engine's visibility rule -- the single rule the drop checker
 # exists to audit. A header with neither is bytes in, structure out.
 #
-# `cpp-scan` enforces three things: every oracle's src/ includes are listed here;
-# every header listed here exists and carries neither mark; and every file
-# carrying RIFT_ORACLE is registered in ORACLES.txt and vice versa.
+# Three things follow, and in the parent project a scan lane enforced them:
+# every oracle's src/ includes are listed here; every header listed here exists
+# and carries neither mark; and every file carrying BASALT_ORACLE is registered
+# in ORACLES.txt and vice versa. The scan did not come across with this library,
+# so these are rules held by review. THAT IS A WEAKER THING AND IS SAID HERE
+# RATHER THAN LEFT TO BE DISCOVERED.
 #
 # THE COST IS NAMED RATHER THAN IMPLIED. A shared decoder is a shared blind spot,
 # at exactly the place the checker exists to watch. Two mutants plant it

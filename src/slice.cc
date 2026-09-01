@@ -1,8 +1,8 @@
-#include "slice.h"
+#include "basalt/slice.h"
 
 #include <algorithm>
 
-namespace rift {
+namespace basalt {
 
 int Slice::compare(const Slice& b) const {
   const std::size_t min_len = std::min(size_, b.size_);
@@ -13,4 +13,4 @@ int Slice::compare(const Slice& b) const {
   return 0;
 }
 
-}  // namespace rift
+}  // namespace basalt

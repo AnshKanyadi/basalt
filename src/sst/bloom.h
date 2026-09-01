@@ -60,17 +60,17 @@
 // WAL's length is inside its CRC: a length that must be inferred from the
 // block's size is a length nothing can disagree with, and disagreement is the
 // only way a truncated filter announces itself.
-#ifndef RIFT_SST_BLOOM_H_
-#define RIFT_SST_BLOOM_H_
+#ifndef BASALT_SST_BLOOM_H_
+#define BASALT_SST_BLOOM_H_
 
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
 
-#include "slice.h"
+#include "basalt/slice.h"
 
-namespace rift {
+namespace basalt {
 namespace sst {
 
 inline constexpr uint32_t kBitsPerKey = 10;
@@ -164,6 +164,6 @@ class FilterReader {
 };
 
 }  // namespace sst
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_SST_BLOOM_H_
+#endif  // BASALT_SST_BLOOM_H_

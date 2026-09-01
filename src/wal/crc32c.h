@@ -1,11 +1,11 @@
 // CRC-32C (Castagnoli), the checksum every WAL fragment carries.
-#ifndef RIFT_WAL_CRC32C_H_
-#define RIFT_WAL_CRC32C_H_
+#ifndef BASALT_WAL_CRC32C_H_
+#define BASALT_WAL_CRC32C_H_
 
 #include <cstddef>
 #include <cstdint>
 
-namespace rift {
+namespace basalt {
 namespace wal {
 
 // Software table-driven, reflected, polynomial 0x82F63B78. No hardware path:
@@ -21,6 +21,6 @@ uint32_t Crc32c(const char* data, std::size_t n);
 inline constexpr uint32_t kCrc32cCheckValue = 0xE3069283u;
 
 }  // namespace wal
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_WAL_CRC32C_H_
+#endif  // BASALT_WAL_CRC32C_H_

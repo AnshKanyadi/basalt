@@ -18,11 +18,11 @@
 
 #include <gtest/gtest.h>
 
-#include "call_site.h"
-#include "env.h"
+#include "basalt/call_site.h"
+#include "basalt/env.h"
 #include "run_outcome.h"
 
-namespace rift {
+namespace basalt {
 namespace testenv {
 namespace {
 
@@ -440,10 +440,9 @@ TEST(TestEnvCensus, PerCallSiteCountsAreExactlyWhatTheWorkloadIssued) {
   EXPECT_EQ(t.ordinal(), AllCallSites().size())
       << "the total number of kill points the workload offers has changed";
   EXPECT_EQ(AllCallSites().size(), 22u)
-      << "the Env surface changed size; scripts/cpp-scan.sh says so too, and "
-         "both are supposed to";
+      << "the Env surface changed size";
 }
 
 }  // namespace
 }  // namespace testenv
-}  // namespace rift
+}  // namespace basalt

@@ -3,10 +3,10 @@
 #include <algorithm>
 #include <string>
 
-#include "check.h"
+#include "basalt/check.h"
 #include "range_tombstone.h"
 
-namespace rift {
+namespace basalt {
 namespace {
 
 // [lo, hi) is exactly the set of sequences at which a given version is THE
@@ -59,7 +59,7 @@ Status RunCompaction(MergedIter* input, const std::vector<SeqNum>& observable,
   // a caller that hands over an unsorted S has a bug in how it collected live
   // snapshots, and quietly sorting it here would hide that.
   for (std::size_t i = 1; i < observable.size(); ++i) {
-    RIFT_CHECK(observable[i - 1] < observable[i]);
+    BASALT_CHECK(observable[i - 1] < observable[i]);
   }
 
   *stats = CompactionStats();
@@ -121,7 +121,7 @@ Status RunCompaction(MergedIter* input, const std::vector<SeqNum>& observable,
     // only mean a source was rewound or an entry was counted twice, which are
     // the two ways a k-way merge fails to stop.
     ++stats->inputs_consumed;
-    RIFT_CHECK(stats->inputs_consumed <= bound);
+    BASALT_CHECK(stats->inputs_consumed <= bound);
 
     const Slice user_key = input->user_key();
     const uint64_t tag = input->tag();
@@ -221,4 +221,4 @@ Status RunCompaction(MergedIter* input, const std::vector<SeqNum>& observable,
   return Status::Ok();
 }
 
-}  // namespace rift
+}  // namespace basalt

@@ -28,12 +28,12 @@
 #include <gtest/gtest.h>
 
 #include "concurrency_claim.h"
-#include "db.h"
+#include "basalt/db.h"
 #include "memtable.h"
-#include "posix_env.h"
-#include "slice.h"
+#include "basalt/posix_env.h"
+#include "basalt/slice.h"
 
-namespace rift {
+namespace basalt {
 namespace {
 
 constexpr int kWriters = 2;
@@ -162,4 +162,4 @@ TEST(TSanLane, ConcurrentWriteAndSyncAcrossAFlushAreRaceFreeAcrossThisInterleavi
 }
 
 }  // namespace
-}  // namespace rift
+}  // namespace basalt

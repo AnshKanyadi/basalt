@@ -3,14 +3,14 @@
 #include <algorithm>
 #include <string>
 
-#include "check.h"
+#include "basalt/check.h"
 
-namespace rift {
+namespace basalt {
 namespace wal {
 
 Status LogWriter::EmitFragment(FragmentType type, Slice payload) {
-  RIFT_CHECK(payload.size() >= 1);
-  RIFT_CHECK(payload.size() <= 0xffff);
+  BASALT_CHECK(payload.size() >= 1);
+  BASALT_CHECK(payload.size() <= 0xffff);
   char header[kHeaderBytes];
   const uint16_t len = static_cast<uint16_t>(payload.size());
   const uint32_t crc = FragmentCrc(len, type, payload);
@@ -28,7 +28,7 @@ Status LogWriter::EmitFragment(FragmentType type, Slice payload) {
 }
 
 Status LogWriter::AddRecord(Slice payload) {
-  RIFT_CHECK(payload.size() >= 1);
+  BASALT_CHECK(payload.size() >= 1);
   const char* p = payload.data();
   std::size_t left = payload.size();
   bool first = true;
@@ -75,4 +75,4 @@ Status LogWriter::AddRecord(Slice payload) {
 }
 
 }  // namespace wal
-}  // namespace rift
+}  // namespace basalt

@@ -36,8 +36,8 @@
 // looked inexplicably bad. Section 8.3's mutex-depth guard closes it and lands
 // with the WAL at B1.6; this file's job is to make sure the mutex is only ever
 // held around memory.
-#ifndef RIFT_MEMTABLE_MEMTABLE_H_
-#define RIFT_MEMTABLE_MEMTABLE_H_
+#ifndef BASALT_MEMTABLE_MEMTABLE_H_
+#define BASALT_MEMTABLE_MEMTABLE_H_
 
 #include <cstdint>
 #include <mutex>
@@ -47,11 +47,11 @@
 #include "arena.h"
 #include "internal_key.h"
 #include "range_tombstone.h"
-#include "slice.h"
-#include "status.h"
+#include "basalt/slice.h"
+#include "basalt/status.h"
 #include "tower.h"
 
-namespace rift {
+namespace basalt {
 
 // ValueType, SeqNum, MakeTag and the internal key layout now live in
 // internal_key.h. B2 gave the layout a SECOND holder -- the SSTable -- and a
@@ -222,6 +222,6 @@ class MemTable {
   std::size_t count_ = 0;
 };
 
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_MEMTABLE_MEMTABLE_H_
+#endif  // BASALT_MEMTABLE_MEMTABLE_H_

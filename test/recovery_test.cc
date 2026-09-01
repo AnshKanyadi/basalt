@@ -14,12 +14,12 @@
 
 #include <gtest/gtest.h>
 
-#include "call_site.h"
+#include "basalt/call_site.h"
 #include "reader.h"
 #include "test_env.h"
 #include "wal.h"
 
-namespace rift {
+namespace basalt {
 namespace wal {
 namespace {
 
@@ -564,4 +564,4 @@ TEST(Recovery, ABatchIsCollapsedToOneOpPerKeyWithTheLastWinning) {
 
 }  // namespace
 }  // namespace wal
-}  // namespace rift
+}  // namespace basalt

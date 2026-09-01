@@ -14,11 +14,11 @@
 #include <gtest/gtest.h>
 
 #include "cap_adjudication.h"
-#include "db.h"
+#include "basalt/db.h"
 #include "run_outcome.h"
 #include "test_env.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 namespace {
 
@@ -276,4 +276,4 @@ TEST(Poller, BackpressureIsOwedForBytesStillInFlightInsideASync) {
 
 }  // namespace
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

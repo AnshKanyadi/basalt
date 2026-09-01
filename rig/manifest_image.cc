@@ -1,9 +1,9 @@
 #include "manifest_image.h"
 
-#include "format.h"
+#include "basalt/format.h"
 #include "reader.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 
 bool ReplayManifestImage(Slice image, sst::ManifestState* out, std::string* why) {
@@ -36,4 +36,4 @@ bool ReplayManifestImage(Slice image, sst::ManifestState* out, std::string* why)
 }
 
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt

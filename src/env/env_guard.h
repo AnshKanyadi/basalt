@@ -27,12 +27,12 @@
 // which is unmeasurable against a syscall, and a guard compiled out of the
 // configuration people actually ship is a guard that stops being true without
 // anyone noticing.
-#ifndef RIFT_ENV_ENV_GUARD_H_
-#define RIFT_ENV_ENV_GUARD_H_
+#ifndef BASALT_ENV_ENV_GUARD_H_
+#define BASALT_ENV_ENV_GUARD_H_
 
 #include <cstdint>
 
-namespace rift {
+namespace basalt {
 
 // Env calls made on THIS thread. Per-thread because the syncer and the node
 // loop are different threads and a global counter would let one hide the
@@ -63,6 +63,6 @@ using GuardViolationFn = void (*)(const char* what);
 void SetGuardViolationHandler(GuardViolationFn fn);
 void ReportGuardViolation(const char* what);
 
-}  // namespace rift
+}  // namespace basalt
 
-#endif  // RIFT_ENV_ENV_GUARD_H_
+#endif  // BASALT_ENV_ENV_GUARD_H_
