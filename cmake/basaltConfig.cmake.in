@@ -1,0 +1,13 @@
+# Package config for basalt. Consumed as `find_package(basalt REQUIRED)`, which
+# defines the imported target `basalt::basalt` -- the same name this tree's
+# add_subdirectory path exposes as an ALIAS, so a consumer switching between the
+# two changes nothing but how it acquires the target.
+#
+# There is no basaltConfigVersion.cmake: the project declares no VERSION, so an
+# unversioned find_package(basalt) succeeds and a versioned one fails rather
+# than being answered from a number nobody chose. See CMakeLists.txt.
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/basaltTargets.cmake")
+
+check_required_components(basalt)

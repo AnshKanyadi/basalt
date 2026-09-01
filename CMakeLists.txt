@@ -141,15 +141,64 @@ add_library(basalt STATIC
   src/db.cc
 )
 add_library(basalt::basalt ALIAS basalt)
+
+include(GNUInstallDirs)
+
+# GNUInstallDirs IS INCLUDED BEFORE THIS AND NOT AFTER IT. The install interface
+# has to name the same directory the headers are installed into, and writing a
+# bare `include` here would be right only for as long as nobody sets
+# CMAKE_INSTALL_INCLUDEDIR -- a consumer's include path silently pointing at a
+# directory the install never wrote.
 target_include_directories(basalt
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-         $<INSTALL_INTERFACE:include>
+         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
   PRIVATE ${BASALT_INTERNAL_INCLUDES})
 target_compile_options(basalt PRIVATE ${BASALT_CXX_FLAGS})
 
-include(GNUInstallDirs)
-install(TARGETS basalt ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+# -------------------------------------------------------------- installation
+#
+# THE ALIAS AND THE EXPORTED NAME ARE THE SAME NAME, AND THAT IS THE POINT.
+# `basalt::basalt` in this tree comes from the ALIAS above; `basalt::basalt` in
+# an installed tree comes from the NAMESPACE below. A consumer that switches
+# from add_subdirectory to find_package changes which of the two it gets and
+# nothing else -- and a namespaced name is what makes a typo a configure error
+# rather than a link against `-lbasalt` from wherever the linker found one.
+#
+# Installing the archive without exporting it is what this build did before, and
+# it produces the worst of both: the files land, `find_package(basalt)` finds no
+# config, and the failure is at the consumer's configure step with nothing to
+# point at.
+install(TARGETS basalt EXPORT basaltTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(DIRECTORY include/basalt DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+set(BASALT_CMAKE_CONFIG_DIR "${CMAKE_INSTALL_LIBDIR}/cmake/basalt")
+
+install(EXPORT basaltTargets
+        FILE basaltTargets.cmake
+        NAMESPACE basalt::
+        DESTINATION ${BASALT_CMAKE_CONFIG_DIR})
+
+# The build-tree export, so a consumer can point CMAKE_PREFIX_PATH at a build
+# directory without installing first.
+export(EXPORT basaltTargets
+       FILE "${CMAKE_CURRENT_BINARY_DIR}/basaltTargets.cmake"
+       NAMESPACE basalt::)
+
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/basaltConfig.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/basaltConfig.cmake"
+  INSTALL_DESTINATION ${BASALT_CMAKE_CONFIG_DIR})
+
+# NO basaltConfigVersion.cmake, DELIBERATELY. `project()` above declares no
+# VERSION, so there is no version to write down, and a version file carrying a
+# number nobody chose would answer `find_package(basalt 3.0)` with a confident
+# wrong answer. Without one, an unversioned `find_package(basalt)` works and a
+# versioned request fails loudly. Give the project a VERSION and this becomes a
+# write_basic_package_version_file() call and an install(FILES) line.
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/basaltConfig.cmake"
+        DESTINATION ${BASALT_CMAKE_CONFIG_DIR})
 
 if(NOT BASALT_BUILD_TESTS)
   return()
