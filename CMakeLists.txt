@@ -230,7 +230,8 @@ add_executable(basalt_test
 target_link_libraries(basalt_test PRIVATE basalt_rig gtest_main)
 target_include_directories(basalt_test PRIVATE ${BASALT_INTERNAL_INCLUDES})
 target_compile_options(basalt_test PRIVATE ${BASALT_CXX_FLAGS})
-target_compile_definitions(basalt_test PRIVATE ${BASALT_SANITIZER_DEFINE})
+target_compile_definitions(basalt_test PRIVATE ${BASALT_SANITIZER_DEFINE}
+  BASALT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
 add_test(NAME basalt_test COMMAND basalt_test)
 
 # The thread lane runs THIS and not the unit suite: the unit suite is

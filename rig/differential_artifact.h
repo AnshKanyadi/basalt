@@ -17,10 +17,11 @@
 // were checked against one committed corpus, hand-built from the document and
 // never produced by either encoder.
 //
-// NEITHER THE SECOND DECODER NOR THAT CORPUS SURVIVED THE EXTRACTION. What is
-// left here is one decoder, exercised by tests that assemble their own bytes.
-// See test/differential_artifact_test.cc for what that does and does not
-// check.
+// THE CORPUS SURVIVED THE EXTRACTION AND THE SECOND DECODER DID NOT. The files
+// are at test/fixtures/differential/ and are still the only images this
+// decoder is checked against that it did not help produce. What is gone is the
+// ability to add to them: the generator stayed in the parent project, so the
+// corpus is frozen at what it covered on the day of the split.
 //
 // ---------------------------------------------------------------------------
 // THE CORPUS PROMISE, IN ITS STRICT FORM (B4-Q3):
@@ -222,9 +223,9 @@ DiffCheck ParseDiffArtifact(Slice image, DiffArtifact* out);
 // THE CORPUS GATE. An artifact kept as a corpus entry must have been judged, or
 // it cannot reproduce a finding -- B4-Q3's strict form. Separate from the
 // parser because it is a rule about what a CORPUS holds, not about what the
-// format admits. There is no corpus in this repository for it to gate; the
-// rule and its tests are kept because the format still admits the unjudged
-// state they are about.
+// format admits. The corpus it gates is test/fixtures/differential/, which
+// carries `legal-unjudged.diff` precisely so that this rule has something to
+// refuse.
 DiffCheck RequireJudged(const DiffArtifact& a);
 
 }  // namespace rig
