@@ -136,15 +136,40 @@ jobs:
           echo "sha=$base" >> "$GITHUB_OUTPUT"
           echo "comparing against $base"
 
+      # The version is printed because it is a real variable: clang-format
+      # output differs between major releases, so a contributor whose local
+      # version is not this one can be told to reformat by a lane they cannot
+      # reproduce. Printing it makes that visible in the log instead of
+      # mysterious.
+      - name: clang-format version
+        run: clang-format --version
+
       - name: changed lines satisfy .clang-format
         run: |
+          # THE STATUS IS TAKEN EXPLICITLY, and this is not defensive style.
+          # `git clang-format --diff` exits 1 when it HAS a diff to report.
+          # This step runs under `bash -e`, so assigning its output kills the
+          # step AT THE ASSIGNMENT, before a single echo runs -- the lane goes
+          # red having printed nothing about what it wanted changed. That is
+          # how this lane first failed, and a check that cannot say what it
+          # objects to is one people disable.
+          set +e
           out=$(git clang-format --diff --extensions cc,h \
                   "${{ steps.base.outputs.sha }}" \
-                  -- src include rig cmd test)
-          if [ -z "$out" ] || \
-             [ "$out" = "clang-format did not modify any files" ] || \
-             [ "$out" = "no modified files to format" ]; then
+                  -- src include rig cmd test 2>&1)
+          rc=$?
+          set -e
+
+          # 0 = nothing to change, 1 = a diff to report, anything else = the
+          # tool itself failed and must not be read as a formatting verdict.
+          if [ "$rc" -gt 1 ]; then
+            echo "git clang-format failed with exit $rc:"
+            echo "$out"
+            exit "$rc"
+          fi
+          if [ "$rc" -eq 0 ]; then
             echo "changed lines are clean"
+            echo "$out"
             exit 0
           fi
           echo "$out"

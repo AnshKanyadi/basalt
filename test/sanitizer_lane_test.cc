@@ -121,7 +121,8 @@ static_assert(BASALT_TSAN_ON,
 // something else entirely on the toolchains where it compiles at all.
 #if BASALT_HAS_FEATURE_AVAILABLE
 #if BASALT_HAS_FEATURE(undefined_behavior_sanitizer) != BASALT_UBSAN_CLAIMED
-#error "BASALT_UBSAN_FLAGS_ADDED and -fsanitize=undefined have drifted apart; they are emitted from one add_compile_options() call and must arrive together"
+#error \
+    "BASALT_UBSAN_FLAGS_ADDED and -fsanitize=undefined have drifted apart; they are emitted from one add_compile_options() call and must arrive together"
 #endif
 #endif
 
