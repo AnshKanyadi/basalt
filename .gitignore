@@ -1,9 +1,35 @@
 # Build output
 build/
 build-*/
+
+# PER-LANE BUILD DIRECTORIES. Sixteen of these were committed once -- 135 MB of
+# compiled test binaries in a repository whose entire history otherwise packs to
+# 784 KB -- and they got in because they are named after the lane that produced
+# them and so matched neither `build/` nor `build-*/`.
+#
+# `bl-` IS A PATTERN AND `v-` IS A LIST, AND THE DIFFERENCE IS DELIBERATE. An
+# ignore rule that is too broad fails silently and in the expensive direction:
+# it does not add a file, it SUBTRACTS one, and the day someone adds a source
+# directory the rule happens to match, the file is simply never staged and
+# nothing says so. `bl-` is a prefix nothing else here would want. `v-` is not
+# -- `v2/`, `vendor/`, `version/` all start that way -- so the eight that exist
+# are named and a ninth will have to be named too. Being told to add a line is a
+# better failure than losing a file quietly.
+bl-*/
+/v-clang-address/
+/v-clang-none/
+/v-clang-thread/
+/v-clang-undefined/
+/v-gcc-16-address/
+/v-gcc-16-none/
+/v-gcc-16-thread/
+/v-gcc-16-undefined/
+
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
+CTestTestfile.cmake
+Testing/
 compile_commands.json
 *.a
 *.o
