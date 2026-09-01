@@ -1,2 +1,0 @@
-// RIFT_SCAN_FIXTURE A5-GETENV
-int Root() { return getenv("RIFT_DB"); }

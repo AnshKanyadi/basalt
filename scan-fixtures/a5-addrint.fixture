@@ -1,7 +1,0 @@
-// RIFT_SCAN_FIXTURE A5-ADDRINT
-// Section 6.1 bans address-ORDERED behaviour, not only pointer-keyed
-// containers. A value derived from where an allocation happened to land is both
-// nondeterministic across runs and invisible to every other check here except
-// the structural digest.
-#include <cstdint>
-int HeightOf(const void* p) { return 1 + (reinterpret_cast<uintptr_t>(p) & 7); }

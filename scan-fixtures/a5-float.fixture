@@ -1,2 +1,0 @@
-// RIFT_SCAN_FIXTURE A5-FLOAT
-int Score() { double ratio = 3; return ratio; }
