@@ -54,7 +54,24 @@ elseif(BASALT_SANITIZER STREQUAL "undefined")
   # diagnostic and carries on, the process exits 0, and the lane is green with
   # undefined behaviour in its own log. A lane that reports a defect by writing
   # it down and passing anyway is decoration.
-  add_compile_options(-fsanitize=undefined -fno-sanitize-recover=all
+  #
+  # -DBASALT_UBSAN_FLAGS_ADDED IS IN THIS ARGUMENT LIST ON PURPOSE, and it is
+  # the one place in this file where a -D is not an accident.
+  #
+  # gcc publishes no predefined macro for UBSan that can be relied on --
+  # __SANITIZE_UNDEFINED__ is absent under -fsanitize=undefined on 16.1 as well
+  # as on 13 -- so under gcc 13 the lane's own guard cannot see the sanitizer
+  # and the build system has to be the witness. A witness that can drift from
+  # what it witnesses is worthless, so it is not a separate
+  # add_compile_definitions() a few lines away: it is a token in the SAME list
+  # as -fsanitize=undefined. Removing the flag and leaving the claim means
+  # deleting one word from the middle of this list.
+  #
+  # test/sanitizer_lane_test.cc holds the pair to account on every toolchain
+  # that can see UBSan for itself, so drift here fails the build under clang
+  # and under gcc >= 14 even though gcc 13 cannot catch it.
+  add_compile_options(-fsanitize=undefined -DBASALT_UBSAN_FLAGS_ADDED=1
+                      -fno-sanitize-recover=all
                       -fno-omit-frame-pointer -g)
   add_link_options(-fsanitize=undefined)
   set(BASALT_SANITIZER_DEFINE BASALT_EXPECT_UBSAN=1)

@@ -28,6 +28,26 @@ Exactly one of `BASALT_EXPECT_ASAN`, `BASALT_EXPECT_UBSAN`, `BASALT_EXPECT_TSAN`
 and `BASALT_EXPECT_NO_SANITIZER` is defined per lane; a mismatch fails the build
 rather than the run.
 
+THAT GUARD WAS CLANG-ONLY UNTIL 2026-09-01 AND DID NOT VERIFY THE GCC LANES. It
+probed with `__has_feature`, a clang extension that gcc did not adopt until 14.
+Under the CI compiler (gcc 13.3) the probe fell back to a constant 0, so:
+
+- `cpp-asan`, `cpp-ubsan` and `cpp-tsan` under gcc failed to build from the day
+  the gcc jobs were added — the guard reporting "no sanitizer" for lanes that
+  had one. Those three lanes never ran under gcc.
+- `cpp-test` under gcc passed, and passed VACUOUSLY: its assertion is that no
+  sanitizer is present, and a probe wired to 0 satisfies it without being able
+  to detect one. A gcc build that had silently acquired a sanitizer would not
+  have been caught.
+
+Detection is now per-sanitizer: `__has_feature` on clang, `__SANITIZE_ADDRESS__`
+and `__SANITIZE_THREAD__` on gcc, and for UBSan — which gcc exposes no reliable
+predefined macro for, on 13 or on 16.1 — a `BASALT_UBSAN_FLAGS_ADDED` token
+emitted from inside the same `add_compile_options()` argument list as
+`-fsanitize=undefined`. On any toolchain that can see UBSan for itself, the two
+are required to agree, which fails the build if the define and the flag drift
+apart; gcc 13 cannot run that cross-check.
+
 `cpp-test` builds `basalt_tsan_harness` and does not run it. The harness races
 under a planted defect often enough that running it here would make `cpp-test`
 red for the same reason `cpp-tsan` is, removing the control.
