@@ -27,7 +27,7 @@
 
 #include "crc32c.h"
 
-namespace rift {
+namespace basalt {
 namespace rig {
 namespace {
 
@@ -483,22 +483,18 @@ TEST(DiffArtifact, TheSameContentEncodesToTheSameBytes) {
 // with that encoder -- the question the pair exists to not assume.
 
 std::string ReadFixture(const std::string& name) {
-  // The test binary runs from the build directory; the corpus is at the repo
-  // root. A missing corpus FAILS rather than skipping: a pair whose shared
-  // fixtures are absent is two decoders nobody has compared.
-  const char* candidates[] = {
-      "../../../seeds/differential/format/",
-      "../../seeds/differential/format/",
-      "seeds/differential/format/",
-  };
-  for (const char* dir : candidates) {
-    std::ifstream f(std::string(dir) + name, std::ios::binary);
-    if (!f) continue;
-    std::ostringstream ss;
-    ss << f.rdbuf();
-    return ss.str();
-  }
-  return std::string();
+  // The corpus directory is COMPILED IN rather than guessed from the working
+  // directory: a list of candidate relative paths finds the corpus from some
+  // launch directories and not others, and the ones it misses look exactly
+  // like a corpus that is not there. A missing corpus FAILS rather than
+  // skipping: a pair whose shared fixtures are absent is two decoders nobody
+  // has compared.
+  std::ifstream f(std::string(BASALT_FIXTURE_DIR) + "/differential/" + name,
+                  std::ios::binary);
+  if (!f) return std::string();
+  std::ostringstream ss;
+  ss << f.rdbuf();
+  return ss.str();
 }
 
 // THE VALUES, NOT MERELY THAT THE BYTES PARSE -- and the difference is the
@@ -513,7 +509,7 @@ std::string ReadFixture(const std::string& name) {
 // It is GF-25 in the fixture corpus: an assertion about the OUTCOME where one
 // about the CONTENT was needed.
 //
-// The expected values are from `seeds/differential/format/README.md`'s
+// The expected values are from `test/fixtures/differential/README.md`'s
 // generator -- written in the document's terms, not read back from either
 // decoder.
 TEST(DiffFixtures, TheLegalOnesAreAcceptedAndSayWhatTheDocumentSaysTheySay) {
@@ -596,4 +592,4 @@ TEST(DiffFixtures, TheUnjudgedFixtureFailsTheCorpusGate) {
 
 }  // namespace
 }  // namespace rig
-}  // namespace rift
+}  // namespace basalt
