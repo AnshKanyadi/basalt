@@ -8,13 +8,14 @@ jobs, plus two jobs that are not per-toolchain.
 
 | Lane | Binary | Asserts | Tests |
 |---|---|---|---|
-| `cpp-test` | `basalt_test` | The unit suite with no sanitizer. Asserts at compile time that no sanitizer is present. Also builds `basalt_tsan_harness` without running it. | 377 |
-| `cpp-asan` | `basalt_test` | The unit suite under AddressSanitizer. Asserts at compile time that `__has_feature(address_sanitizer)` holds. | 377 |
-| `cpp-ubsan` | `basalt_test` | The unit suite under UndefinedBehaviorSanitizer, `-fno-sanitize-recover=all`. Asserts at compile time that `__has_feature(undefined_behavior_sanitizer)` holds. | 377 |
+| `cpp-test` | `basalt_test` | The unit suite with no sanitizer. Asserts at compile time that no sanitizer is present. Also builds `basalt_tsan_harness` without running it. | 411 |
+| `cpp-asan` | `basalt_test` | The unit suite under AddressSanitizer. Asserts at compile time that `__has_feature(address_sanitizer)` holds. | 411 |
+| `cpp-ubsan` | `basalt_test` | The unit suite under UndefinedBehaviorSanitizer, `-fno-sanitize-recover=all`. Asserts at compile time that `__has_feature(undefined_behavior_sanitizer)` holds. | 411 |
 | `cpp-tsan` | `basalt_tsan_harness` | Concurrent writer and syncer across a flush, under ThreadSanitizer. Asserts at compile time that `__has_feature(thread_sanitizer)` holds. | 3 |
 | `sweep` | `basalt_sweep` | The kill-point sweep, one step per regime. Asserts every kill point recovered to a promised watermark, that both elements of the recovery set were observed, and that the per-call-kind census totals the visit count. Exits non-zero on any of the three. | 305 / 990 / 3545 kill points |
+| `c-abi` | `basalt_c_abi_test` | The C header compiled by a **C** compiler at `-std=c99 -Wall -Wextra -Werror`, calling every function in it. Asserts the header is valid C and every symbol has C linkage in the archive. Run by `ctest`. | 1 binary, 40 checks |
 | `format` | none | `git clang-format --diff` against the merge base, restricted to the line ranges the change touches, over `src include rig cmd test`. | n/a |
-| `library-only` | `libbasalt.a` | Configures with `BASALT_BUILD_TESTS=OFF` and builds the archive alone. Asserts the library builds without GoogleTest and without `test/` or `rig/`. | n/a |
+| `library-only` | `libbasalt.a`, `libbasalt_c.a` | Configures with `BASALT_BUILD_TESTS=OFF` and builds the archives alone. Asserts both the library and the C ABI build without GoogleTest and without `test/` or `rig/`. | n/a |
 
 Inside the 377, four tests (`DiffFixtures`) read the static corpus at
 `test/fixtures/differential/` — 21 artifact images built field by field from the

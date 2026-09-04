@@ -62,6 +62,20 @@ jobs:
             targets: basalt_test basalt_tsan_harness
             run: basalt_test
             opts: ''
+          # THE C ABI, COMPILED BY A C COMPILER. Everything else in this matrix
+          # is C++, so every assertion any of them makes about
+          # include/basalt/basalt.h is made by a compiler reading it through
+          # `extern "C"` -- which says nothing about whether a C compiler can.
+          # A `//` comment, a default argument, an `enum class`, a bare struct
+          # name: each compiles silently in the lanes above and stops the
+          # header dead in the one language it exists for. Calling every
+          # function additionally proves each symbol has C linkage in the
+          # archive, which is a fact about the build and not about the header.
+          - name: c-abi
+            sanitizer: none
+            targets: basalt_c_abi_test
+            run: basalt_c_abi_test
+            opts: ''
           - name: cpp-asan
             sanitizer: address
             targets: basalt_test
@@ -260,3 +274,8 @@ jobs:
       - run: cmake -S . -B build-lib -DBASALT_BUILD_TESTS=OFF
       - run: cmake --build build-lib -j "$(nproc)"
       - run: test -f build-lib/libbasalt.a
+      # THE C ABI IS PART OF THE LIBRARY AND NOT PART OF THE TEST TREE, so it
+      # must be here too. If it were only ever built by the test configuration,
+      # "basalt ships a C API" would be true of this repository and false of
+      # what an embedder gets.
+      - run: test -f build-lib/libbasalt_c.a
