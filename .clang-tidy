@@ -19,6 +19,12 @@ Checks: >
   modernize-use-override,
   modernize-use-emplace,
   performance-*,
+  # A C ABI enum's underlying type is part of the ABI. Shrinking basalt_status
+  # to uint8_t to save three bytes nobody was spending would change the size of
+  # a value every consumer already compiled against, and this check cannot tell
+  # an ABI boundary from an internal enum. The C++ enums here that WANT to be
+  # small say `: uint8_t` at their declaration, where the decision is visible.
+  -performance-enum-size,
   readability-*,
   -readability-identifier-length,
   -readability-magic-numbers,
@@ -41,3 +47,24 @@ CheckOptions:
     value: _
   - key:   readability-identifier-naming.NamespaceCase
     value: lower_case
+
+  # THE C ABI IS EXEMPT FROM THE C++ NAMING RULES, BECAUSE IT IS NOT C++.
+  #
+  # `basalt_db_open` is not a badly-spelled `BasaltDbOpen`. C libraries are
+  # lower_snake_case with a library prefix, every consumer of a C ABI expects
+  # that spelling, and the prefix is what a flat namespace has instead of a
+  # namespace. Renaming these to satisfy a C++ convention would produce a C API
+  # that no C programmer would recognise.
+  #
+  # AN IGNORE REGEXP RATHER THAN A BLANKET OFF-SWITCH, so the rule still holds
+  # for every other name in the tree and a new C++ function cannot get in by
+  # being spelled like C. The pattern is anchored to the library prefix, which
+  # nothing internal uses.
+  - key:   readability-identifier-naming.FunctionIgnoredRegexp
+    value: '^basalt_[a-z0-9_]+$'
+  - key:   readability-identifier-naming.StructIgnoredRegexp
+    value: '^basalt_[a-z0-9_]+$'
+  - key:   readability-identifier-naming.TypedefIgnoredRegexp
+    value: '^basalt_[a-z0-9_]+$'
+  - key:   readability-identifier-naming.EnumIgnoredRegexp
+    value: '^basalt_[a-z0-9_]+$'

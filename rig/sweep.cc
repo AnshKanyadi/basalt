@@ -11,6 +11,7 @@
 #include "basalt/check.h"
 #include "basalt/db.h"
 #include "durable_mirror.h"
+#include "engine_surface.h"
 #include "test_env.h"
 
 namespace basalt {
@@ -31,7 +32,7 @@ struct Driver {
   // to a positionally-initialised aggregate is a silent reordering waiting to
   // happen -- and `-Wmissing-field-initializers` caught this one, which is the
   // warning doing the job a convention would have had to.
-  DB* db = nullptr;
+  EngineSurface* db = nullptr;
   SubmissionLog log;
   bool alive = true;
   // The Env ordinal at which the current Sync began, so the harness can ask
@@ -41,10 +42,10 @@ struct Driver {
 
   void Put(const std::string& k, const std::string& v) {
     if (!alive) return;
-    WriteBatch b;
-    b.Set(Slice(k), Slice(v));
-    wal::SeqNum s = 0;
-    if (!db->Write(b, &s).ok()) { alive = false; return; }
+    if (db->Put(k, v) != Status::Code::kOk) {
+      alive = false;
+      return;
+    }
     RefChange c;
     c.key = k;
     c.value = v;
@@ -58,25 +59,26 @@ struct Driver {
   // What it changes is the ENGINE'S path -- with a reader holding them, the
   // compaction's input files go on the obsolete list instead of being deleted
   // in place -- and that path is what the sweep is here to visit.
-  std::unique_ptr<Snapshot> snapshot;
   void TakeSnapshot() {
     if (!alive) return;
-    snapshot = db->NewSnapshot();
+    db->TakeSnapshot();
   }
-  void ReleaseSnapshot() {
-    if (snapshot == nullptr) return;
-    (void)snapshot->Close();
-    snapshot.reset();
-  }
+  void ReleaseSnapshot() { db->ReleaseSnapshot(); }
 
   void Sync() {
     if (!alive) return;
     if (env != nullptr) sync_start_ordinal = env->ordinal();
     log.NoteSyncStart();
-    wal::SeqNum mark = 0;
-    const Status s = db->Sync(&mark);
-    if (s.code() == Status::Code::kKilled) { alive = false; return; }
-    if (!s.ok()) { log.NoteSyncFailed(); return; }
+    uint64_t mark = 0;
+    const Status::Code s = db->Sync(&mark);
+    if (s == Status::Code::kKilled) {
+      alive = false;
+      return;
+    }
+    if (s != Status::Code::kOk) {
+      log.NoteSyncFailed();
+      return;
+    }
     log.NoteSyncReturned(static_cast<OracleSeq>(mark));
     log.NoteDurableSeq(static_cast<OracleSeq>(db->DurableSeq()));
   }
@@ -149,16 +151,6 @@ void Workload(Driver* d, SweepRegime regime) {
   d->Sync();
   d->Put("after-the-compaction", "1");
   d->Sync();
-}
-
-std::map<std::string, std::string> ExtractState(const DB& db) {
-  std::map<std::string, std::string> out;
-  std::unique_ptr<Iterator> it = db.NewIter(IterOptions());
-  for (bool ok = it->First(); ok; ok = it->Next()) {
-    out[it->Key().ToString()] = it->Value().ToString();
-  }
-  (void)it->Close();
-  return out;
 }
 
 LedgerFacts FactsFrom(const TestEnvironment& t, bool in_flight,
@@ -264,10 +256,11 @@ wal::Caps CapsFor(SweepRegime r) {
   BASALT_UNREACHABLE("SweepRegime holds a value no enumerator names");
 }
 
-uint64_t WorkloadOrdinalCount(SweepRegime regime) {
+uint64_t WorkloadOrdinalCount(SweepRegime regime, SweepSurface surface) {
   TestEnvironment probe;
-  std::unique_ptr<DB> db;
-  if (!DB::Open(probe.env(), kDir, CapsFor(regime), &db).ok()) return 0;
+  std::unique_ptr<EngineSurface> db = NewSurface(surface);
+  if (db->Open(probe.env(), kDir, CapsFor(regime)) != Status::Code::kOk)
+    return 0;
   Driver d;
   d.db = db.get();
   d.env = &probe;
@@ -275,10 +268,10 @@ uint64_t WorkloadOrdinalCount(SweepRegime regime) {
   return probe.ordinal();
 }
 
-SweepResult RunSweep(SweepRegime regime) {
+SweepResult RunSweep(SweepRegime regime, SweepSurface surface) {
   SweepResult r;
   const wal::Caps caps = CapsFor(regime);
-  const uint64_t n = WorkloadOrdinalCount(regime);
+  const uint64_t n = WorkloadOrdinalCount(regime, surface);
 
   // THREE MODES AT EVERY POINT, and the third was added because measuring the
   // sweep's power showed it was missing.
@@ -318,9 +311,9 @@ SweepResult RunSweep(SweepRegime regime) {
       uint64_t sync_start_ordinal = 0;
       bool opened = false;
       {
-        std::unique_ptr<DB> db;
-        const Status open = DB::Open(t.env(), kDir, caps, &db);
-        if (open.ok()) {
+        std::unique_ptr<EngineSurface> db = NewSurface(surface);
+        const Status::Code open = db->Open(t.env(), kDir, caps);
+        if (open == Status::Code::kOk) {
           opened = true;
           Driver d;
           d.db = db.get();
@@ -328,9 +321,9 @@ SweepResult RunSweep(SweepRegime regime) {
           Workload(&d, regime);
           log = d.log;
           sync_start_ordinal = d.sync_start_ordinal;
-        } else if (!PredicateSatisfied(open.code(), t)) {
+        } else if (!PredicateSatisfied(open, t)) {
           p.outcome = RunOutcome::kContractViolation;
-          p.why = "Open returned " + std::string(CodeName(open.code())) +
+          p.why = "Open returned " + std::string(CodeName(open)) +
                   " with no satisfied harness-side predicate";
         }
       }
@@ -364,19 +357,19 @@ SweepResult RunSweep(SweepRegime regime) {
 
       std::unique_ptr<TestEnvironment> re =
           TestEnvironment::FromImage(t.Image(), testenv::FaultPlan());
-      std::unique_ptr<DB> db;
-      const Status reopen = DB::Open(re->env(), kDir, caps, &db);
-      if (!reopen.ok()) {
+      std::unique_ptr<EngineSurface> db = NewSurface(surface);
+      const Status::Code reopen = db->Open(re->env(), kDir, caps);
+      if (reopen != Status::Code::kOk) {
         p.outcome = RunOutcome::kContractViolation;
-        p.why = "reopen failed: " + reopen.ToString();
+        p.why = "reopen failed: " + std::string(CodeName(reopen));
         r.violation++;
         r.failures.push_back(p);
         continue;
       }
 
-      const RecoveryVerdict v =
-          Adjudicate(log, FactsFrom(t, log.sync_in_flight(), sync_start_ordinal),
-                     ExtractState(*db));
+      const RecoveryVerdict v = Adjudicate(
+          log, FactsFrom(t, log.sync_in_flight(), sync_start_ordinal),
+          db->ExtractState());
       // SECTION 7.5's SUPPRESSION, MECHANICAL. A run with a registry injector
       // enabled cannot be reported as anything but characterization, whatever
       // the verdict says.
@@ -399,10 +392,7 @@ SweepResult RunSweep(SweepRegime regime) {
       // the hidden records already occupy, so they become visible at exactly
       // the moment a real database would have resumed service.
       if (p.outcome == RunOutcome::kContractPass) {
-        WriteBatch cont;
-        cont.Set(Slice("zz"), Slice("9"));
-        wal::SeqNum cs = 0;
-        if (db->Write(cont, &cs).ok()) {
+        if (db->Put("zz", "9") == Status::Code::kOk) {
           std::map<std::string, std::string> expected = log.StateAt(v.seq);
           expected["zz"] = "9";
           // ENOUGH TO CROSS THE FLUSH THRESHOLD, in the regime that has one.
@@ -423,16 +413,13 @@ SweepResult RunSweep(SweepRegime regime) {
               char key[24];
               std::snprintf(key, sizeof key, "zz-fill-%03d", i);
               const std::string k(key);
-              WriteBatch fb;
-              fb.Set(Slice(k), Slice(filler));
-              wal::SeqNum fs = 0;
-              if (!db->Write(fb, &fs).ok()) break;
+              if (db->Put(k, filler) != Status::Code::kOk) break;
               expected[k] = filler;
             }
           }
-          wal::SeqNum cont_mark = 0;
+          uint64_t cont_mark = 0;
           (void)db->Sync(&cont_mark);
-          const std::map<std::string, std::string> after = ExtractState(*db);
+          const std::map<std::string, std::string> after = db->ExtractState();
           if (after != expected) {
             p.outcome = RunOutcome::kContractViolation;
             p.why = "after reopening and resuming service the state diverged: "
@@ -463,12 +450,13 @@ SweepResult RunSweep(SweepRegime regime) {
             const testenv::DurableImage second_image = re->Image();
             std::unique_ptr<TestEnvironment> re2 =
                 TestEnvironment::FromImage(second_image, testenv::FaultPlan());
-            std::unique_ptr<DB> db2;
-            const Status reopen2 = DB::Open(re2->env(), kDir, caps, &db2);
-            if (!reopen2.ok()) {
+            std::unique_ptr<EngineSurface> db2 = NewSurface(surface);
+            const Status::Code reopen2 = db2->Open(re2->env(), kDir, caps);
+            if (reopen2 != Status::Code::kOk) {
               p.outcome = RunOutcome::kContractViolation;
-              p.why = "the second reopen failed: " + reopen2.ToString();
-            } else if (ExtractState(*db2) != expected) {
+              p.why =
+                  "the second reopen failed: " + std::string(CodeName(reopen2));
+            } else if (db2->ExtractState() != expected) {
               p.outcome = RunOutcome::kContractViolation;
               p.why = "after a flush and a second recovery the state diverged: "
                       "records recovery never committed were written to a table, "

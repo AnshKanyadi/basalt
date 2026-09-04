@@ -142,6 +142,25 @@ add_library(basalt STATIC
 )
 add_library(basalt::basalt ALIAS basalt)
 
+# ----------------------------------------------------------------- the C ABI
+#
+# A SEPARATE ARCHIVE, AND THE SEPARATION IS THE POINT. A C++ embedder links
+# `basalt` and pays nothing for a boundary it does not cross; a C embedder links
+# `basalt_c`, which carries `basalt` with it. Folding the boundary into the
+# library would make every consumer carry it and would make "does the C ABI
+# still build on its own?" a question with no target to ask it of.
+#
+# -fno-exceptions REACHES THIS TARGET THROUGH BASALT_CXX_FLAGS, and if it ever
+# stops doing so the file refuses to compile -- src/capi/basalt_c.cc `#error`s
+# when exceptions are enabled. That is deliberately not left to this file to
+# assert: a build-system check confirms the flag is WRITTEN DOWN, and the
+# `#error` confirms it ARRIVED. Those are different failures, and the one that
+# actually miscompiles is the second.
+add_library(basalt_c STATIC src/capi/basalt_c.cc)
+add_library(basalt::basalt_c ALIAS basalt_c)
+target_link_libraries(basalt_c PUBLIC basalt)
+target_compile_options(basalt_c PRIVATE ${BASALT_CXX_FLAGS})
+
 include(GNUInstallDirs)
 
 # GNUInstallDirs IS INCLUDED BEFORE THIS AND NOT AFTER IT. The install interface
@@ -168,7 +187,7 @@ target_compile_options(basalt PRIVATE ${BASALT_CXX_FLAGS})
 # it produces the worst of both: the files land, `find_package(basalt)` finds no
 # config, and the failure is at the consumer's configure step with nothing to
 # point at.
-install(TARGETS basalt EXPORT basaltTargets
+install(TARGETS basalt basalt_c EXPORT basaltTargets
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(DIRECTORY include/basalt DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
@@ -236,6 +255,7 @@ target_compile_options(basalt_testenv PRIVATE ${BASALT_CXX_FLAGS})
 # What the rig uses to decide what a run may be counted as. A separate archive,
 # deliberately: the oracle must not be reachable from the thing it judges.
 add_library(basalt_rig STATIC
+  rig/engine_surface.cc
   rig/run_outcome.cc
   rig/version_model.cc
   rig/drop_check.cc
@@ -252,7 +272,9 @@ add_library(basalt_rig STATIC
   rig/differential_artifact.cc
 )
 target_include_directories(basalt_rig PUBLIC rig PRIVATE ${BASALT_INTERNAL_INCLUDES})
-target_link_libraries(basalt_rig PUBLIC basalt_testenv)
+# basalt_c, because the sweep drives BOTH surfaces: a durability claim that
+# stops at the C boundary has a hole in it. See rig/engine_surface.h.
+target_link_libraries(basalt_rig PUBLIC basalt_testenv basalt_c)
 target_compile_options(basalt_rig PRIVATE ${BASALT_CXX_FLAGS})
 
 # ----------------------------------------------------------------- binaries
@@ -290,15 +312,37 @@ add_executable(basalt_test
   test/differential_artifact_test.cc
   test/rng_test.cc
   test/poller_test.cc
+  test/c_api_test.cc
 )
 # basalt_rig carries basalt_testenv which carries basalt, both PUBLIC-ly;
 # naming any of them again makes the linker warn about a duplicate archive.
-target_link_libraries(basalt_test PRIVATE basalt_rig gtest_main)
+target_link_libraries(basalt_test PRIVATE basalt_rig basalt_c gtest_main)
 target_include_directories(basalt_test PRIVATE ${BASALT_INTERNAL_INCLUDES})
 target_compile_options(basalt_test PRIVATE ${BASALT_CXX_FLAGS})
 target_compile_definitions(basalt_test PRIVATE ${BASALT_SANITIZER_DEFINE}
   BASALT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
 add_test(NAME basalt_test COMMAND basalt_test)
+
+# THE C ABI, COMPILED BY A C COMPILER. Enabling C here rather than at project()
+# keeps the language off every consumer that only wants the library.
+#
+# This target exists because basalt_test cannot replace it: that binary is C++,
+# so every assertion it makes about basalt/basalt.h is made by a compiler
+# reading the header through `extern "C"`. A `//` comment, a default argument,
+# an `enum class`, a bare struct name -- each compiles silently there and stops
+# the header dead in the one language it claims to be written for. Calling every
+# function additionally proves each symbol has C linkage in the archive, which
+# is a fact about the build that no amount of C++ testing reaches.
+enable_language(C)
+add_executable(basalt_c_abi_test test/c_abi_test.c)
+target_link_libraries(basalt_c_abi_test PRIVATE basalt_c)
+# -Wall -Wextra -Werror, and NOT ${BASALT_CXX_FLAGS}: that list carries
+# -fno-exceptions and -fno-rtti, which a C compiler either rejects or warns
+# about. The warnings that matter here are the ones that apply to C.
+target_compile_options(basalt_c_abi_test PRIVATE -Wall -Wextra -Werror)
+set_target_properties(basalt_c_abi_test PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON
+                                                   C_EXTENSIONS OFF)
+add_test(NAME basalt_c_abi_test COMMAND basalt_c_abi_test)
 
 # The thread lane runs THIS and not the unit suite: the unit suite is
 # single-threaded, so a green run of it under TSan proves nothing.

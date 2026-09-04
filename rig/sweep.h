@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "basalt/caps.h"
+#include "engine_surface.h"
 #include "exactness_oracle.h"
 #include "run_outcome.h"
 
@@ -100,13 +101,21 @@ enum class SweepRegime : uint8_t { kDefault, kFlush, kCompact };
 const char* SweepRegimeName(SweepRegime r);
 wal::Caps CapsFor(SweepRegime r);
 
-// Runs the full sweep over the fixed workload for one regime. Deterministic:
-// same binary, same regime, same result, every time.
-SweepResult RunSweep(SweepRegime regime);
+// Runs the full sweep over the fixed workload for one regime, driving one
+// SURFACE. Deterministic: same binary, same regime, same surface, same result,
+// every time.
+//
+// THE SURFACE IS A SEPARATE AXIS FROM THE REGIME, AND ITS NUMBERS DO NOT
+// AGGREGATE WITH THE OTHER SURFACE'S ANY MORE THAN TWO REGIMES' DO. The C
+// surface runs more code to reach the same Env calls -- it creates the
+// directory on open, for one -- so its ordinal space is its own. A count from
+// one compared against a floor from the other would be section 8.4's forbidden
+// aggregation wearing a new hat.
+SweepResult RunSweep(SweepRegime regime, SweepSurface surface);
 
-// How many Env calls the workload makes in this regime, discovered by running
-// it once with no faults. The sweep's upper bound.
-uint64_t WorkloadOrdinalCount(SweepRegime regime);
+// How many Env calls the workload makes in this regime through this surface,
+// discovered by running it once with no faults. The sweep's upper bound.
+uint64_t WorkloadOrdinalCount(SweepRegime regime, SweepSurface surface);
 
 }  // namespace rig
 }  // namespace basalt

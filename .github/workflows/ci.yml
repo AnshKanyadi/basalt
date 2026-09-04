@@ -62,6 +62,20 @@ jobs:
             targets: basalt_test basalt_tsan_harness
             run: basalt_test
             opts: ''
+          # THE C ABI, COMPILED BY A C COMPILER. Everything else in this matrix
+          # is C++, so every assertion any of them makes about
+          # include/basalt/basalt.h is made by a compiler reading it through
+          # `extern "C"` -- which says nothing about whether a C compiler can.
+          # A `//` comment, a default argument, an `enum class`, a bare struct
+          # name: each compiles silently in the lanes above and stops the
+          # header dead in the one language it exists for. Calling every
+          # function additionally proves each symbol has C linkage in the
+          # archive, which is a fact about the build and not about the header.
+          - name: c-abi
+            sanitizer: none
+            targets: basalt_c_abi_test
+            run: basalt_c_abi_test
+            opts: ''
           - name: cpp-asan
             sanitizer: address
             targets: basalt_test
@@ -163,13 +177,37 @@ jobs:
       # violation, on a recovery set that has degenerated to one element, and on
       # a census that disagrees with the visit count.
       - name: sweep, default regime
-        run: ./build/basalt_sweep default
+        run: ./build/basalt_sweep default cxx
 
       - name: sweep, flush regime
-        run: ./build/basalt_sweep flush
+        run: ./build/basalt_sweep flush cxx
 
       - name: sweep, compact regime
-        run: ./build/basalt_sweep compact
+        run: ./build/basalt_sweep compact cxx
+
+      # AND THE SAME THREE THROUGH THE C BOUNDARY, BECAUSE A DURABILITY CLAIM
+      # THAT STOPS AT THE C BOUNDARY HAS A HOLE IN IT.
+      #
+      # Everything above sweeps basalt::DB. Every embedder that is not written
+      # in C++ reaches the same Env calls through basalt/basalt.h, running a
+      # boundary that copies, handles that own, and an iterator that holds a
+      # pair back when a buffer is short -- none of which the three lanes above
+      # touch, and all of which is on the path that embedder's data takes.
+      #
+      # THE COUNTS DIFFER FROM THE cxx LANES ON PURPOSE, and by an amount that
+      # is accounted for rather than tolerated: exactly five points per regime,
+      # which is one ordinal (the CreateDir the C open performs) at five modes.
+      # They are separate invocations because the two ordinal spaces are
+      # different and their numbers must never be pooled -- section 8.4's rule
+      # about regimes, applied to the other axis.
+      - name: sweep through the C ABI, default regime
+        run: ./build/basalt_sweep default c
+
+      - name: sweep through the C ABI, flush regime
+        run: ./build/basalt_sweep flush c
+
+      - name: sweep through the C ABI, compact regime
+        run: ./build/basalt_sweep compact c
 
   # FORMAT IS CHECKED ON THE LINES A CHANGE TOUCHES, NEVER ON THE FILE.
   #
@@ -260,3 +298,8 @@ jobs:
       - run: cmake -S . -B build-lib -DBASALT_BUILD_TESTS=OFF
       - run: cmake --build build-lib -j "$(nproc)"
       - run: test -f build-lib/libbasalt.a
+      # THE C ABI IS PART OF THE LIBRARY AND NOT PART OF THE TEST TREE, so it
+      # must be here too. If it were only ever built by the test configuration,
+      # "basalt ships a C API" would be true of this repository and false of
+      # what an embedder gets.
+      - run: test -f build-lib/libbasalt_c.a
