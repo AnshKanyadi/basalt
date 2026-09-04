@@ -200,6 +200,20 @@ basalt_env* BorrowEnv(Env* env) {
 
 extern "C" {
 
+const char* basalt_version_string(void) {
+  // THE STRING IS BUILT FROM THE MACROS AND NOT WRITTEN OUT AGAIN. Two places
+  // spelling one version is two places to update and one place to forget, and
+  // the failure is a library that reports a version it is not.
+#define BASALT_STR2(x) #x
+#define BASALT_STR(x) BASALT_STR2(x)
+  return BASALT_STR(BASALT_VERSION_MAJOR) "." BASALT_STR(
+      BASALT_VERSION_MINOR) "." BASALT_STR(BASALT_VERSION_PATCH);
+#undef BASALT_STR
+#undef BASALT_STR2
+}
+
+int basalt_version_number(void) { return BASALT_VERSION_NUMBER; }
+
 const char* basalt_status_name(int status) {
   // A switch over the INT, so an out-of-range value is an ordinary integer this
   // function declines to name rather than a value it was undefined to receive.

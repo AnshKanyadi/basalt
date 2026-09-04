@@ -113,6 +113,28 @@ std::map<std::string, std::string> Drain(basalt_iter* it, std::size_t n,
   return out;
 }
 
+// ------------------------------------------------------------------- version
+
+TEST(CApi, TheLinkedVersionMatchesTheCompiledOne) {
+  // WHAT THE MACROS AND THE FUNCTION ARE FOR, exercised together. In this
+  // binary they trivially agree -- header and archive are built from one tree.
+  // The assertion is not for this binary: it documents the comparison a
+  // consumer makes to catch a stale shared object, and it fails here if the
+  // function ever stops deriving its answer from the macros.
+  EXPECT_EQ(BASALT_VERSION_NUMBER, basalt_version_number());
+  ASSERT_NE(nullptr, basalt_version_string());
+
+  char expected[32];
+  std::snprintf(expected, sizeof expected, "%d.%d.%d", BASALT_VERSION_MAJOR,
+                BASALT_VERSION_MINOR, BASALT_VERSION_PATCH);
+  EXPECT_STREQ(expected, basalt_version_string());
+
+  // Pre-1.0 is a claim this library is currently making on purpose. When it
+  // stops being true, this line is where somebody is asked to think about it.
+  EXPECT_EQ(0, BASALT_VERSION_MAJOR)
+      << "past 1.0.0 the compatibility promise changes; see CMakeLists.txt";
+}
+
 // -------------------------------------------------------------------- status
 
 TEST(CApi, EveryStatusCodeHasAName) {

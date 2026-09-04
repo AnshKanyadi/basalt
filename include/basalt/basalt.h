@@ -29,6 +29,28 @@
  * would actually be miscompiled.
  *
  * ===========================================================================
+ * LINKING. With CMake:
+ *
+ *     find_package(basalt 0.1 REQUIRED)
+ *     target_link_libraries(you PRIVATE basalt::basalt_c)
+ *
+ * and nothing else -- not an include path, not a C++ runtime. examples/
+ * c_consumer is exactly that, built from an installed prefix by CI.
+ *
+ * WITHOUT CMake, YOU MUST LINK THE C++ RUNTIME YOURSELF, and this is the one
+ * thing about this library a C consumer cannot infer:
+ *
+ *     cc your.c -lbasalt_c -lbasalt -lc++      # libc++  (Apple, clang)
+ *     cc your.c -lbasalt_c -lbasalt -lstdc++   # libstdc++ (typical Linux gcc)
+ *
+ * The archives are C++ objects. A C compiler driver has no reason to add a C++
+ * runtime, so without one of those flags the link ends in several hundred
+ * undefined `std::` symbols. Which name is right depends on the standard
+ * library the archive was BUILT against, not on your compiler -- so if you do
+ * not know, ask the build that produced it rather than guessing. The CMake
+ * package carries the answer for you; that is most of what it is for.
+ *
+ * ===========================================================================
  * MEMORY: THE CALLER OWNS EVERY BUFFER, IN BOTH DIRECTIONS.
  *
  *   INTO the library:  (pointer, length), valid for the duration of ONE call.
@@ -122,6 +144,35 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* ----------------------------------------------------------------- version
+ *
+ * 0.1.0. THE LEADING ZERO IS A PROMISE ABOUT PROMISES: under semver, 0.y.z
+ * guarantees nothing across a minor bump, and this API changed in the same
+ * round that gained its first external consumer. A 1.0.0 chosen before anyone
+ * had tried to depend on it would be a compatibility claim with no evidence.
+ *
+ * BOTH A COMPILE-TIME AND A RUN-TIME ANSWER, because they answer different
+ * questions and a library that offers only one of them cannot detect the
+ * mismatch between them. The macros say what the caller COMPILED against; the
+ * function says what it LINKED against. A consumer that cares can compare them
+ * and refuse to run on a library it was not built for -- which is the check
+ * that catches a stale shared object, and no header alone can make it. */
+#define BASALT_VERSION_MAJOR 0
+#define BASALT_VERSION_MINOR 1
+#define BASALT_VERSION_PATCH 0
+
+/* Encoded as MAJOR*10000 + MINOR*100 + PATCH, so versions compare with <. */
+#define BASALT_VERSION_NUMBER                                  \
+  (BASALT_VERSION_MAJOR * 10000 + BASALT_VERSION_MINOR * 100 + \
+   BASALT_VERSION_PATCH)
+
+/* The version of the library actually linked. Never NULL. */
+const char* basalt_version_string(void);
+
+/* The same, encoded as BASALT_VERSION_NUMBER is. Compare against that macro to
+ * detect a header and an archive that disagree. */
+int basalt_version_number(void);
 
 /* ------------------------------------------------------------------ status
  *

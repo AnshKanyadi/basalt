@@ -65,6 +65,10 @@ int main(void) {
 
   printf("basalt C ABI: compiled by a C compiler\n");
 
+  /* --- version ------------------------------------------------------ */
+  check(basalt_version_number() == BASALT_VERSION_NUMBER, "version number");
+  check(basalt_version_string() != NULL, "version string");
+
   /* --- status names ------------------------------------------------- */
   check(strcmp(basalt_status_name(BASALT_OK), "BASALT_OK") == 0,
         "status name of OK");

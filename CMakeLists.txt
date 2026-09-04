@@ -9,7 +9,15 @@
 # most, which is a stranger checking our work. GoogleTest is vendored whole at
 # third_party/googletest; see its VERSION file for the pin.
 cmake_minimum_required(VERSION 3.16)
-project(basalt CXX)
+
+# 0.1.0, AND THE LEADING ZERO IS THE HONEST PART. Something depends on this
+# library now, so it needs a number; but the C ABI was added and reshaped in the
+# same round that added the first external consumer, and the consumer's own
+# adaptation may yet ask for more. Under semver, 0.y.z says exactly that: the
+# public API may change in any release until 1.0.0. A 1.0.0 chosen on the day
+# the first consumer arrived would be a compatibility promise made before anyone
+# had tried to keep it.
+project(basalt VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -30,6 +38,38 @@ endif()
 option(BASALT_BUILD_TESTS "Build the test suite, the rig and the tools" ${BASALT_IS_TOP_LEVEL})
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+# ------------------------------------------------- one version, two spellings
+#
+# The version now exists in two places that cannot be derived from each other:
+# project() above, which CMake exports to consumers through
+# basaltConfigVersion.cmake, and the BASALT_VERSION_* macros in
+# include/basalt/basalt.h, which a C consumer compiles against.
+#
+# NEITHER CAN BE GENERATED FROM THE OTHER WITHOUT MAKING THINGS WORSE. Writing
+# the header from CMake would mean the C ABI's own header is not in the
+# repository, so reading the source no longer tells you the version and a
+# consumer building without CMake has nothing. Parsing the header to set
+# project() would put a regex in front of every configure.
+#
+# So they are two sources of truth for one fact, which is the shape this tree
+# treats as a defect everywhere else -- and the answer is the same one used for
+# Status::Code and the C enum: let them be two, and make disagreement fail
+# LOUDLY AND EARLY rather than silently. A configure error names both numbers;
+# a library reporting a version it is not would be found by whoever it misled.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/basalt.h" _basalt_hdr)
+string(REGEX MATCH "#define BASALT_VERSION_MAJOR ([0-9]+)" _m "${_basalt_hdr}")
+set(_h_major "${CMAKE_MATCH_1}")
+string(REGEX MATCH "#define BASALT_VERSION_MINOR ([0-9]+)" _m "${_basalt_hdr}")
+set(_h_minor "${CMAKE_MATCH_1}")
+string(REGEX MATCH "#define BASALT_VERSION_PATCH ([0-9]+)" _m "${_basalt_hdr}")
+set(_h_patch "${CMAKE_MATCH_1}")
+if(NOT "${_h_major}.${_h_minor}.${_h_patch}" STREQUAL "${PROJECT_VERSION}")
+  message(FATAL_ERROR
+    "version drift: include/basalt/basalt.h says ${_h_major}.${_h_minor}.${_h_patch}, "
+    "project() says ${PROJECT_VERSION}. They describe one release; change both.")
+endif()
+unset(_basalt_hdr)
 
 # ------------------------------------------------------------------- lanes
 #
@@ -142,6 +182,31 @@ add_library(basalt STATIC
 )
 add_library(basalt::basalt ALIAS basalt)
 
+# THE C++ RUNTIME IS PART OF WHAT LINKING THIS LIBRARY REQUIRES, AND A C
+# CONSUMER HAS NO WAY TO GUESS THAT.
+#
+# `basalt` is a static archive of C++ objects. A C++ executable links it and the
+# compiler driver supplies libc++ or libstdc++ without being asked. A C
+# executable links it and gets several hundred undefined symbols -- every
+# std::string method, every vtable -- because a C driver has no reason to add a
+# C++ runtime.
+#
+# CMake DOES record `IMPORTED_LINK_INTERFACE_LANGUAGES CXX` in the export, and
+# on this toolchain that was not enough: a C consumer of the installed package
+# failed to link even with a matching build type. So the requirement is stated
+# outright rather than left to a property whose handling varies. It is taken
+# from CMAKE_CXX_IMPLICIT_LINK_LIBRARIES -- what the compiler that built this
+# archive links implicitly -- rather than from a hardcoded name, because the
+# right name is `c++` under libc++ and `stdc++` under libstdc++, and a library
+# that guesses gets it wrong on somebody's platform.
+#
+# THIS IS THE FIRST THING THE SECOND CONSUMER FOUND. The first consumer hid it
+# by writing `-lstdc++` into its own source. That works on glibc++ targets and
+# works on Apple only because the driver aliases the name to libc++; it is the
+# consumer patching a gap in the library's packaging, in a place where the next
+# consumer cannot see it and will not think to look.
+target_link_libraries(basalt INTERFACE ${CMAKE_CXX_IMPLICIT_LINK_LIBRARIES})
+
 # ----------------------------------------------------------------- the C ABI
 #
 # A SEPARATE ARCHIVE, AND THE SEPARATION IS THE POINT. A C++ embedder links
@@ -210,13 +275,28 @@ configure_package_config_file(
   "${CMAKE_CURRENT_BINARY_DIR}/basaltConfig.cmake"
   INSTALL_DESTINATION ${BASALT_CMAKE_CONFIG_DIR})
 
-# NO basaltConfigVersion.cmake, DELIBERATELY. `project()` above declares no
-# VERSION, so there is no version to write down, and a version file carrying a
-# number nobody chose would answer `find_package(basalt 3.0)` with a confident
-# wrong answer. Without one, an unversioned `find_package(basalt)` works and a
-# versioned request fails loudly. Give the project a VERSION and this becomes a
-# write_basic_package_version_file() call and an install(FILES) line.
+# THE VERSION FILE THIS BUILD DELIBERATELY OMITTED UNTIL THERE WAS A NUMBER.
+#
+# It used to say: `project()` declares no VERSION, so there is nothing to write
+# down, and a version file carrying a number nobody chose would answer
+# `find_package(basalt 3.0)` with a confident wrong answer. That was right while
+# it was true. Somebody has now chosen 0.1.0, so the omission's own instructions
+# apply -- a write_basic_package_version_file() call and an install(FILES) line.
+#
+# SameMinorVersion, NOT SameMajorVersion, AND BELOW 1.0.0 THAT IS THE WHOLE
+# POINT. Semver gives 0.y.z no compatibility guarantee across a minor bump: 0.2
+# may break everything 0.1 promised. SameMajorVersion would make every 0.x
+# satisfy `find_package(basalt 0.1)`, which is CMake cheerfully asserting the
+# one thing a leading zero exists to deny. Under SameMinorVersion a consumer
+# pinned to 0.1 is told when it is handed 0.2, which is the truth.
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file(
+  "${CMAKE_CURRENT_BINARY_DIR}/basaltConfigVersion.cmake"
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY SameMinorVersion)
+
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/basaltConfig.cmake"
+              "${CMAKE_CURRENT_BINARY_DIR}/basaltConfigVersion.cmake"
         DESTINATION ${BASALT_CMAKE_CONFIG_DIR})
 
 if(NOT BASALT_BUILD_TESTS)

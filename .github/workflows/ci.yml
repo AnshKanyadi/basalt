@@ -287,6 +287,58 @@ jobs:
           echo "Run: git clang-format ${{ steps.base.outputs.sha }}"
           exit 1
 
+  # THE INSTALLED PACKAGE, CONSUMED FROM C BY A PROJECT THAT KNOWS NO C++.
+  #
+  # Every other job in this file builds targets that live in this build. That is
+  # a different thing from what an embedder does, and the difference is not
+  # cosmetic: an in-tree target inherits include paths, compile options and link
+  # languages from the build that defines it, and an installed one carries only
+  # what the export wrote down. Everything the export forgot works here and
+  # fails there.
+  #
+  # THIS JOB EXISTS BECAUSE ITS FIRST RUN FAILED. `basalt` is a static archive
+  # of C++ objects; a C executable linking it got several hundred undefined
+  # std:: symbols, because a C compiler driver has no reason to add a C++
+  # runtime and the export did not say one was needed. The library's first
+  # consumer had hidden that by writing `-lstdc++` into its own source.
+  #
+  # It also exercises basaltConfigVersion.cmake, which no other job touches: the
+  # consumer asks for `0.1` rather than for nothing at all, so a version file
+  # that was wrong would fail here rather than being installed and never read.
+  installed-c-consumer:
+    name: installed package, consumed from C
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build and install the library
+        run: |
+          cmake -S . -B build-inst -DBASALT_BUILD_TESTS=OFF \
+                -DCMAKE_INSTALL_PREFIX="$PWD/prefix"
+          cmake --build build-inst -j "$(nproc)"
+          cmake --install build-inst
+      - name: the package installed a version file
+        run: test -f prefix/lib/cmake/basalt/basaltConfigVersion.cmake
+      - name: configure and build the C consumer against the prefix
+        run: |
+          cmake -S examples/c_consumer -B build-consumer \
+                -DCMAKE_PREFIX_PATH="$PWD/prefix"
+          cmake --build build-consumer -j "$(nproc)"
+      - name: run it
+        run: ./build-consumer/basalt_c_consumer
+      # A VERSION THIS RELEASE CANNOT SATISFY MUST BE REFUSED, and refusal is
+      # the half of a version file that is easy to install broken: an
+      # always-compatible one passes every job above without complaint.
+      - name: a newer minor version is refused
+        run: |
+          sed -i 's/find_package(basalt 0.1 REQUIRED)/find_package(basalt 0.2 REQUIRED)/' \
+              examples/c_consumer/CMakeLists.txt
+          if cmake -S examples/c_consumer -B build-reject \
+                   -DCMAKE_PREFIX_PATH="$PWD/prefix" >/dev/null 2>&1; then
+            echo "find_package(basalt 0.2) was ACCEPTED by a 0.1.0 install"
+            exit 1
+          fi
+          echo "0.2 correctly refused by a 0.1.0 install"
+
   # The library alone, with BASALT_BUILD_TESTS off: the configuration an
   # embedder gets from add_subdirectory. It must not need GoogleTest, and it
   # must not need anything under test/ or rig/.

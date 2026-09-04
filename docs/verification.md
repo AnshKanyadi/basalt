@@ -17,6 +17,26 @@ steps across three sweep jobs, plus two jobs that are not per-toolchain.
 | `c-abi` | `basalt_c_abi_test` | The C header compiled by a **C** compiler at `-std=c99 -Wall -Wextra -Werror`, calling every function in it. Asserts the header is valid C and every symbol has C linkage in the archive. Run by `ctest`. | 1 binary, 40 checks |
 | `format` | none | `git clang-format --diff` against the merge base, restricted to the line ranges the change touches, over `src include rig cmd test`. | n/a |
 | `library-only` | `libbasalt.a`, `libbasalt_c.a` | Configures with `BASALT_BUILD_TESTS=OFF` and builds the archives alone. Asserts both the library and the C ABI build without GoogleTest and without `test/` or `rig/`. | n/a |
+| `installed-c-consumer` | `examples/c_consumer` | Installs to a prefix, then configures a **C** project against it with `find_package(basalt 0.1 REQUIRED)` and links `basalt::basalt_c` alone. Asserts the export carries everything a consumer needs, and that `find_package(basalt 0.2)` is refused. | 1 binary |
+
+### What the installed-consumer job caught, and why nothing else could
+
+Every other job builds targets defined in the same build, which inherit include
+paths, compile options and link languages from the build that defines them. An
+installed target carries only what the export wrote down, so **everything the
+export forgot works in-tree and fails for an embedder.**
+
+The first run of this job failed. `basalt` is a static archive of C++ objects; a
+C executable linking it got several hundred undefined `std::` symbols, because a
+C compiler driver has no reason to add a C++ runtime and
+`IMPORTED_LINK_INTERFACE_LANGUAGES CXX` — which CMake does record — was not
+enough on the tested toolchain even with a matching build type. The library's
+first consumer had hidden it by writing `-lstdc++` into its own source, which
+works under libstdc++ and works on Apple only because the driver aliases the
+name to libc++.
+
+`CMakeLists.txt` now states the requirement outright, taken from
+`CMAKE_CXX_IMPLICIT_LINK_LIBRARIES` rather than from a hardcoded name.
 
 ### The sweep runs both surfaces, and that is the point
 
