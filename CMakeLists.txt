@@ -17,7 +17,7 @@ cmake_minimum_required(VERSION 3.16)
 # public API may change in any release until 1.0.0. A 1.0.0 chosen on the day
 # the first consumer arrived would be a compatibility promise made before anyone
 # had tried to keep it.
-project(basalt VERSION 0.1.0 LANGUAGES CXX)
+project(basalt VERSION 0.1.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -350,6 +350,7 @@ add_library(basalt_rig STATIC
   rig/sweep.cc
   rig/amplification.cc
   rig/differential_artifact.cc
+  rig/differential_driver.cc
 )
 target_include_directories(basalt_rig PUBLIC rig PRIVATE ${BASALT_INTERNAL_INCLUDES})
 # basalt_c, because the sweep drives BOTH surfaces: a durability claim that
@@ -390,6 +391,7 @@ add_executable(basalt_test
   test/db_compaction_test.cc
   test/amplification_test.cc
   test/differential_artifact_test.cc
+  test/differential_driver_test.cc
   test/rng_test.cc
   test/poller_test.cc
   test/c_api_test.cc
@@ -441,6 +443,25 @@ target_include_directories(basalt_sweep PRIVATE ${BASALT_INTERNAL_INCLUDES})
 target_compile_options(basalt_sweep PRIVATE ${BASALT_CXX_FLAGS})
 
 
+
+# THE DIFFERENTIAL DRIVER'S TOOL.
+#
+# It runs a seeded workload, kills at a chosen Env ordinal, reopens, and writes
+# an ARTIFACT. It reaches no verdict: the judge is a separate process in a
+# different language, and this side cannot compute what the model would have
+# held.
+#
+# WHY IT IS BACK. The artifact FORMAT stayed with this library through the
+# split -- rig/differential_artifact.cc and the 21-image corpus under
+# test/fixtures/differential -- and the WRITER did not. That left an encoder
+# with nothing to encode and a corpus pinning a format nothing produced. The
+# driver needs test_env.h and differential_artifact.h, both of which are
+# rig-private, so a consumer cannot supply it from outside; this is the only
+# place it can live.
+add_executable(basalt_diff cmd/diff_main.cc)
+target_link_libraries(basalt_diff PRIVATE basalt_rig)
+target_include_directories(basalt_diff PRIVATE ${BASALT_INTERNAL_INCLUDES})
+target_compile_options(basalt_diff PRIVATE ${BASALT_CXX_FLAGS})
 
 add_executable(basalt_amp cmd/amp_main.cc)
 target_link_libraries(basalt_amp PRIVATE basalt_rig)

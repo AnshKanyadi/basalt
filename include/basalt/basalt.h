@@ -160,7 +160,7 @@ extern "C" {
  * that catches a stale shared object, and no header alone can make it. */
 #define BASALT_VERSION_MAJOR 0
 #define BASALT_VERSION_MINOR 1
-#define BASALT_VERSION_PATCH 0
+#define BASALT_VERSION_PATCH 1
 
 /* Encoded as MAJOR*10000 + MINOR*100 + PATCH, so versions compare with <. */
 #define BASALT_VERSION_NUMBER                                  \

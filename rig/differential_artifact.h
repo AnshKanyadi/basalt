@@ -47,6 +47,23 @@
 namespace basalt {
 namespace rig {
 
+// THE MAGIC SAYS `RIFTDIF` AND MUST GO ON SAYING IT. DO NOT "FIX" THIS.
+//
+// It is not a leftover from the extraction. It is a FROZEN WIRE FORMAT with
+// three independent implementations pinned to it:
+//
+//   * this encoder and decoder;
+//   * a SECOND decoder, in Go, in the consumer that judges these artifacts --
+//     written from the format document and never from this code, because
+//     byte-for-byte agreement is the thing under test and so cannot be the
+//     thing assumed;
+//   * 21 hand-built images under test/fixtures/differential, produced by
+//     neither encoder, which both decoders are checked against.
+//
+// Renaming these eight bytes to match this library's name would invalidate all
+// 21 committed fixtures and every artifact anyone has kept, in exchange for a
+// tidier-looking constant. A format's name is a fact about the bytes, not about
+// whose repository the writer currently lives in.
 inline constexpr char kDiffMagic[8] = {'R', 'I', 'F', 'T', 'D', 'I', 'F', '\0'};
 inline constexpr uint32_t kDiffFormatVersion = 1;
 
