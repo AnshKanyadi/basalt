@@ -3,8 +3,8 @@
 ## Lanes that run in CI
 
 Every lane runs on three toolchains: ubuntu-latest with clang, ubuntu-latest
-with gcc, and macos-latest with clang. Twelve sanitizer jobs and three sweep
-jobs, plus two jobs that are not per-toolchain.
+with gcc, and macos-latest with clang. Twelve sanitizer jobs and six sweep
+steps across three sweep jobs, plus two jobs that are not per-toolchain.
 
 | Lane | Binary | Asserts | Tests |
 |---|---|---|---|
@@ -12,10 +12,34 @@ jobs, plus two jobs that are not per-toolchain.
 | `cpp-asan` | `basalt_test` | The unit suite under AddressSanitizer. Asserts at compile time that `__has_feature(address_sanitizer)` holds. | 411 |
 | `cpp-ubsan` | `basalt_test` | The unit suite under UndefinedBehaviorSanitizer, `-fno-sanitize-recover=all`. Asserts at compile time that `__has_feature(undefined_behavior_sanitizer)` holds. | 411 |
 | `cpp-tsan` | `basalt_tsan_harness` | Concurrent writer and syncer across a flush, under ThreadSanitizer. Asserts at compile time that `__has_feature(thread_sanitizer)` holds. | 3 |
-| `sweep` | `basalt_sweep` | The kill-point sweep, one step per regime. Asserts every kill point recovered to a promised watermark, that both elements of the recovery set were observed, and that the per-call-kind census totals the visit count. Exits non-zero on any of the three. | 305 / 990 / 3545 kill points |
+| `sweep` (cxx) | `basalt_sweep` | The kill-point sweep over `basalt::DB`, one step per regime. Asserts every kill point recovered to a promised watermark, that both elements of the recovery set were observed, and that the per-call-kind census totals the visit count. Exits non-zero on any of the three. | 305 / 990 / 3545 kill points |
+| `sweep` (c) | `basalt_sweep` | The same three regimes driven through `basalt/basalt.h`. | 310 / 995 / 3550 kill points |
 | `c-abi` | `basalt_c_abi_test` | The C header compiled by a **C** compiler at `-std=c99 -Wall -Wextra -Werror`, calling every function in it. Asserts the header is valid C and every symbol has C linkage in the archive. Run by `ctest`. | 1 binary, 40 checks |
 | `format` | none | `git clang-format --diff` against the merge base, restricted to the line ranges the change touches, over `src include rig cmd test`. | n/a |
 | `library-only` | `libbasalt.a`, `libbasalt_c.a` | Configures with `BASALT_BUILD_TESTS=OFF` and builds the archives alone. Asserts both the library and the C ABI build without GoogleTest and without `test/` or `rig/`. | n/a |
+
+### The sweep runs both surfaces, and that is the point
+
+The sweep is the check behind this library's durability claim. Run against
+`basalt::DB` it is evidence about `basalt::DB`. Every embedder that is not
+written in C++ reaches the same Env calls through `basalt/basalt.h`, running a
+boundary that copies, handles that own, and an iterator that holds a pair back
+when a buffer is short — none of which a sweep calling `DB::Write` directly
+touches, and all of which is on the path that embedder's data takes.
+
+**A durability claim that stops at the C boundary has a hole in it.** So
+`rig/engine_surface.h` parameterises the sweep over the surface and CI runs
+both.
+
+The counts differ by exactly five per regime, and the difference is accounted
+for rather than tolerated: one ordinal — the `CreateDir` the C open performs —
+at five modes. `kEnvCreateDir` appears in the C census and in no `cxx` census,
+which means the C surface visits five kill points the C++ surface cannot reach,
+inside directory creation, and recovers from all of them.
+
+The two ordinal spaces are different, so their numbers never aggregate — §8.4's
+rule about regimes, applied to the other axis. The surface is named in the
+machine-readable `SWEEP` line for that reason and not only in the heading.
 
 Inside the 377, four tests (`DiffFixtures`) read the static corpus at
 `test/fixtures/differential/` — 21 artifact images built field by field from the

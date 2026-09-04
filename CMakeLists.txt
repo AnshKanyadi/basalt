@@ -255,6 +255,7 @@ target_compile_options(basalt_testenv PRIVATE ${BASALT_CXX_FLAGS})
 # What the rig uses to decide what a run may be counted as. A separate archive,
 # deliberately: the oracle must not be reachable from the thing it judges.
 add_library(basalt_rig STATIC
+  rig/engine_surface.cc
   rig/run_outcome.cc
   rig/version_model.cc
   rig/drop_check.cc
@@ -271,7 +272,9 @@ add_library(basalt_rig STATIC
   rig/differential_artifact.cc
 )
 target_include_directories(basalt_rig PUBLIC rig PRIVATE ${BASALT_INTERNAL_INCLUDES})
-target_link_libraries(basalt_rig PUBLIC basalt_testenv)
+# basalt_c, because the sweep drives BOTH surfaces: a durability claim that
+# stops at the C boundary has a hole in it. See rig/engine_surface.h.
+target_link_libraries(basalt_rig PUBLIC basalt_testenv basalt_c)
 target_compile_options(basalt_rig PRIVATE ${BASALT_CXX_FLAGS})
 
 # ----------------------------------------------------------------- binaries

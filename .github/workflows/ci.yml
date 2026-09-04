@@ -177,13 +177,37 @@ jobs:
       # violation, on a recovery set that has degenerated to one element, and on
       # a census that disagrees with the visit count.
       - name: sweep, default regime
-        run: ./build/basalt_sweep default
+        run: ./build/basalt_sweep default cxx
 
       - name: sweep, flush regime
-        run: ./build/basalt_sweep flush
+        run: ./build/basalt_sweep flush cxx
 
       - name: sweep, compact regime
-        run: ./build/basalt_sweep compact
+        run: ./build/basalt_sweep compact cxx
+
+      # AND THE SAME THREE THROUGH THE C BOUNDARY, BECAUSE A DURABILITY CLAIM
+      # THAT STOPS AT THE C BOUNDARY HAS A HOLE IN IT.
+      #
+      # Everything above sweeps basalt::DB. Every embedder that is not written
+      # in C++ reaches the same Env calls through basalt/basalt.h, running a
+      # boundary that copies, handles that own, and an iterator that holds a
+      # pair back when a buffer is short -- none of which the three lanes above
+      # touch, and all of which is on the path that embedder's data takes.
+      #
+      # THE COUNTS DIFFER FROM THE cxx LANES ON PURPOSE, and by an amount that
+      # is accounted for rather than tolerated: exactly five points per regime,
+      # which is one ordinal (the CreateDir the C open performs) at five modes.
+      # They are separate invocations because the two ordinal spaces are
+      # different and their numbers must never be pooled -- section 8.4's rule
+      # about regimes, applied to the other axis.
+      - name: sweep through the C ABI, default regime
+        run: ./build/basalt_sweep default c
+
+      - name: sweep through the C ABI, flush regime
+        run: ./build/basalt_sweep flush c
+
+      - name: sweep through the C ABI, compact regime
+        run: ./build/basalt_sweep compact c
 
   # FORMAT IS CHECKED ON THE LINES A CHANGE TOUCHES, NEVER ON THE FILE.
   #

@@ -8,14 +8,22 @@
 
 #include "sweep.h"
 
-// usage: basalt_sweep [default|flush]
+// usage: basalt_sweep [default|flush|compact] [cxx|c]
 //
 // ONE REGIME PER INVOCATION, and the regime is named in the output. Section
 // 8.4: numbers from a non-default cap never aggregate with default-cap numbers,
 // so a caller that could not tell which it was reading would be aggregating by
 // accident.
+//
+// ONE SURFACE PER INVOCATION, FOR THE SAME REASON. `cxx` sweeps basalt::DB;
+// `c` sweeps the same workload through basalt/basalt.h, which is the path every
+// non-C++ embedder's data actually takes. The two reach the same Env calls by
+// different amounts of code and so have different ordinal spaces, and their
+// numbers aggregate no more than two regimes' do. The default is `cxx` so that
+// every existing invocation keeps meaning what it meant.
 int main(int argc, char** argv) {
   basalt::rig::SweepRegime regime = basalt::rig::SweepRegime::kDefault;
+  basalt::rig::SweepSurface surface = basalt::rig::SweepSurface::kCxx;
   if (argc > 1) {
     if (std::strcmp(argv[1], "flush") == 0) {
       regime = basalt::rig::SweepRegime::kFlush;
@@ -27,10 +35,20 @@ int main(int argc, char** argv) {
       return 2;
     }
   }
-  const basalt::rig::SweepResult r = basalt::rig::RunSweep(regime);
+  if (argc > 2) {
+    if (std::strcmp(argv[2], "c") == 0) {
+      surface = basalt::rig::SweepSurface::kC;
+    } else if (std::strcmp(argv[2], "cxx") != 0) {
+      std::printf("   FAIL  unknown surface \"%s\"; expected cxx or c\n",
+                  argv[2]);
+      return 2;
+    }
+  }
+  const basalt::rig::SweepResult r = basalt::rig::RunSweep(regime, surface);
 
-  std::printf("\n  kill-point sweep (regime: %s)\n",
-              basalt::rig::SweepRegimeName(regime));
+  std::printf("\n  kill-point sweep (regime: %s, surface: %s)\n",
+              basalt::rig::SweepRegimeName(regime),
+              basalt::rig::SweepSurfaceName(surface));
   std::printf("  ----------------------------------------------------------\n");
   std::printf("   points visited   : %zu\n", r.points_visited);
   std::printf("   pass             : %zu\n", r.pass);
@@ -87,9 +105,15 @@ int main(int argc, char** argv) {
   // cheap sweep would ever see it.
   unsigned long long first = 0;
   if (!r.failures.empty()) first = r.failures.front().ordinal;
-  std::printf("SWEEP regime=%s points=%zu violations=%zu first=%llu\n",
-              basalt::rig::SweepRegimeName(regime), r.points_visited,
-              r.violation, first);
+  // THE SURFACE IS IN THE MACHINE-READABLE LINE, not only in the heading. A
+  // campaign that parsed this line without it would silently pool two ordinal
+  // spaces into one rate -- the aggregation section 8.4 forbids, arriving
+  // through a log format rather than through a decision.
+  std::printf(
+      "SWEEP regime=%s surface=%s points=%zu violations=%zu first=%llu\n",
+      basalt::rig::SweepRegimeName(regime),
+      basalt::rig::SweepSurfaceName(surface), r.points_visited, r.violation,
+      first);
 
   if (rc == 0) std::printf("   ok  every kill point recovered to a promised watermark\n\n");
   else std::printf("\n");

@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "basalt/basalt_cxx.h"
+#include "engine_surface.h"
 #include "test_env.h"
 
 namespace {
@@ -815,6 +816,54 @@ TEST(CApi, BorrowingANullEnvIsRefused) {
   basalt_db* db = nullptr;
   EXPECT_EQ(BASALT_INVALID_ARGUMENT,
             basalt_db_open_env(nullptr, "d", 1, nullptr, &db));
+}
+
+// ----------------------------------------------------------- surface parity
+
+TEST(CApi, TheTwoSurfacesSeeTheSameDatabase) {
+  // WHAT THE SWEEP ASSUMES, ASSERTED DIRECTLY AND CHEAPLY.
+  //
+  // The kill-point sweep runs the same workload through both surfaces and
+  // adjudicates each. That is the strong evidence. But it compares each surface
+  // against the MODEL, never the two against each other -- so a defect that
+  // moved both in the same direction would pass both sweeps.
+  //
+  // This is the direct comparison, and it costs one test. It is also the thing
+  // that fails first and most legibly when the C boundary starts dropping,
+  // reordering or truncating entries: a sweep reports a durability violation at
+  // an ordinal, and this reports which key came back wrong.
+  const std::string kWorkload[][2] = {
+      {"", "the empty key"},
+      {"a", "1"},
+      {"b", ""},
+      {"c", std::string(600, 'x')},  // crosses a block buffer
+      {"d", "4"},
+      {"zz", "26"},
+  };
+
+  std::map<std::string, std::string> seen[2];
+  const basalt::rig::SweepSurface surfaces[2] = {
+      basalt::rig::SweepSurface::kCxx, basalt::rig::SweepSurface::kC};
+  for (int i = 0; i < 2; i++) {
+    basalt::testenv::TestEnvironment t;
+    std::unique_ptr<basalt::rig::EngineSurface> s =
+        basalt::rig::NewSurface(surfaces[i]);
+    ASSERT_EQ(basalt::Status::Code::kOk,
+              s->Open(t.env(), "db", basalt::wal::Caps()))
+        << "surface " << basalt::rig::SweepSurfaceName(surfaces[i]);
+    for (const auto& kv : kWorkload) {
+      ASSERT_EQ(basalt::Status::Code::kOk, s->Put(kv[0], kv[1]));
+    }
+    uint64_t mark = 0;
+    ASSERT_EQ(basalt::Status::Code::kOk, s->Sync(&mark));
+    EXPECT_GT(mark, 0u);
+    seen[i] = s->ExtractState();
+    s->Close();
+  }
+
+  EXPECT_EQ(6u, seen[0].size());
+  EXPECT_EQ(seen[0], seen[1])
+      << "the C boundary returned a different database than the C++ interface";
 }
 
 }  // namespace
