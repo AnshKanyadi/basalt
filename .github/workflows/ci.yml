@@ -209,6 +209,43 @@ jobs:
       - name: sweep through the C ABI, compact regime
         run: ./build/basalt_sweep compact c
 
+  # THE DIFFERENTIAL DRIVER PRODUCES AN ARTIFACT, AND THE FORMAT IS FROZEN.
+  #
+  # `basalt_diff` runs a seeded workload, kills at a chosen Env ordinal, reopens
+  # and writes an artifact. It reaches NO VERDICT -- judging is a separate
+  # process in a different language, and this side cannot compute what a model
+  # would have held. So the most this repository can assert on its own is that
+  # the tool RUNS and that what it writes still parses as the frozen format.
+  #
+  # That is worth a lane anyway. The encoder, the decoder and the 21-image
+  # corpus under test/fixtures/differential are three pinned implementations of
+  # one format, and a driver that silently stopped producing a readable artifact
+  # would leave all three green while the thing they exist for was broken.
+  differential:
+    name: differential driver
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build
+      - run: cmake --build build --target basalt_diff -j "$(nproc)"
+      # ONE CLEAN RUN AND ONE KILLED RUN. A clean run is the control: an engine
+      # that recovers nothing after an orderly close is broken in a way no crash
+      # schedule is needed to find. A killed run is the case the rig exists for.
+      - name: a clean run produces a parseable artifact
+        run: |
+          ./build/basalt_diff flush 1 > clean.diff
+          test -s clean.diff
+          head -c 7 clean.diff | grep -q RIFTDIF
+      - name: a killed run produces a parseable artifact
+        run: |
+          ./build/basalt_diff flush 1 40 > killed.diff
+          test -s killed.diff
+          head -c 7 killed.diff | grep -q RIFTDIF
+      # THE MAGIC IS CHECKED BY NAME, and `RIFTDIF` is not a typo -- see
+      # rig/differential_artifact.h. It is a frozen format shared with a second
+      # decoder and a committed corpus, and renaming it to match this library
+      # would invalidate every artifact anyone has kept.
+
   # FORMAT IS CHECKED ON THE LINES A CHANGE TOUCHES, NEVER ON THE FILE.
   #
   # The tree predates .clang-format and has not been reformatted; see that file
