@@ -37,6 +37,27 @@ permissions:
   contents: read
 
 jobs:
+  # CHEAPEST LANE, FIRST: if the vendored tree is not the tree we recorded,
+  # nothing below is about the code we think it is.
+  #
+  # A PIN NOTHING VERIFIES IS A COMMENT. third_party/googletest/VERSION has
+  # recorded a tag, a commit and a tree hash since the tree was vendored, and
+  # nothing compared them to the bytes on disk. A local edit to a vendored
+  # dependency would have survived every lane in this file and surfaced later as
+  # a build that behaves differently here than anywhere else.
+  #
+  # OFFLINE, AND THAT IS THE DESIGN. It answers "is this the tree we recorded",
+  # which is local. Whether those bytes are what upstream published needs the
+  # network, is answered when a dependency is vendored or re-pinned, and is
+  # deliberately not a lane -- a lane that fetches fails in exactly the
+  # situation where "it builds from a clean clone" matters most.
+  vendor:
+    name: vendored-tree integrity (offline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/vendor-check.sh
+
   lanes:
     name: ${{ matrix.lane.name }} (${{ matrix.platform.os }}, ${{ matrix.platform.cc }})
     runs-on: ${{ matrix.platform.os }}
